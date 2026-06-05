@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public profile details of a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["userId", "displayName"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Multiplayer match state",
+      "type": "object",
+      "properties": {
+        "hostId": { "type": "string" },
+        "guestId": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "in_progress", "finished"] },
+        "winner": { "type": "string" },
+        "turn": { "type": "number" },
+        "activeTeam": { "type": "string" },
+        "units": { "type": "string" },
+        "gridEnv": { "type": "string" }
+      },
+      "required": ["hostId", "status"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores user profiles."
+    },
+    "matches/{matchId}": {
+      "schema": { "$ref": "#/entities/Match" },
+      "description": "Stores game match state."
+    }
+  }
+}

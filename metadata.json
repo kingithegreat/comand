@@ -1,0 +1,6 @@
+{
+  "name": "Tactical Command",
+  "description": "A 2D tactical game with a 15x15 grid, Character Classes, AI opponents, and Online Multiplayer via Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
