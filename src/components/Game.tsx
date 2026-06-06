@@ -2759,63 +2759,76 @@ export default function Game({
                   </div>
                 </div>
               )}
-
-              {/* Aligned Coordinate Scales with Battlefield Grid & HUD Combat Log Side-by-Side Wrapper */}
-              <div className="flex flex-col xl:flex-row items-center xl:items-stretch justify-center gap-4 w-full max-w-[960px] animate-fade-in mt-1">
-                
-                {/* Aligned Coordinate Scales with Battlefield Grid */}
-                <div className="relative w-full max-w-[580px] min-w-[320px] flex items-center justify-center bg-[#090b07] border border-[#1e2317] rounded p-2 overflow-x-auto hide-scrollbar shrink-0">
+              {/* Aligned Coordinate Scales with Battlefield Grid */}
+              <div className="relative w-full max-w-[580px] min-w-[320px] flex items-center justify-center bg-[#090b07] border border-[#1e2317] rounded p-2 overflow-x-auto hide-scrollbar shrink-0 animate-fade-in mt-1">
+                <div 
+                  className="w-full flex flex-col select-none"
+                >
+                  {/* Column labels scale (A-O) */}
                   <div 
-                    className="w-full flex flex-col select-none"
+                    className="grid gap-[1px] w-full mb-1 shrink-0" 
+                    style={{ 
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
+                      paddingLeft: '24px', // width of left row labels column (20px) + gap space (4px)
+                      paddingRight: '24px' // width of right row labels column (20px) + gap space (4px)
+                    }}
                   >
-                    {/* Column labels scale (A-O) */}
-                    <div 
-                      className="grid gap-[1px] w-full mb-1 shrink-0" 
-                      style={{ 
-                        gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
-                        paddingLeft: '24px' // width of row labels column (20px) + gap space (4px)
-                      }}
-                    >
+                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                      <div key={i} className="text-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black py-0.5 select-none uppercase tracking-wider bg-black/60 border border-[#445236] rounded-[1px]">
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex w-full items-stretch">
+                    {/* Row labels vertical column (01-15) */}
+                    <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                        <div key={i} className="text-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black py-0.5 select-none uppercase tracking-wider bg-black/60 border border-[#445236] rounded-[1px]">
-                          {String.fromCharCode(65 + i)}
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black bg-[#141810]/80 border border-[#445236] rounded-[1px] py-1 select-none">
+                          {(i + 1).toString().padStart(2, '0')}
                         </div>
                       ))}
                     </div>
 
-                    <div className="flex w-full items-stretch">
-                      {/* Row labels vertical column (01-15) */}
-                      <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
-                        {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                          <div key={i} className="flex-1 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black bg-[#141810]/80 border border-[#445236] rounded-[1px] py-1 select-none">
-                            {(i + 1).toString().padStart(2, '0')}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Actual battlefield grid */}
-                      <div className="flex-1 relative">
-                        <div 
-                          className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'translate-x-1 translate-y-1' : ''}`}
-                          style={{ 
-                            gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                            backgroundColor: '#1b2015'
-                          }}
-                        >
-                          {renderGrid()}
-                        </div>
+                    {/* Actual battlefield grid */}
+                    <div className="flex-1 relative">
+                      <div 
+                        className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'translate-x-1 translate-y-1' : ''}`}
+                        style={{ 
+                          gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                          backgroundColor: '#1b2015'
+                        }}
+                      >
+                        {renderGrid()}
                       </div>
                     </div>
+
+                    {/* Right Row labels vertical column (01-15) */}
+                    <div className="flex flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0">
+                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c]/65 font-semibold bg-[#141810]/50 border border-[#445236]/35 rounded-[1px] py-1 select-none">
+                          {(i + 1).toString().padStart(2, '0')}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bottom Column labels scale (A-O) */}
+                  <div 
+                    className="grid gap-[1px] w-full mt-1 shrink-0" 
+                    style={{ 
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
+                      paddingLeft: '24px',
+                      paddingRight: '24px'
+                    }}
+                  >
+                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                      <div key={i} className="text-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c]/65 font-semibold py-0.5 select-none uppercase tracking-wider bg-black/45 border border-[#445236]/35 rounded-[1px]">
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                {/* Scrollable HUD Combat Log Panel */}
-                <HUDCombatLog 
-                  logs={logs} 
-                  onClear={() => setLogs([])}
-                  activeTeam={activeTeam}
-                />
-                
               </div>
 
               {/* Unified 1-Button Deployment and Battle Launch Flow (Placed below grid to prevent covering any playable squares!) */}
@@ -3006,6 +3019,19 @@ export default function Game({
                 }}
                 mode={mode}
               />
+            </div>
+          )}
+
+          {/* 4.5. SEMI-TRANSPARENT COMBAT FEED LOG (Placed directly under unit/battle controls during gameplay) */}
+          {mode === 'play' && (
+            <div className="w-full flex justify-center animate-fade-in mt-1">
+              <div className="w-full max-w-[580px] xl:max-w-none">
+                <HUDCombatLog 
+                  logs={logs} 
+                  onClear={() => setLogs([])}
+                  activeTeam={activeTeam}
+                />
+              </div>
             </div>
           )}
 
