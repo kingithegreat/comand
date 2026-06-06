@@ -135,9 +135,9 @@
 
 /* Subtle amber dot layout filter */
 .amber-grid-bg {
-  background-color: #1a1e14;
-  background-image: radial-gradient(rgba(56, 63, 44, 0.3) 1px, transparent 1px);
-  background-size: 16px 16px;
+  background-color: #07090c;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.16) 1.2px, transparent 1.2px);
+  background-size: 14px 14px;
 }
 
 .amber-field-tick {

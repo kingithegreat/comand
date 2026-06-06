@@ -57,7 +57,7 @@ export default function CombatLog({ logs, onClear }: CombatLogProps) {
           <div className="w-1.5 h-1.5 rounded-full bg-[#fbbf24] animate-ping shrink-0" />
           <Terminal className="w-3.5 h-3.5 text-[#fbbf24] shrink-0" />
           <span className="text-[10px] font-mono font-bold tracking-widest text-[#fbbf24] uppercase">
-            SECURE_COMMS_FEED
+            TACTICAL LOG
           </span>
           <span className="text-[8px] font-mono text-[#5f684d] font-black tracking-tighter">
             ONLINE
@@ -102,7 +102,7 @@ export default function CombatLog({ logs, onClear }: CombatLogProps) {
             <span className="text-[7.5px] font-normal leading-relaxed text-[#5f684d]/70 mt-0.5">Await action trigger input logs</span>
           </div>
         ) : (
-          filteredLogs.map((log) => (
+          filteredLogs.slice(-5).map((log) => (
             <div 
               key={log.id} 
               className="flex items-start gap-1.5 border-b border-[#1b2014]/30 pb-1 leading-relaxed"
@@ -119,7 +119,7 @@ export default function CombatLog({ logs, onClear }: CombatLogProps) {
       </div>
 
       <div className="bg-[#12150e] border-t border-[#1b2014] px-2.5 py-1 flex justify-between items-center text-[7.5px] font-mono text-[#5f684d]/80 shrink-0">
-        <span>LOGS_SYNCD: {filteredLogs.length} / {logs.length}</span>
+        <span>LOGS_SYNCD: {Math.min(filteredLogs.length, 5)} / 5</span>
         <span>SYS_STATUS: READY</span>
       </div>
     </div>
