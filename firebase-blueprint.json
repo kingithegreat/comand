@@ -26,6 +26,17 @@
         "gridEnv": { "type": "string" }
       },
       "required": ["hostId", "status"]
+    },
+    "CommanderStat": {
+      "title": "Commander Stat",
+      "description": "Commander statistics for leaderboard",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "victories": { "type": "number" }
+      },
+      "required": ["userId", "displayName", "victories"]
     }
   },
   "firestore": {
@@ -36,6 +47,10 @@
     "matches/{matchId}": {
       "schema": { "$ref": "#/entities/Match" },
       "description": "Stores game match state."
+    },
+    "stats/{userId}": {
+      "schema": { "$ref": "#/entities/CommanderStat" },
+      "description": "Stores user statistics."
     }
   }
 }

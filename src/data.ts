@@ -5,7 +5,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Sniper",
     archetype: "Long Range",
     description: "Long-range precision marksman clad in a shadow cloak. Excels at picking off high-value targets.",
-    stats: { maxHP: 70, damage: 45, range: 12, mobility: 3 },
+    stats: { maxHP: 70, damage: 45, range: 12, mobility: 3, accuracy: 95 },
     personality: 'Cautious',
     ability: {
       name: "Piercing Round",
@@ -19,7 +19,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Demoman",
     archetype: "Explosives",
     description: "Heavy demolitionist with blast gear and launcher backpack. Deals splash damage in a broad area.",
-    stats: { maxHP: 110, damage: 35, range: 5, mobility: 4 },
+    stats: { maxHP: 110, damage: 35, range: 5, mobility: 4, accuracy: 85 },
     personality: 'Aggressive',
     ability: {
       name: "Frag Grenade",
@@ -33,7 +33,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Assault",
     archetype: "Assault",
     description: "Versatile frontline military trooper with standard combat gear and high tactical adaptability.",
-    stats: { maxHP: 100, damage: 30, range: 6, mobility: 5 },
+    stats: { maxHP: 100, damage: 30, range: 6, mobility: 5, accuracy: 85 },
     personality: 'Tactical',
     ability: {
       name: "Tactical Flush",
@@ -47,7 +47,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Heavy",
     archetype: "Assault",
     description: "Thickly armored squad juggernaut with massive protective plate casing and defense shield relays.",
-    stats: { maxHP: 155, damage: 35, range: 4, mobility: 3 },
+    stats: { maxHP: 155, damage: 35, range: 4, mobility: 3, accuracy: 80 },
     personality: 'Aggressive',
     ability: {
       name: "Shield Recharge",
@@ -60,7 +60,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Medic",
     archetype: "Support",
     description: "Field support unit equipped with surgical headboards, sub-visor scanner arrays, and nanite heals.",
-    stats: { maxHP: 85, damage: 20, range: 5, mobility: 5 },
+    stats: { maxHP: 85, damage: 20, range: 5, mobility: 5, accuracy: 85 },
     personality: 'Support',
     ability: {
       name: "First Aid Kit",
@@ -74,7 +74,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Scout",
     archetype: "Short Range",
     description: "Sleek reconnaissance agent with glowing cyan visors. Excels at high-speed scouting and flanking.",
-    stats: { maxHP: 75, damage: 20, range: 5, mobility: 7 },
+    stats: { maxHP: 75, damage: 20, range: 5, mobility: 7, accuracy: 90 },
     personality: 'Aggressive',
     ability: {
       name: "Adrenaline Sprint",
@@ -87,7 +87,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Technician",
     archetype: "Support",
     description: "Equipped with smart goggles and triple horizontal visor arrays. Constructs localized protection covers.",
-    stats: { maxHP: 110, damage: 25, range: 6, mobility: 4 },
+    stats: { maxHP: 110, damage: 25, range: 6, mobility: 4, accuracy: 85 },
     personality: 'Tactical',
     ability: {
       name: "Deploy Cover",
@@ -101,7 +101,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Support",
     archetype: "Support",
     description: "Fires rapid automated suppression bursts to secure key lanes and lock down enemy flanking routes.",
-    stats: { maxHP: 125, damage: 25, range: 8, mobility: 4 },
+    stats: { maxHP: 125, damage: 25, range: 8, mobility: 4, accuracy: 85 },
     personality: 'Support',
     ability: {
       name: "Disruptor Matrix",
@@ -115,7 +115,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Shotgunner",
     archetype: "Short Range",
     description: "Fringe close-combat breacher. Deals brutal kinetic damage with close-quarters shotgun fire.",
-    stats: { maxHP: 95, damage: 55, range: 3, mobility: 6 },
+    stats: { maxHP: 95, damage: 55, range: 3, mobility: 6, accuracy: 95 },
     personality: 'Tactical',
     ability: {
       name: "Reflex Shield",
@@ -128,7 +128,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Flamethrower",
     archetype: "Support",
     description: "Equipped with heavy fuel tanks. Releases devastating, high-temperature close-range fire.",
-    stats: { maxHP: 135, damage: 70, range: 2, mobility: 5 },
+    stats: { maxHP: 135, damage: 70, range: 2, mobility: 5, accuracy: 100 },
     personality: 'Support',
     ability: {
       name: "Inferno Jet",

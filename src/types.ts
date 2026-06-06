@@ -3,6 +3,7 @@ export interface CharacterStats {
   damage: number;
   range: number;
   mobility: number; // Replaces movementAPCost for range-based logic
+  accuracy: number; // Base hit chance percentage
 }
 
 export type Archetype = 'Short Range' | 'Long Range' | 'Support' | 'Explosives' | 'Assault';

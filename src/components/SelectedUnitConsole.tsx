@@ -1,7 +1,7 @@
 import React from 'react';
 import { Target, Shield, Zap, Flame, Rocket, ChevronRight, Activity, Crosshair, HelpCircle, AlertTriangle, AlertCircle, RefreshCw, XCircle } from 'lucide-react';
 import { Unit, GridCell } from '../types';
-import { checkLineOfSight } from '../logic';
+import { checkLineOfSight, calculateHitChance } from '../logic';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
 
 interface SelectedUnitConsoleProps {
@@ -17,6 +17,7 @@ interface SelectedUnitConsoleProps {
   isOnline: boolean | undefined;
   myTeam?: 'player' | 'enemy';
   onPassUnit: () => void; // Reduce chosen unit's AP to 0 so they pass turn
+  mode?: 'deploy' | 'play';
 }
 
 export default function SelectedUnitConsole({
@@ -31,7 +32,8 @@ export default function SelectedUnitConsole({
   activeHoveredTile,
   isOnline,
   myTeam,
-  onPassUnit
+  onPassUnit,
+  mode
 }: SelectedUnitConsoleProps) {
   if (!selectedUnit) {
     return (
@@ -41,7 +43,7 @@ export default function SelectedUnitConsole({
           CONSOLE_OFFLINE
         </span>
         <p className="text-[8.5px] text-[#bfcfb5] max-w-[240px] mt-1.5 leading-normal uppercase">
-          Select any active battlefield squad unit on the network graph grid to initialize visual metrics and actions.
+          Select any active battlefield squad unit on the network graph grid or choose a tactical class to initialize visual metrics.
         </p>
       </div>
     );
@@ -56,13 +58,21 @@ export default function SelectedUnitConsole({
     return `${String.fromCharCode(65 + x)}${(y + 1).toString().padStart(2, '0')}`;
   };
 
-  const unitCoord = getCoord(selectedUnit.x, selectedUnit.y);
+  const unitCoord = selectedUnit.x >= 0 ? getCoord(selectedUnit.x, selectedUnit.y) : "UNASSIGNED";
 
   // Status computation for unit
   let statusBadge = "OPERATIONAL";
   let statusColor = "text-emerald-400 border-emerald-400/50 bg-emerald-500/10";
 
-  if (selectedUnit.hp <= 0) {
+  if (mode === 'deploy') {
+    if (selectedUnit.team === 'player') {
+      statusBadge = "DEPLOY STANDBY // BLUE TEAM";
+      statusColor = "text-sky-400 border-sky-450/40 bg-sky-955/25";
+    } else {
+      statusBadge = "DEPLOY STANDBY // RED TEAM";
+      statusColor = "text-rose-400 border-rose-500/50 bg-rose-955/25 animate-pulse";
+    }
+  } else if (selectedUnit.hp <= 0) {
     statusBadge = "DECEASED / K.I.A.";
     statusColor = "text-rose-400 border-rose-500/50 bg-rose-500/10";
   } else if (selectedUnit.ap === 0) {
@@ -111,7 +121,12 @@ export default function SelectedUnitConsole({
           } else if (!hasLos) {
             liveWarning = "BLOCKED DIRECT TRACE LINE: STRUCTURAL OBSTACLE OBSCURES LINE-OF-SIGHT";
           } else {
-            actionCostIndicator = "READY FOR HOSTILE STRIKE: CLICK ENEMY UNIT TO DISCHARGE PRIMARY WEAPON";
+            const { chance, isCovered } = calculateHitChance(selectedUnit, hoveredUnit, mapEnvironment);
+            const baseAcc = selectedUnit.class.stats.accuracy || 85;
+            const halfRange = Math.max(1, Math.floor(selectedUnit.class.stats.range / 2));
+            const distPenalty = dist > halfRange ? (dist - halfRange) * 3 : 0;
+            const coverPenalty = isCovered ? 20 : 0;
+            actionCostIndicator = `READY FOR HOSTILE STRIKE: HIT CHANCE ${chance}% (BASE: ${baseAcc}% | DISTANCE PENALTY: -${distPenalty}% | COVER: -${coverPenalty}%) // CLICK TO FIRE`;
           }
         } else if (hoveredUnit.team === selectedUnit.team) {
           liveWarning = "TACTICAL CO-UNIT DETECTED: ENGAGE TARGET DENIED (ACCIDENTAL FRIENDLY PROTOCOLS SHIELED)";
@@ -217,13 +232,13 @@ export default function SelectedUnitConsole({
         {/* Tactical Parameters Column */}
         <div className="md:col-span-7 flex flex-col justify-between gap-3">
           {/* Attributes Multi Grid */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-1.5 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-0.5">HEALTH INTEGRITY</span>
-              <span className="text-xs font-black text-emerald-400 font-mono leading-none">
-                {selectedUnit.hp} <span className="text-[8px] text-zinc-400 font-normal">/ {selectedUnit.class.stats.maxHP}</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
+              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">HEALTH INTEGRITY</span>
+              <span className="text-sm font-black text-emerald-400 font-mono leading-none">
+                {selectedUnit.hp} <span className="text-[9px] text-zinc-450 font-normal">/ {selectedUnit.class.stats.maxHP}</span>
               </span>
-              <div className="w-full bg-black/60 h-[3px] rounded-sm overflow-hidden p-[0.3px] mt-1 border border-[#344426]">
+              <div className="w-full bg-black/60 h-[3px] rounded-sm overflow-hidden p-[0.3px] mt-1.5 border border-[#344426]">
                 <div 
                   className="h-full rounded bg-emerald-400 shadow-[0_0_4px_#34d399]"
                   style={{ width: `${(selectedUnit.hp / selectedUnit.class.stats.maxHP) * 100}%` }}
@@ -231,12 +246,12 @@ export default function SelectedUnitConsole({
               </div>
             </div>
 
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-1.5 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-0.5">ACTION POINTS</span>
-              <span className="text-xs font-black text-amber-300 font-mono leading-none">
-                {selectedUnit.ap} <span className="text-[8px] text-zinc-400 font-normal">/ 2 AP</span>
+            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
+              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">ACTION POINTS</span>
+              <span className="text-sm font-black text-amber-300 font-mono leading-none">
+                {selectedUnit.ap} <span className="text-[9px] text-zinc-450 font-normal">/ 2 AP</span>
               </span>
-              <div className="flex gap-[2px] justify-center mt-1">
+              <div className="flex gap-[2px] justify-center mt-1.5">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <span 
                     key={i} 
@@ -246,82 +261,138 @@ export default function SelectedUnitConsole({
               </div>
             </div>
 
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-1.5 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-0.5">RANGE POTENTIAL</span>
-              <span className="text-xs font-black text-sky-300 font-mono leading-none">
+            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
+              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">RANGE POTENTIAL</span>
+              <span className="text-sm font-black text-sky-305 font-mono leading-none text-sky-300">
                 {selectedUnit.class.stats.range} <span className="text-[8px] text-[#b6caa2] font-black">CELLS</span>
               </span>
-              <span className="text-[6.5px] text-[#b6caa2] font-black truncate tracking-tight mt-1 uppercase">MOBILITY: {selectedUnit.class.stats.mobility}</span>
+              <span className="text-[7px] text-zinc-400 font-black truncate tracking-tight mt-1.5 uppercase">
+                MOBILITY: {selectedUnit.class.stats.mobility}
+              </span>
+            </div>
+
+            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
+              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">BASE ACCURACY</span>
+              <span className="text-sm font-black text-rose-400 font-mono leading-none">
+                {selectedUnit.class.stats.damage} <span className="text-[8px] text-[#b6caa2] font-black">DMG</span>
+              </span>
+              <span className="text-[7px] text-zinc-400 font-black truncate tracking-tight mt-1.5 uppercase">
+                HIT RATE: {selectedUnit.class.stats.accuracy}%
+              </span>
             </div>
           </div>
 
+          {/* Detailed Special Ability Display Pane (Requested "display unit stats and abilitys") */}
+          {selectedUnit.class.ability && (
+            <div className="bg-[#1c2415]/80 border border-indigo-950/40 rounded p-2.5 flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
+              <div className="p-1 px-2 hover:border-indigo-400/40 rounded bg-indigo-950/40 border border-indigo-500/35 font-bold text-center shrink-0 min-w-[100px]">
+                <span className="block text-[6.5px] text-indigo-305 font-black uppercase tracking-widest text-[#a5b4fc]">SPEC_ABIL</span>
+                <span className="text-[9.5px] text-indigo-400 font-black uppercase font-mono">{selectedUnit.class.ability.name}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] text-[#afd19c] leading-relaxed uppercase">
+                  {selectedUnit.class.ability.description}
+                </p>
+                <div className="flex flex-wrap gap-x-2 mt-1.5 font-mono text-[7px] text-[#c7d2fe] font-black">
+                  <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded">AP COST: {selectedUnit.class.ability.apCost} AP</span>
+                  {selectedUnit.class.ability.range !== undefined && (
+                    <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded">REACH: {selectedUnit.class.ability.range} BLOCKS</span>
+                  )}
+                  <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded uppercase">TARGET PROTOCOL: {selectedUnit.class.ability.type}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action List Section */}
           <div className="bg-black/30 border border-[#2d3a20] p-1.5 sm:p-2 rounded flex flex-col gap-1.5">
-            {/* Live feedback warnings in selection console */}
-            {liveWarning ? (
-              <div className="text-[8.5px] font-bold font-mono text-red-400 bg-red-950/25 px-2 py-1 rounded border border-red-500/35 flex items-center gap-1.5 animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400" />
-                <span className="uppercase truncate">{liveWarning}</span>
-              </div>
-            ) : hoveredUnit && isMyUnitControl ? (
-              <div className="text-[8.5px] font-bold font-mono text-emerald-305 bg-emerald-950/20 px-2 py-1 rounded border border-emerald-500/20 flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5 text-emerald-400 animate-spin" style={{ animationDuration: '6s' }} />
-                <span className="uppercase truncate">{actionCostIndicator}</span>
-              </div>
-            ) : isMyUnitControl ? (
-              <div className="text-[8.5px] font-bold text-zinc-200 bg-[#1e2716]/65 px-2 py-1 rounded border border-[#3e4a32] flex items-center gap-1.5">
-                <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="uppercase truncate">{actionCostIndicator === "SELECT CELL TO INITIATE" ? "CELL GUIDE: CLICK A TILE TO MOVE OR LOCKED ENEMY TO FIRE." : actionCostIndicator}</span>
-              </div>
-            ) : (
-              <div className="text-[8.5px] font-bold text-sky-300 bg-sky-950/20 px-2 py-1 rounded border border-sky-800/25 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span className="uppercase">MONITOR_MODE: AWAITING ACTIVE COMMAND MATRIX AUTHORIZATION</span>
-              </div>
-            )}
-
-            {/* Tactical Control Actions */}
-            {isMyUnitControl ? (
-              <div className="flex gap-2 w-full mt-0.5">
-                {/* Special Ability Activation Toggle */}
-                {selectedUnit.class.ability && (
+            {mode === 'deploy' ? (
+              <>
+                <div className="text-[8.5px] font-bold font-mono text-amber-400 bg-amber-950/25 px-2 py-1 rounded border border-amber-500/30 flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="uppercase">DEPLOYMENT COMPATIBLE: CLICK HIGHLIGHTED CELL ON BOARD TO PLACE UNIT</span>
+                </div>
+                <div className="flex gap-2 w-full mt-0.5">
+                  <div className="flex-1 text-[#bfcfb5] text-[8.5px] font-extrabold font-mono tracking-wider bg-[#1c2415]/60 border border-[#303a24] rounded px-3 py-2 text-center uppercase">
+                    ⚡ PRE-DEPLOYMENT TELEMETRY READY // ROW DEPLOY RANGE: {selectedUnit.team === 'player' ? 'ROWS 8-15 (BOTTOM)' : 'ROWS 1-7 (TOP)'}
+                  </div>
                   <button
-                    onClick={onToggleAbility}
-                    disabled={selectedUnit.ap < selectedUnit.class.ability.apCost}
-                    className={`flex-1 py-1.5 px-2 rounded font-black text-[9px] uppercase tracking-wider text-center transition-all border shrink-0 ${
-                      isAbilityActive 
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.2)] animate-pulse'
-                        : selectedUnit.ap < selectedUnit.class.ability.apCost
-                          ? 'bg-zinc-800/30 border-zinc-900 text-zinc-600 cursor-not-allowed opacity-50'
-                          : 'bg-indigo-900/40 hover:bg-indigo-600/60 border-indigo-500 text-[#c7d2fe] hover:text-white cursor-pointer active:scale-95'
-                    }`}
-                    title={`Cost: ${selectedUnit.class.ability.apCost} AP`}
+                    onClick={onCancelSelection}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-bold border border-zinc-700/30 px-3 py-1.5 rounded transition-all text-[9px] uppercase cursor-pointer active:scale-95 shrink-0"
                   >
-                    {isAbilityActive ? 'Cancel Spec' : `SPEC_ABIL: ${selectedUnit.class.ability.name}`}
+                    CANCEL
                   </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Live feedback warnings in selection console */}
+                {liveWarning ? (
+                  <div className="text-[8.5px] font-bold font-mono text-red-400 bg-red-950/25 px-2 py-1 rounded border border-red-500/35 flex items-center gap-1.5 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                    <span className="uppercase truncate">{liveWarning}</span>
+                  </div>
+                ) : hoveredUnit && isMyUnitControl ? (
+                  <div className="text-[8.5px] font-bold font-mono text-emerald-305 bg-emerald-950/20 px-2 py-1 rounded border border-emerald-500/20 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400 animate-spin" style={{ animationDuration: '6s' }} />
+                    <span className="uppercase truncate">{actionCostIndicator}</span>
+                  </div>
+                ) : isMyUnitControl ? (
+                  <div className="text-[8.5px] font-bold text-zinc-200 bg-[#1e2716]/65 px-2 py-1 rounded border border-[#3e4a32] flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="uppercase truncate">{actionCostIndicator === "SELECT CELL TO INITIATE" ? "CELL GUIDE: CLICK A TILE TO MOVE OR LOCKED ENEMY TO FIRE." : actionCostIndicator}</span>
+                  </div>
+                ) : (
+                  <div className="text-[8.5px] font-bold text-sky-300 bg-sky-950/20 px-2 py-1 rounded border border-sky-800/25 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span className="uppercase">MONITOR_MODE: AWAITING ACTIVE COMMAND MATRIX AUTHORIZATION</span>
+                  </div>
                 )}
 
-                {/* Force unit to pass (reduce ap to 0 so next behaves) */}
-                <button
-                  onClick={onPassUnit}
-                  className="bg-[#202518] hover:bg-stone-800 text-[#dae3ce] font-black border border-[#2d3a20] px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-red-400 active:scale-95 shrink-0"
-                  title="Spends all remaining AP of this unit to terminate its selection activity"
-                >
-                  Pass Unit
-                </button>
+                {/* Tactical Control Actions */}
+                {isMyUnitControl ? (
+                  <div className="flex gap-2 w-full mt-0.5">
+                    {/* Special Ability Activation Toggle */}
+                    {selectedUnit.class.ability && (
+                      <button
+                        onClick={onToggleAbility}
+                        disabled={selectedUnit.ap < selectedUnit.class.ability.apCost}
+                        className={`flex-1 py-1.5 px-2 rounded font-black text-[9px] uppercase tracking-wider text-center transition-all border shrink-0 ${
+                          isAbilityActive 
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.2)] animate-pulse'
+                            : selectedUnit.ap < selectedUnit.class.ability.apCost
+                              ? 'bg-zinc-800/30 border-zinc-900 text-zinc-600 cursor-not-allowed opacity-50'
+                              : 'bg-indigo-900/40 hover:bg-indigo-600/60 border-indigo-500 text-[#c7d2fe] hover:text-white cursor-pointer active:scale-95'
+                        }`}
+                        title={`Cost: ${selectedUnit.class.ability.apCost} AP`}
+                      >
+                        {isAbilityActive ? 'Cancel Spec' : `SPEC_ABIL: ${selectedUnit.class.ability.name}`}
+                      </button>
+                    )}
 
-                <button
-                  onClick={onCancelSelection}
-                  className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 font-bold border border-zinc-700/30 px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-white active:scale-95 shrink-0"
-                >
-                  unselect
-                </button>
-              </div>
-            ) : isOpponentUnit ? (
-              <div className="text-[8px] text-red-400 font-extrabold uppercase italic p-1 border border-dashed border-red-500/20 bg-red-950/5 text-center rounded">
-                ⚡ SECURITY PROTOCOLS IN PROGRESS: HOSTILE COMMAND CONSOLE LOCKED
-              </div>
-            ) : null}
+                    {/* Force unit to pass (reduce ap to 0 so next behaves) */}
+                    <button
+                      onClick={onPassUnit}
+                      className="bg-[#202518] hover:bg-stone-800 text-[#dae3ce] font-black border border-[#2d3a20] px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-red-400 active:scale-95 shrink-0"
+                      title="Spends all remaining AP of this unit to terminate its selection activity"
+                    >
+                      Pass Unit
+                    </button>
+
+                    <button
+                      onClick={onCancelSelection}
+                      className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 font-bold border border-zinc-700/30 px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-white active:scale-95 shrink-0"
+                    >
+                      unselect
+                    </button>
+                  </div>
+                ) : isOpponentUnit ? (
+                  <div className="text-[8px] text-red-400 font-extrabold uppercase italic p-1 border border-dashed border-red-500/20 bg-red-950/5 text-center rounded">
+                    ⚡ SECURITY PROTOCOLS IN PROGRESS: HOSTILE COMMAND CONSOLE LOCKED
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>

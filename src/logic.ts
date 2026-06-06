@@ -60,6 +60,54 @@ export const getReachableTiles = (
   return tiles;
 };
 
+export const calculateHitChance = (
+  attacker: Unit,
+  target: { x: number; y: number },
+  map: GridCell[][]
+): { chance: number, isCovered: boolean } => {
+  let baseAccuracy = attacker.class.stats.accuracy || 85;
+  const dist = Math.abs(attacker.x - target.x) + Math.abs(attacker.y - target.y);
+  
+  // Distance penalty: -3% per tile beyond half range for better gameplay feel
+  const halfRange = Math.max(1, Math.floor(attacker.class.stats.range / 2));
+  let distPenalty = 0;
+  if (dist > halfRange) {
+    distPenalty = (dist - halfRange) * 3;
+  }
+
+  // Cover penalty: check if there's a crate adjacent to the target that is between attacker and target
+  let isCovered = false;
+  let coverPenalty = 0;
+  
+  const neighbors = [
+    { dx: 0, dy: -1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 0 }, { dx: 1, dy: 1 },
+    { dx: 0, dy: 1 }, { dx: -1, dy: 1 }, { dx: -1, dy: 0 }, { dx: -1, dy: -1 }
+  ];
+
+  for (const n of neighbors) {
+    const nx = target.x + n.dx;
+    const ny = target.y + n.dy;
+    if (nx >= 0 && ny >= 0 && nx < map[0].length && ny < map.length) {
+      if (map[ny][nx].type === 'crate') {
+        // Is this crate between attacker and target?
+        const distAttackerToCrate = Math.abs(attacker.x - nx) + Math.abs(attacker.y - ny);
+        if (distAttackerToCrate < dist) {
+          isCovered = true;
+          coverPenalty = 20; // Reduced from 25 to 20 for a fairer low cover experience
+          break;
+        }
+      }
+    }
+  }
+
+  let finalChance = baseAccuracy - distPenalty - coverPenalty;
+  
+  // Minimum hit chance of 30% ensures interesting underdog mechanics rather than extreme 0% misses
+  finalChance = Math.max(30, Math.min(100, finalChance));
+
+  return { chance: finalChance, isCovered };
+};
+
 export const checkLineOfSight = (
   x1: number,
   y1: number,

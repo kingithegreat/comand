@@ -3,16 +3,19 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX } from 'lucide-react';
 import { auth, db } from './firebase';
 import Game from './components/Game';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
+import CommanderLeaderboard from './components/CommanderLeaderboard';
+import { useAudio } from './contexts/AudioContext';
 
 export default function App() {
   const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | null>(null);
   const [user, loading] = useAuthState(auth);
   const [profile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
+  const { soundEnabled, toggleSound } = useAudio();
   
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
@@ -144,7 +147,14 @@ export default function App() {
 
       <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
          {/* Terminal Header */}
-         <div className="text-center space-y-3 pb-2 border-b border-[#2d3422]/30">
+         <div className="text-center space-y-3 pb-2 border-b border-[#2d3422]/30 relative">
+           <button 
+             onClick={toggleSound} 
+             className="absolute right-0 top-0 p-2 rounded-full border border-[#2d3422] bg-[#141810] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-colors"
+             title={soundEnabled ? "Disable Audio" : "Enable Audio"}
+           >
+             {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+           </button>
            <div className="w-16 h-16 bg-[#161a12] border border-[#2d3422] rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(45,52,34,0.4)] mx-auto relative group">
               <Target className="w-8 h-8 text-amber-500 absolute scale-105 opacity-40 blur-sm animate-pulse" />
               <Target className="w-8 h-8 text-amber-400 relative z-10 transition-transform group-hover:rotate-45 duration-700" />
@@ -449,6 +459,9 @@ export default function App() {
               </div>
             )}
          </div>
+
+         {/* Commander Leaderboard */}
+         <CommanderLeaderboard />
       </div>
     </div>
   );

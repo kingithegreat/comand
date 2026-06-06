@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Shield, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar } from 'lucide-react';
+import { Shield, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal } from 'lucide-react';
 import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell } from '../types';
-import { generateMap } from '../mapUtils';
-import { getReachableTiles, checkLineOfSight } from '../logic';
-import { db } from '../firebase';
-import { doc, updateDoc, setDoc } from 'firebase/firestore';
+import { generateMap, MAPS } from '../mapUtils';
+import { getReachableTiles, checkLineOfSight, calculateHitChance } from '../logic';
+import { db, auth } from '../firebase';
+import { doc, updateDoc, setDoc, increment } from 'firebase/firestore';
 import CombatLog, { LogMessage } from './CombatLog';
+import HUDCombatLog from './HUDCombatLog';
 import RosterStatus from './RosterStatus';
 import SelectedUnitConsole from './SelectedUnitConsole';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
 import UnitSprite from './UnitSprite';
+import CommanderLeaderboard from './CommanderLeaderboard';
+import { useAudio } from '../contexts/AudioContext';
+import { PostBattleSummary } from './PostBattleSummary';
 
 const GRID_SIZE = 15;
 
@@ -70,7 +74,9 @@ export default function Game({
   onlineMatch?: any,
   userId?: string
 }) {
+  const { playSound } = useAudio();
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
+  const [selectedMapId, setSelectedMapId] = useState<string>('sector_alpha');
   const [mode, setMode] = useState<'deploy' | 'play'>('deploy');
   const [selectedClass, setSelectedClass] = useState<CharacterClass | null>(CLASSES[0]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -87,6 +93,18 @@ export default function Game({
   const [damageTexts, setDamageTexts] = useState<{id: string, x: number, y: number, amount: number}[]>([]);
   const [shake, setShake] = useState(false);
   const [winner, setWinner] = useState<'player' | 'enemy' | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(100);
+
+  const [startingUnits, setStartingUnits] = useState<Unit[]>([]);
+  const [battleStats, setBattleStats] = useState({
+    playerShotsFired: 0,
+    playerShotsHit: 0,
+    playerDamageDealt: 0,
+    playerHealsPerformed: 0,
+    playerAbilitiesUsed: 0,
+    turnsElapsed: 1,
+    damageTaken: 0,
+  });
 
   // Coin Flip & P2P Handoff states
   const [coinFlipping, setCoinFlipping] = useState(false);
@@ -96,6 +114,27 @@ export default function Game({
   const [handoffTarget, setHandoffTarget] = useState<'player' | 'enemy'>('player');
   const [pendingTurnData, setPendingTurnData] = useState<{ units: Unit[], turn: number, activeTeam: 'player' | 'enemy' } | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(60);
+  const [activePanel, setActivePanel] = useState<'roster' | 'combat_log' | 'leaderboard' | 'red_squad' | 'blue_squad' | null>(null);
+
+  useEffect(() => {
+    if (mode === 'play') {
+      if (startingUnits.length === 0 && units.length > 0) {
+        setStartingUnits(JSON.parse(JSON.stringify(units)));
+      }
+    } else if (mode === 'deploy') {
+      setStartingUnits([]);
+      setWinner(null);
+      setBattleStats({
+        playerShotsFired: 0,
+        playerShotsHit: 0,
+        playerDamageDealt: 0,
+        playerHealsPerformed: 0,
+        playerAbilitiesUsed: 0,
+        turnsElapsed: 1,
+        damageTaken: 0,
+      });
+    }
+  }, [mode, units, startingUnits.length]);
 
   const [logs, setLogs] = useState<LogMessage[]>(() => [
     {
@@ -142,6 +181,159 @@ export default function Game({
   const isHost = isOnline ? onlineMatch.hostId === userId : true;
   const myTeam = isOnline ? (isHost ? 'player' : 'enemy') : undefined;
 
+  const selectMap = (mapId: string) => {
+    if (mode !== 'deploy') return;
+    const mapPreset = MAPS.find(m => m.id === mapId);
+    if (!mapPreset) return;
+    
+    setSelectedMapId(mapId);
+    
+    const generated = generateMap(mapPreset.layout);
+    setMapEnvironment(generated);
+    
+    // Clear deployed units on map topography updates
+    setUnits([]);
+    setSelectedUnitId(null);
+    
+    if (isOnline && isHost && onlineMatch?.id) {
+       updateDoc(doc(db, 'matches', onlineMatch.id), {
+          mapId: mapId,
+          gridEnv: JSON.stringify(generated),
+          units: "[]"
+       });
+       addLog(`[MAP RE-ROUTE] Host selector re-synchronized sector environment: "${mapPreset.name}" initiated. Squad deployment reset.`, 'system');
+    } else {
+       addLog(`[MAP RE-ROUTE] Command console loaded sector environment: "${mapPreset.name}". Squad deployment reset.`, 'system');
+    }
+  };
+
+  // MULTIPLAYER MATCH SUGGESTION & VOTING INITIALIZATION
+  useEffect(() => {
+    if (isOnline && isHost && onlineMatch && !onlineMatch.suggestedMaps && mode === 'deploy') {
+      const candidates = [...MAPS].sort(() => 0.5 - Math.random());
+      const suggestions = candidates.slice(0, 3).map(m => m.id);
+      
+      const defaultMapId = suggestions[0];
+      const defaultPreset = MAPS.find(m => m.id === defaultMapId)!;
+      const generated = generateMap(defaultPreset.layout);
+      
+      updateDoc(doc(db, 'matches', onlineMatch.id), {
+        suggestedMaps: suggestions,
+        votes: {},
+        voteResolved: false,
+        votedMapId: null,
+        aiDecisionText: null,
+        mapId: defaultMapId,
+        gridEnv: JSON.stringify(generated),
+        units: "[]"
+      }).catch(err => console.error("Error initializing suggested maps:", err));
+    }
+  }, [isOnline, isHost, onlineMatch, mode]);
+
+  const handleCastVote = async (mapId: string) => {
+    if (!isOnline || !onlineMatch?.id || !userId) return;
+    try {
+      await updateDoc(doc(db, 'matches', onlineMatch.id), {
+         [`votes.${userId}`]: mapId
+      });
+      addLog(`[VOTE CAST] Strategic calibration ballot recorded for "${MAPS.find(m => m.id === mapId)?.name || 'sector'}".`, 'system');
+    } catch (err) {
+      console.error("Failed to cast vote:", err);
+    }
+  };
+
+  const handleResolveVote = async (method: 'ai' | 'random') => {
+    if (!isOnline || !onlineMatch?.id) return;
+    const suggested = onlineMatch.suggestedMaps || [];
+    if (suggested.length === 0) return;
+
+    let finalMapId = '';
+    let decisionText = '';
+
+    const currentVotes = onlineMatch.votes || {};
+    const hostId = onlineMatch.hostId;
+    const guestId = onlineMatch.guestId;
+    const hostVote = currentVotes[hostId];
+    const guestVote = guestId ? currentVotes[guestId] : null;
+
+    if (method === 'ai') {
+      if (hostVote && guestVote && hostVote === guestVote) {
+        finalMapId = hostVote;
+        const mapName = MAPS.find(m => m.id === finalMapId)?.name || 'Sector';
+        decisionText = `[COMMAND AI] Harmonious tactical consensus verified. Both commanders selected "${mapName}". Map lock established.`;
+      } else {
+        const candidates = [];
+        if (hostVote) candidates.push(hostVote);
+        if (guestVote) candidates.push(guestVote);
+
+        if (candidates.length === 0) {
+          finalMapId = suggested[Math.floor(Math.random() * suggested.length)];
+          const selectedPreset = MAPS.find(m => m.id === finalMapId)!;
+          decisionText = `[COMMAND AI] Zero player ballots scanned. Override: selected "${selectedPreset.name}" with standard spatial distribution characteristics.`;
+        } else {
+          const chosenId = candidates[Math.floor(Math.random() * candidates.length)];
+          finalMapId = chosenId;
+          const selectedPreset = MAPS.find(m => m.id === finalMapId)!;
+          
+          const justifications = [
+            `[COMMAND AI] Divided consensus split. Evaluating layouts... Selected "${selectedPreset.name}" for balanced close-encounter and dynamic fire-lane optimization.`,
+            `[COMMAND AI] Arbitration completed. Initializing "${selectedPreset.name}". Grid simulations calculate a 94.2% operational combat readiness metric here.`,
+            `[COMMAND AI] Ballot mismatch resolved. Lock on "${selectedPreset.name}". Highly recommended for tactical squad insertion and defensive fortifications.`
+          ];
+          decisionText = justifications[Math.floor(Math.random() * justifications.length)];
+        }
+      }
+    } else {
+      const chosenId = suggested[Math.floor(Math.random() * suggested.length)];
+      finalMapId = chosenId;
+      const selectedPreset = MAPS.find(m => m.id === finalMapId)!;
+      decisionText = `[GRID RANDOMIZER] Trajectory scatter roll calculated. Operational sector locked on "${selectedPreset.name}". Telemetry linked.`;
+    }
+
+    const chosenPreset = MAPS.find(m => m.id === finalMapId) || MAPS[0];
+    const generated = generateMap(chosenPreset.layout);
+
+    try {
+      await updateDoc(doc(db, 'matches', onlineMatch.id), {
+         mapId: finalMapId,
+         gridEnv: JSON.stringify(generated),
+         units: "[]",
+         voteResolved: true,
+         votedMapId: finalMapId,
+         aiDecisionText: decisionText
+      });
+      addLog(decisionText, 'system');
+    } catch (err) {
+      console.error("Failed to resolve map vote:", err);
+    }
+  };
+
+  const handleReRollSuggestions = async () => {
+    if (!isOnline || !onlineMatch?.id) return;
+    const shuffled = [...MAPS].sort(() => 0.5 - Math.random());
+    const suggestions = shuffled.slice(0, 3).map(m => m.id);
+    
+    const selectedId = suggestions[0];
+    const selectedPreset = MAPS.find(m => m.id === selectedId)!;
+    const generated = generateMap(selectedPreset.layout);
+
+    try {
+      await updateDoc(doc(db, 'matches', onlineMatch.id), {
+         suggestedMaps: suggestions,
+         votes: {},
+         voteResolved: false,
+         votedMapId: null,
+         aiDecisionText: null,
+         mapId: selectedId,
+         gridEnv: JSON.stringify(generated),
+         units: "[]"
+      });
+      addLog(`[COMMAND SYSTEM] Host commander initiated strategic sector re-roll. 3 new tactical suggestions broadcasted.`, 'system');
+    } catch (err) {
+      console.error("Failed to re-roll suggestions:", err);
+    }
+  };
+
   const unitsString = JSON.stringify(units);
 
   // Sync state from onlineMatch
@@ -153,7 +345,15 @@ export default function Game({
          setUnits(newUnits);
        }
        if (onlineMatch.gridEnv) {
-         setMapEnvironment(JSON.parse(onlineMatch.gridEnv));
+         (() => {
+          const parsed = JSON.parse(onlineMatch.gridEnv);
+          if (JSON.stringify(parsed) !== JSON.stringify(mapEnvironment)) {
+             setMapEnvironment(parsed);
+          }
+          if (onlineMatch.mapId && onlineMatch.mapId !== selectedMapId) {
+             setSelectedMapId(onlineMatch.mapId);
+          }
+        })();
        }
        if ((onlineMatch.status === 'play' || onlineMatch.status === 'in_progress') && mode !== 'play' && !coinFlipping) {
           setCoinFlipping(true);
@@ -184,7 +384,7 @@ export default function Game({
           setActiveTeam(onlineMatch.activeTeam);
        }
     }
-  }, [onlineMatch, isOnline, unitsString, mode, coinFlipping, addLog]);
+  }, [onlineMatch, isOnline, unitsString, mode, coinFlipping, addLog, selectedMapId, mapEnvironment]);
 
   const updateOnlineState = async (newUnits: any[], newTurn: number, newActiveTeam: string, newStatus: string = mode, winTeam?: string) => {
      if (isOnline && onlineMatch?.id) {
@@ -201,15 +401,17 @@ export default function Game({
 
   useEffect(() => {
     if (!isOnline && mapEnvironment.length === 0) {
-      setMapEnvironment(generateMap());
+      const preset = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
+      setMapEnvironment(generateMap(preset.layout));
     } else if (isOnline && isHost && mapEnvironment.length === 0 && !onlineMatch?.gridEnv) {
-      const generated = generateMap();
+      const preset = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
+      const generated = generateMap(preset.layout);
       setMapEnvironment(generated);
       updateDoc(doc(db, 'matches', onlineMatch.id), {
          gridEnv: JSON.stringify(generated)
       });
     }
-  }, [isOnline, isHost, onlineMatch, mapEnvironment.length]);
+  }, [isOnline, isHost, onlineMatch, mapEnvironment.length, selectedMapId]);
 
   const selectedUnit = units.find(u => u.id === selectedUnitId);
   const reachableTiles = mode === 'play' && selectedUnit && mapEnvironment.length > 0 && !isAbilityActive ? getReachableTiles(selectedUnit, mapEnvironment, units) : [];
@@ -260,6 +462,13 @@ export default function Game({
     const ability = selectedUnit.class.ability;
     if (ability.type !== 'self') return;
 
+    if (selectedUnit.team === (myTeam || 'player')) {
+      setBattleStats(prev => ({
+        ...prev,
+        playerAbilitiesUsed: prev.playerAbilitiesUsed + 1
+      }));
+    }
+
     let healedAmount = 0;
     let addedAp = 0;
     const teamColor = selectedUnit.team === 'player' ? 'Blue' : 'Red';
@@ -302,6 +511,25 @@ export default function Game({
     if (!selectedUnit || !selectedUnit.class.ability) return;
     const ability = selectedUnit.class.ability;
     if (selectedUnit.ap < ability.apCost) return;
+
+    if (selectedUnit.team === (myTeam || 'player')) {
+      const demoHits = selectedUnit.class.className === 'Demoman' 
+        ? units.filter(u => u.team !== selectedUnit.team && u.hp > 0 && Math.abs(u.x - x) <= 1 && Math.abs(u.y - y) <= 1).length 
+        : 0;
+
+      setBattleStats(prev => ({
+        ...prev,
+        playerAbilitiesUsed: prev.playerAbilitiesUsed + 1,
+        playerHealsPerformed: prev.playerHealsPerformed + (selectedUnit.class.className === 'Medic' ? 1 : 0),
+        playerDamageDealt: prev.playerDamageDealt + (
+          selectedUnit.class.className === 'Flamethrower' ? 85 :
+          selectedUnit.class.className === 'Demoman' ? (demoHits * 30) :
+          selectedUnit.class.className === 'Sniper' ? 55 :
+          selectedUnit.class.className === 'Assault' ? 25 :
+          selectedUnit.class.className === 'Support' ? 20 : 0
+        )
+      }));
+    }
 
     const attackerColor = selectedUnit.team === 'player' ? 'Blue' : 'Red';
     const targetColor = selectedUnit.team === 'player' ? 'Red' : 'Blue';
@@ -565,9 +793,6 @@ export default function Game({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          if (activeTeam === myTeam) {
-            handleEndTurn();
-          }
           return 0;
         }
         return prev - 1;
@@ -575,7 +800,14 @@ export default function Game({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOnline, mode, activeTeam, myTeam, winner, handleEndTurn, turn]);
+  }, [isOnline, mode, activeTeam, winner, turn]);
+
+  // Trigger end turn automatically when timer expires
+  useEffect(() => {
+    if (isOnline && mode === 'play' && !winner && timeLeft === 0 && activeTeam === myTeam) {
+      handleEndTurn();
+    }
+  }, [timeLeft, isOnline, mode, winner, activeTeam, myTeam, handleEndTurn]);
 
   const performAINextAction = useCallback(() => {
     const enemyUnits = units.filter(u => u.team === 'enemy' && u.ap > 0);
@@ -858,11 +1090,12 @@ export default function Game({
        const dist = Math.abs(enemy.x - p.x) + Math.abs(enemy.y - p.y);
        const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
        if (dist <= enemy.class.stats.range && hasLos) {
-          let score = 0;
-          if (personality === 'Aggressive') score = -dist + (p.class.stats.maxHP - p.hp)*2; // Prefers wounded or close
-          else if (personality === 'Cautious') score = -p.class.stats.maxHP; // Prefers squishy
-          else if (personality === 'Tactical') score = -p.hp; // Kills lowest hp
-          else if (personality === 'Support') score = -dist - p.hp; 
+          const { chance } = calculateHitChance(enemy, p, mapEnvironment);
+          let score = chance; // Factor in hit chance heavily
+          if (personality === 'Aggressive') score += -dist + (p.class.stats.maxHP - p.hp)*2; // Prefers wounded or close
+          else if (personality === 'Cautious') score += -p.class.stats.maxHP; // Prefers squishy
+          else if (personality === 'Tactical') score += -p.hp; // Kills lowest hp
+          else if (personality === 'Support') score += -dist - p.hp; 
           
           // Randomness for flaw
           score += (Math.random() - 0.5) * 5;
@@ -877,27 +1110,50 @@ export default function Game({
     if (bestTarget && enemy.ap >= 1) { // attack costs 1 AP
        const p = bestTarget;
        const targetFacing = getFacingDirection(enemy.x, enemy.y, p.x, p.y, enemy.facing);
-       const damageId = crypto.randomUUID();
-       setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: enemy.class.stats.damage }]);
-       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
-       
-       setShake(true);
-       setTimeout(() => setShake(false), 200);
+       const { chance, isCovered } = calculateHitChance(enemy, p, mapEnvironment);
+       const isHit = Math.random() * 100 <= chance;
 
-       setUnits(prev => prev.map(u => {
-          if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-          if (u.id === p.id) return { ...u, hp: u.hp - enemy.class.stats.damage };
-          return u;
-       }));
+       if (isHit) {
+         playSound('attack');
+         setTimeout(() => playSound('damage'), 150);
+         const damageId = crypto.randomUUID();
+         setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: enemy.class.stats.damage }]);
+         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+         
+         setShake(true);
+         setTimeout(() => setShake(false), 200);
 
-       setTimeout(() => {
-          setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
-       }, 800);
-       
-       const remHp = p.hp - enemy.class.stats.damage;
-       addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${enemy.class.stats.damage} damage at ${getCoord(p.x, p.y)}.`, 'combat');
-       if (remHp <= 0) {
-         addLog(`[FATALITY] Blue ${p.class.className} neutralized under enemy hostile fire.`, 'death');
+         setUnits(prev => prev.map(u => {
+            if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+            if (u.id === p.id) return { ...u, hp: u.hp - enemy.class.stats.damage };
+            return u;
+         }));
+
+         setTimeout(() => {
+            setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
+         }, 800);
+         
+         const remHp = p.hp - enemy.class.stats.damage;
+         addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${enemy.class.stats.damage} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).`, 'combat');
+         if (remHp <= 0) {
+           addLog(`[FATALITY] Blue ${p.class.className} neutralized under enemy hostile fire.`, 'death');
+         }
+       } else {
+         playSound('attack');
+         const damageId = crypto.randomUUID();
+         setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: 0 }]);
+         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+
+         setUnits(prev => prev.map(u => {
+            if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+            return u;
+         }));
+
+         setTimeout(() => {
+            setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
+         }, 800);
+         
+         addLog(`[MISS] Enemy ${enemy.class.className} fired on Blue ${p.class.className} (${chance}% hit chance) but missed!${isCovered ? ' (Cover interference)' : ''}`, 'info');
        }
        return;
     }
@@ -953,6 +1209,7 @@ export default function Game({
             u.id === enemy.id ? { ...u, x: bestTile.x, y: bestTile.y, ap: u.ap - bestTile.apCost, facing: moveFacing } : u
           ));
           addLog(`[MANEUVER] Enemy ${enemy.class.className} advanced to quadrant ${getCoord(bestTile.x, bestTile.y)} (used ${bestTile.apCost} AP).`, 'info');
+          playSound('move');
           return;
        }
     }
@@ -994,7 +1251,21 @@ export default function Game({
           else if (!eAlive) { newWinner = 'player'; newStatus = 'finished'; }
         }
 
-        if (newWinner) setWinner(newWinner as any);
+        if (newWinner && !winner) {
+          setWinner(newWinner as any);
+          if (newWinner === myTeam || (!myTeam && newWinner === 'player')) {
+            playSound('win');
+          } else {
+            playSound('lose');
+          }
+          if (isOnline && newWinner === myTeam && auth.currentUser) {
+            setDoc(doc(db, 'stats', auth.currentUser.uid), {
+               userId: auth.currentUser.uid,
+               displayName: auth.currentUser.displayName || 'Commander',
+               victories: increment(1)
+            }, { merge: true }).catch(console.error);
+          }
+        }
 
         if (isOnline) {
            updateOnlineState(newUnits, turn, activeTeam, newStatus, newWinner);
@@ -1005,7 +1276,7 @@ export default function Game({
       }, 500); 
       return () => clearTimeout(timer);
     }
-  }, [units, mode, isOnline, turn, activeTeam]);
+  }, [units, mode, isOnline, turn, activeTeam, winner, myTeam]);
 
   const handleCellClick = (x: number, y: number) => {
     if (!isOnline && gameMode === 'local_ai' && mode === 'play' && activeTeam === 'enemy') return; // Block player input during AI turn
@@ -1024,6 +1295,7 @@ export default function Game({
          const newUnits = [...units];
          newUnits.splice(existingUnitIndex, 1);
          addLog(`[RECALL] ${existingUnit.team === 'player' ? 'Blue' : 'Red'} ${existingUnit.class.className} withdrawn from grid.`, 'system');
+         playSound('click');
          if (isOnline) {
             updateDoc(doc(db, 'matches', onlineMatch.id), { units: JSON.stringify(newUnits) });
          } else {
@@ -1047,6 +1319,11 @@ export default function Game({
           team: teamSelection,
         };
         addLog(`[DEPLOY] ${teamSelection === 'player' ? 'Blue' : 'Red'} ${selectedClass.className} deployed at quadrant ${getCoord(x, y)}.`, 'system');
+        playSound('deploy');
+        const deployId = crypto.randomUUID();
+        setDamageTexts(prev => [...prev, { id: deployId, x, y, amount: -2 }]);
+        setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== deployId)), 1000);
+        
         const newUnitsArray = [...units, newUnit];
         if (isOnline) {
            updateDoc(doc(db, 'matches', onlineMatch.id), { units: JSON.stringify(newUnitsArray) });
@@ -1070,6 +1347,7 @@ export default function Game({
 
       if (existingUnit) {
          if (existingUnit.team === activeTeam) {
+            playSound('click');
             setSelectedUnitId(existingUnit.id);
          } else if (selectedUnitId) {
             const unit = units.find(u => u.id === selectedUnitId);
@@ -1077,42 +1355,94 @@ export default function Game({
                const dist = Math.abs(unit.x - existingUnit.x) + Math.abs(unit.y - existingUnit.y);
                const hasLos = checkLineOfSight(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment);
                if (dist <= unit.class.stats.range && hasLos && unit.ap >= 1) {
-                  const damageId = crypto.randomUUID();
-                  setDamageTexts(prev => [...prev, { id: damageId, x: existingUnit.x, y: existingUnit.y, amount: unit.class.stats.damage }]);
-                  setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
-                  setShake(true);
-                  setTimeout(() => setShake(false), 200);
-
-                  const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
-                  const newUnits = units.map(u => {
-                    if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                    if (u.id === existingUnit.id) return { ...u, hp: u.hp - unit.class.stats.damage };
-                    return u;
-                  });
-
-                  setTimeout(() => {
-                    setUnits(curr => curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u));
-                  }, 800);
-                  
-                  const relHP = existingUnit.hp - unit.class.stats.damage;
+                  const { chance, isCovered } = calculateHitChance(unit, existingUnit, mapEnvironment);
+                  const isHit = Math.random() * 100 <= chance;
                   const attackerColor = unit.team === 'player' ? 'Blue' : 'Red';
                   const targetColor = existingUnit.team === 'player' ? 'Blue' : 'Red';
-                  addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} for ${unit.class.stats.damage} damage!`, 'combat');
-                  if (relHP <= 0) {
-                      addLog(`[FATALITY] ${targetColor} ${existingUnit.class.className} neutralized under hostile fire.`, 'death');
-                  }
+                  
+                  const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
 
-                  if(isOnline) updateOnlineState(newUnits, turn, activeTeam);
-                  else setUnits(newUnits);
+                  if (isHit) {
+                    if (unit.team === (myTeam || 'player')) {
+                      setBattleStats(prev => ({
+                        ...prev,
+                        playerShotsFired: prev.playerShotsFired + 1,
+                        playerShotsHit: prev.playerShotsHit + 1,
+                        playerDamageDealt: prev.playerDamageDealt + unit.class.stats.damage
+                      }));
+                    }
+                    playSound('attack');
+                    setTimeout(() => playSound('damage'), 150);
+                    const damageId = crypto.randomUUID();
+                    setDamageTexts(prev => [...prev, { id: damageId, x: existingUnit.x, y: existingUnit.y, amount: unit.class.stats.damage }]);
+                    setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+                    setShake(true);
+                    setTimeout(() => setShake(false), 200);
+
+                    const newUnits = units.map(u => {
+                      if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+                      if (u.id === existingUnit.id) return { ...u, hp: u.hp - unit.class.stats.damage };
+                      return u;
+                    });
+
+                    setTimeout(() => {
+                      setUnits(curr => curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u));
+                    }, 800);
+                    
+                    const relHP = existingUnit.hp - unit.class.stats.damage;
+                    addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${unit.class.stats.damage} damage!${isCovered ? ' (Target partially behind cover)' : ''}`, 'combat');
+                    if (relHP <= 0) {
+                        addLog(`[FATALITY] ${targetColor} ${existingUnit.class.className} neutralized under hostile fire.`, 'death');
+                    }
+
+                    if(isOnline) updateOnlineState(newUnits, turn, activeTeam);
+                    else setUnits(newUnits);
+                  } else {
+                    // Miss
+                    if (unit.team === (myTeam || 'player')) {
+                      setBattleStats(prev => ({
+                        ...prev,
+                        playerShotsFired: prev.playerShotsFired + 1
+                      }));
+                    }
+                    playSound('attack');
+                    const effectId = crypto.randomUUID();
+                    setDamageTexts(prev => [...prev, { id: effectId, x: existingUnit.x, y: existingUnit.y, amount: 0 }]); // Using 0 to represent miss
+                    setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+
+                    const newUnits = units.map(u => {
+                      if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+                      return u;
+                    });
+
+                    setTimeout(() => {
+                      setUnits(curr => curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u));
+                    }, 800);
+
+                    addLog(`[MISS] ${attackerColor} ${unit.class.className} fired on ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) but missed!${isCovered ? ' (Target shielded by cover)' : ''}`, 'info');
+
+                    if(isOnline) updateOnlineState(newUnits, turn, activeTeam);
+                    else setUnits(newUnits);
+                  }
+               } else {
+                  playSound('click');
+                  if (unit.ap < 1) {
+                     addLog(`[COMMAND REJECTED] ${unit.class.className} has no Action Points (AP) remaining in this cycle!`, 'system');
+                  } else if (dist > unit.class.stats.range) {
+                     addLog(`[COMMAND REJECTED] Target is out of range! Target distance is ${dist} tiles, but ${unit.class.className} weapon range is ${unit.class.stats.range} tiles.`, 'system');
+                  } else if (!hasLos) {
+                     addLog(`[COMMAND REJECTED] Line of Sight is completely blocked by solid wall obstacles!`, 'system');
+                  }
                }
             } else {
+               playSound('click');
                setSelectedUnitId(existingUnit.id);
             }
          }
       } else if (selectedUnitId) {
          const reachableObj = isReachableTileObj(x, y);
          const unit = units.find(u => u.id === selectedUnitId);
-         if (reachableObj && unit) {
+         if (reachableObj && unit && unit.team === activeTeam) {
            const moveFacing = getFacingDirection(unit.x, unit.y, x, y, unit.facing);
            const newUnits = units.map(u => 
              u.id === selectedUnitId 
@@ -1121,6 +1451,7 @@ export default function Game({
            );
            const unitTeamColor = unit.team === 'player' ? 'Blue' : 'Red';
            addLog(`[MANEUVER] ${unitTeamColor} ${unit.class.className} advanced to quadrant ${getCoord(x, y)} (used ${reachableObj.apCost} AP).`, 'info');
+           playSound('move');
            setSelectedUnitId(null);
            if(isOnline) updateOnlineState(newUnits, turn, activeTeam);
            else setUnits(newUnits);
@@ -1168,7 +1499,7 @@ export default function Game({
     for (let i = 1; i < targetPathTiles.length - 1; i++) {
       const p = targetPathTiles[i];
       const cell = mapEnvironment[p.y]?.[p.x];
-      if (cell && (cell.type === 'wall' || cell.type === 'crate')) {
+      if (cell && cell.type === 'wall') {
         firstBlockingTile = p;
         break;
       }
@@ -1178,7 +1509,7 @@ export default function Game({
   const renderHoverHUD = () => {
     if (!hoveredTile) {
       return (
-        <div className="w-full bg-[#12150e]/90 border border-[#2d3324] py-1.5 px-3 rounded-t-lg flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
+        <div className="w-full bg-[#12150e]/95 border border-[#2d3324]/80 py-1.5 px-3 rounded-t-lg flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/45 animate-ping"></span>
             <span className="glow-text-green font-semibold">SYSTEM IDLE // SELECT ACTIVE VECTOR</span>
@@ -1214,22 +1545,74 @@ export default function Game({
       colorClass = "text-red-400";
     }
 
+    // Reachable tile cost calculation
+    const reachableObj = mode === 'play' && selectedUnit && selectedUnit.team === activeTeam ? reachableTiles.find(t => t.x === x && t.y === y) : null;
+    let pathLabel = "";
+    if (reachableObj) {
+      pathLabel = ` // MOVEMENT REQUISITION: -${reachableObj.apCost} AP`;
+    }
+
+    // Enemy targeting details
+    let attackContextLabel = "";
+    if (selectedUnit && unitOnTile && unitOnTile.team !== selectedUnit.team && mode === 'play' && selectedUnit.team === activeTeam) {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+      const inRange = dist <= selectedUnit.class.stats.range;
+      if (inRange && hasLos && selectedUnit.ap >= 1) {
+        const { chance } = calculateHitChance(selectedUnit, unitOnTile, mapEnvironment);
+        attackContextLabel = ` // TARGET LOCK: ACQUIRED (${chance}% HIT) // CLICK TO FIRE`;
+      } else if (!inRange) {
+        attackContextLabel = " // TARGET LOCK: OUT OF MAX WEAPON RANGE";
+      } else if (selectedUnit.ap < 1) {
+        attackContextLabel = " // TARGET LOCK: NO ACTION POINTS AVAILABLE (NO AP)";
+      } else if (!hasLos) {
+        attackContextLabel = " // TARGET LOCK: BLOCKED (OBSTRUCTION INTERFERENCE)";
+      }
+    }
+
+    const isPlayerTeam = unitOnTile?.team === 'player';
+
     return (
-      <div className="w-full bg-[#12150e]/95 border border-[#2d3324] py-1.5 px-3 rounded-t-lg flex flex-col md:flex-row justify-between items-start md:items-center text-[10px] font-mono select-none gap-2">
+      <div className="w-full bg-[#12150e]/95 border border-[#2d3324] py-2 px-3 rounded-t-lg flex flex-col md:flex-row justify-between items-start md:items-center text-[10px] font-mono select-none gap-2 animate-fade-in shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-zinc-500">SECTOR:</span>
+          <span className="text-zinc-500 font-bold">SECTOR:</span>
           <span className="text-white bg-[#1a2014] px-1.5 py-0.5 rounded border border-[#2d3324] font-bold font-mono">
             {String.fromCharCode(65 + x)}{(y + 1).toString().padStart(2, '0')} [{x.toString().padStart(2, '0')}, {y.toString().padStart(2, '0')}]
           </span>
           <span className="text-zinc-500">|</span>
           <span className="text-zinc-500 font-bold">TYPE:</span>
           <span className={`${colorClass} font-bold tracking-wider uppercase`}>{typeStr}</span>
+          {pathLabel && <span className="text-sky-400 font-black animate-pulse">{pathLabel}</span>}
         </div>
-        <div className="text-[10px] uppercase">
+        
+        <div className="text-[10px] uppercase w-full md:w-auto">
           {unitOnTile ? (
-            <span className={`${unitOnTile.team === 'player' ? 'text-sky-400 font-bold' : 'text-red-400 font-bold'} glow-text`}>
-              TARGET DETECTED // {unitOnTile.class.className} [{unitOnTile.hp} / {unitOnTile.class.stats.maxHP} HP]
-            </span>
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-1.5 md:gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-zinc-505">UNIT:</span>
+                <span className={`${isPlayerTeam ? 'text-sky-400 font-black' : 'text-rose-400 font-black'} glow-text`}>
+                  {unitOnTile.class.className.toUpperCase()} ({isPlayerTeam ? 'BLUE SQUAD' : 'RED FORCE'})
+                </span>
+              </div>
+              <div className="flex items-center gap-1 md:border-l md:border-[#2d3324]/50 md:pl-3">
+                <span className="text-zinc-500">HP:</span>
+                <span className="text-white font-black">{unitOnTile.hp}/{unitOnTile.class.stats.maxHP}</span>
+                <span className="text-zinc-500 ml-1.5">AP:</span>
+                <span className="text-amber-400 font-black">{unitOnTile.ap}/2</span>
+                <span className="text-zinc-500 ml-1.5">RNG:</span>
+                <span className="text-zinc-300 font-bold">{unitOnTile.class.stats.range}S</span>
+              </div>
+              {unitOnTile.class.ability && (
+                <div className="text-[9.5px] text-emerald-400 md:border-l md:border-[#2d3324]/50 md:pl-3 max-w-xs truncate" title={unitOnTile.class.ability.description}>
+                  <span className="text-zinc-500 mr-1 font-bold">SPEC:</span> {unitOnTile.class.ability.name.toUpperCase()}
+                </div>
+              )}
+              {attackContextLabel && (
+                <span className="text-[#f43f5e] font-black animate-pulse md:border-l md:border-[#2d3324]/50 md:pl-3">
+                  {attackContextLabel}
+                </span>
+              )}
+            </div>
           ) : (
             <span className="text-zinc-400">{descStr}</span>
           )}
@@ -1359,10 +1742,14 @@ export default function Game({
               
               {/* Pulsing red reactor warning core */}
               <div className="w-2.5 h-2.5 rounded-full bg-rose-500 border border-rose-300 shadow-[0_0_15px_rgba(244,63,94,1)] animate-pulse mb-0.5" />
-              <span className="text-[6.5px] text-red-400 font-mono leading-none tracking-widest scale-90 select-none font-black drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]">BLOCK</span>
               
-              <div className="absolute top-1.5 left-1.5 text-[4.5px] text-red-500/90 font-mono font-extrabold">B-99</div>
-              <div className="absolute bottom-1.5 right-1.5 text-[4.5px] text-red-500/90 font-mono font-extrabold font-black">SHIELD</div>
+              {mode === 'deploy' && (
+                <>
+                  <span className="text-[6.5px] text-red-400 font-mono leading-none tracking-widest scale-90 select-none font-black drop-shadow-[0_0_4px_rgba(239,68,68,0.5)]">BLOCK</span>
+                  <div className="absolute top-1.5 left-1.5 text-[4.5px] text-red-500/90 font-mono font-extrabold">B-99</div>
+                  <div className="absolute bottom-1.5 right-1.5 text-[4.5px] text-red-500/90 font-mono font-extrabold font-black">SHIELD</div>
+                </>
+              )}
             </div>
           );
         } else if (cell.type === 'crate') {
@@ -1377,57 +1764,77 @@ export default function Game({
               <div className="absolute bottom-0.5 right-0.5 w-[3.5px] h-[3.5px] border-b border-r border-amber-400" />
               
               <div className="absolute inset-[3px] border border-dashed border-amber-500/35 pointer-events-none" />
-              <span className="text-[7.5px] text-amber-400 font-mono tracking-tighter leading-none font-black uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">CARGO</span>
-              <span className="text-[5px] text-amber-500/90 font-mono mt-0.5 font-black">C-904</span>
+              {mode === 'deploy' && (
+                <>
+                  <span className="text-[7.5px] text-amber-400 font-mono tracking-tighter leading-none font-black uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">CARGO</span>
+                  <span className="text-[5px] text-amber-500/90 font-mono mt-0.5 font-black">C-904</span>
+                </>
+              )}
             </div>
           );
         }
 
-        // Action Point deploy warning zones
+        // Action Point deploy warning zones (Visible simultaneously on both allied and enemy regions)
         let deployGridOverlay = null;
         let overlayClass = '';
         if (mode === 'deploy') {
            if (cell.type !== 'wall') {
-              if (teamSelection === 'player' && y >= 8) {
-                overlayClass = 'warning-stripes-blue opacity-30 border-t border-sky-400/20';
+              if (y >= 8) {
+                const isActive = teamSelection === 'player';
+                overlayClass = isActive 
+                  ? 'warning-stripes-blue opacity-35 border-t border-sky-400/20'
+                  : 'warning-stripes-blue opacity-15 border-t border-sky-505/10';
                 deployGridOverlay = (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1">
-                    <span className="text-[6px] font-mono text-sky-400 font-bold opacity-30 tracking-widest scale-75 select-none uppercase">PLY_DEP</span>
+                    <span className={`text-[6px] font-mono ${isActive ? 'text-sky-300 font-black' : 'text-sky-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
+                      BLUE ZONE
+                    </span>
                   </div>
                 );
-              }
-              if (teamSelection === 'enemy' && y <= 6) {
-                overlayClass = 'warning-stripes-red opacity-30 border-b border-red-500/20';
+              } else if (y <= 6) {
+                const isActive = teamSelection === 'enemy';
+                overlayClass = isActive 
+                  ? 'warning-stripes-red opacity-35 border-b border-red-500/20'
+                  : 'warning-stripes-red opacity-15 border-b border-red-505/10';
                 deployGridOverlay = (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1">
-                    <span className="text-[6px] font-mono text-red-400 font-bold opacity-30 tracking-widest scale-75 select-none uppercase">ENM_DEP</span>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1 text-center">
+                    <span className={`text-[6px] font-mono ${isActive ? 'text-red-305 font-black' : 'text-red-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
+                      RED ZONE
+                    </span>
                   </div>
                 );
               }
            }
         }
         
-        if (reachableObj && !unit) {
-           if (reachableObj.apCost === 1) {
+        if (!isAbilityActive && mode === 'play' && selectedUnit && selectedUnit.team === activeTeam) {
+           if (reachableObj && !unit) {
              overlayClass = 'bg-sky-500/20 border-2 border-sky-400/50 hover:bg-sky-400/35 cursor-cell shadow-[inset_0_0_8px_rgba(56,189,248,0.3)] z-5';
-           } else {
-             overlayClass = 'bg-amber-500/20 border-2 border-amber-400/50 hover:bg-amber-400/35 cursor-cell shadow-[inset_0_0_8px_rgba(251,191,36,0.3)] z-5';
+             cellDecoration = (
+                <div className="hidden">
+                  -{reachableObj.apCost} AP
+                </div>
+             );
+           } else if (unit && unit.team !== activeTeam && unit.hp > 0 && selectedUnit.ap >= 1) {
+              const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+              if (dist <= selectedUnit.class.stats.range) {
+                 const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+                 if (hasLos) {
+                    overlayClass = 'bg-red-500/20 border-2 border-red-500/50 hover:bg-red-500/35 cursor-crosshair shadow-[inset_0_0_8px_rgba(239,68,68,0.3)] z-5';
+                 }
+              }
            }
-           cellDecoration = (
-              <div className="absolute bottom-1 right-1 text-[8px] font-mono font-black text-amber-400/80 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] z-10 select-none bg-black/50 px-1 rounded-sm border border-amber-500/10">
-                -{reachableObj.apCost} AP
-              </div>
-           );
         }
 
-        if (isAbilityActive && selectedUnit && selectedUnit.team === activeTeam && isValidAbilityTarget(x, y)) {
-           const ability = selectedUnit.class.ability!;
-           if (ability.type === 'heal' || ability.type === 'buff') {
-              overlayClass = 'bg-emerald-500/20 border-2 border-emerald-400/60 cursor-crosshair shadow-[inset_0_0_12px_rgba(74,222,128,0.4)] animate-pulse z-5';
-           } else if (ability.type === 'deploy') {
-              overlayClass = 'bg-cyan-500/20 border-2 border-cyan-400/60 cursor-crosshair shadow-[inset_0_0_12px_rgba(56,189,248,0.4)] animate-pulse z-5';
-           } else {
-              overlayClass = 'bg-rose-500/20 border-2 border-rose-400/60 cursor-crosshair shadow-[inset_0_0_12px_rgba(244,63,94,0.4)] animate-pulse z-5';
+        if (isAbilityActive && mode === 'play' && selectedUnit && selectedUnit.team === activeTeam && selectedUnit.class.ability) {
+           const ability = selectedUnit.class.ability;
+           const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+           const inRange = ability.range !== undefined ? dist <= ability.range : false;
+           
+           if (isValidAbilityTarget(x, y)) {
+              overlayClass = 'bg-yellow-500/30 border-2 border-yellow-400/80 cursor-crosshair shadow-[inset_0_0_12px_rgba(234,179,8,0.5)] animate-pulse z-5';
+           } else if (inRange && ability.type !== 'self') {
+              overlayClass = 'bg-yellow-500/10 border border-yellow-500/20 z-1 pointer-events-none';
            }
         }
 
@@ -1437,15 +1844,27 @@ export default function Game({
           obstacleAlert = (
             <div className="absolute inset-0 bg-rose-950/45 border border-red-500 flex flex-col items-center justify-center animate-pulse pointer-events-none z-20">
               <div className="absolute inset-0 warning-stripes-red opacity-25"></div>
-              <span className="text-[6.5px] font-mono text-rose-300 font-extrabold bg-black/85 px-1 py-0.5 rounded shadow tracking-tighter uppercase">BLOCK</span>
+              <span className="hidden">BLOCK</span>
             </div>
           );
         }
 
         let losClass = '';
+        let hitChanceInfo = null;
         if (mode === 'play' && selectedUnit && selectedUnit.team === activeTeam && hoveredTile?.x === x && hoveredTile?.y === y && unit && unit.team !== activeTeam) {
            const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
-           if (hasLos) losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10 scale-105 transition-transform';
+           if (hasLos) {
+             losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10 scale-105 transition-transform';
+             const { chance } = calculateHitChance(selectedUnit, unit, mapEnvironment);
+             hitChanceInfo = (
+                <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 z-20">
+                   <div className="bg-red-950/90 text-red-400 text-[6px] font-black font-mono px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.6)] border border-red-500/50 flex flex-col items-center leading-none">
+                     <span>HIT</span>
+                     <span>{chance}%</span>
+                   </div>
+                </div>
+             );
+           }
         }
 
         if (unit) {
@@ -1527,7 +1946,14 @@ export default function Game({
                      </div>
                   );
                } else if (hoveredTile?.x === unit.x && hoveredTile?.y === unit.y) {
-                  const reasonText = !inRange ? 'RANGE' : 'OBST';
+                  let reasonText = 'OBST';
+                  if (!inRange) {
+                     reasonText = 'RANGE';
+                  } else if (selectedUnit.ap < 1) {
+                     reasonText = 'NO AP';
+                  } else if (!hasLos) {
+                     reasonText = 'OBST';
+                  }
                   targetBadge = (
                      <div className="absolute -top-1.5 -right-1.5 bg-amber-600 border border-amber-400 text-[6px] text-white font-mono scale-80 px-1 py-0.5 rounded shadow z-40 font-black">
                         {reasonText}
@@ -1537,37 +1963,63 @@ export default function Game({
             }
 
             const isPlayerTeam = unit.team === 'player';
-            const factionTag = (
-              <div className={`absolute top-[2px] left-[3px] px-[4px] py-[0.5px] rounded-[2px] pointer-events-none select-none z-20 ${isPlayerTeam ? 'bg-sky-500 text-black shadow-[0_0_4px_rgba(56,189,248,0.4)]' : 'bg-rose-600 text-white shadow-[0_0_4px_rgba(244,63,94,0.4)]'}`}>
-                <span className="text-[5.5px] font-mono leading-none tracking-tighter uppercase font-black">
-                  {isPlayerTeam ? 'BLUE' : 'OPP'}:{unit.class.className.slice(0, 3)}
-                </span>
-              </div>
-            );
+            const isHovered = hoveredTile?.x === unit.x && hoveredTile?.y === unit.y;
 
-            const apLights = (
-              <div className="absolute top-[2px] right-[3px] flex gap-[1px] items-center pointer-events-none z-20 bg-black/70 px-[2.5px] py-[1px] rounded-[1.5px] border border-white/5">
-                {Array.from({ length: 2 }).map((_, i) => (
-                   <span 
-                     key={i} 
-                     className={`w-[3px] h-[3px] rounded-full transition-all ${
-                        i < unit.ap 
-                        ? 'bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.9)]' 
-                        : 'bg-zinc-850'
-                     }`}
-                   />
-                ))}
+            // Dynamic tactical HUD pop-up panel info card shown only on hover
+            const hoverPopup = isHovered ? (
+              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-44 bg-[#0d100a]/95 border-2 border-[#475231]/90 rounded-lg p-2 shadow-[0_10px_25px_rgba(0,0,0,0.9)] pointer-events-none select-none z-50 animate-fade-in font-mono flex flex-col gap-1 text-[8.5px] uppercase tracking-wider backdrop-blur-md">
+                {/* Header with Title and Team */}
+                <div className="flex items-center justify-between border-b border-[#2d3324] pb-1 mb-1">
+                  <span className={`font-black ${isPlayerTeam ? 'text-sky-400' : 'text-rose-405'}`}>
+                    {unit.class.className}
+                  </span>
+                  <span className={`text-[7px] font-bold px-1 rounded ${isPlayerTeam ? 'bg-sky-955 text-sky-400 border border-sky-850' : 'bg-rose-955 text-rose-455 border border-rose-900'}`}>
+                    {isPlayerTeam ? 'BLUE' : 'RED'}
+                  </span>
+                </div>
+                {/* HP Stats */}
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex justify-between text-[#bfcfb5] text-[7.5px] font-bold">
+                    <span>HP / INTEGRITY:</span>
+                    <span className="font-mono text-white font-black">{unit.hp} / {unit.class.stats.maxHP}</span>
+                  </div>
+                  <div className="w-full h-1 bg-black/50 border border-[#2d3422] rounded overflow-hidden p-[0.3px]">
+                    <div 
+                      className={`h-full rounded-sm transition-all duration-300 ${unit.hp < unit.class.stats.maxHP * 0.35 ? 'bg-red-500' : 'bg-emerald-450'}`}
+                      style={{ width: `${Math.max(0, (unit.hp / unit.class.stats.maxHP) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+                {/* AP & Range Stats */}
+                <div className="flex justify-between items-center text-[#bfcfb5] text-[7.5px] mt-0.5">
+                  <div className="flex items-center gap-1">
+                     <span>AP / ACTION:</span>
+                     <div className="flex gap-[2px]">
+                       {Array.from({ length: 2 }).map((_, i) => (
+                          <span 
+                            key={i} 
+                            className={`w-1.5 h-1.5 rounded-full ${
+                               i < unit.ap 
+                               ? 'bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.9)]' 
+                               : 'bg-zinc-850'
+                            }`}
+                          />
+                       ))}
+                     </div>
+                  </div>
+                  <div>
+                    <span>RNG: <span className="text-white font-black">{unit.class.stats.range}T</span></span>
+                  </div>
+                </div>
+                {/* Status Indicator */}
+                <div className="text-[7px] font-bold text-center mt-1 pt-0.5 border-t border-[#2d3324]/50 flex items-center justify-center gap-1 text-[#bfcfb5]">
+                  <span className={`w-1 h-1 rounded-full ${unit.ap > 0 ? 'bg-emerald-400 animate-ping' : 'bg-zinc-500'}`} />
+                  <span>
+                    {unit.ap > 0 ? "ACTION AVAILABLE" : "STANDBY"}
+                  </span>
+                </div>
               </div>
-            );
-
-            const healthBar = (
-              <div className="absolute left-[8%] right-[8%] bottom-[4px] h-[2.5px] bg-black/80 border border-zinc-950 rounded-full overflow-hidden p-[0.3px] z-20">
-                <div 
-                  className={`h-full rounded-full transition-all duration-300 ${unit.hp < unit.class.stats.maxHP * 0.35 ? 'bg-red-500 shadow-[0_0_4px_#f43f5e]' : 'bg-emerald-400 shadow-[0_0_4px_rgba(74,222,128,0.5)]'}`} 
-                  style={{ width: `${Math.max(0, (unit.hp / unit.class.stats.maxHP) * 100)}%` }}
-                />
-              </div>
-            );
+            ) : null;
 
             const unitSpriteFrame = (
               <div className="w-full h-full p-1 flex items-center justify-center relative overflow-visible select-none pointer-events-none">
@@ -1586,14 +2038,13 @@ export default function Game({
                 id={`unit-card-${unit.id}`}
                 className={`absolute inset-0 flex flex-col justify-center items-center transition-all duration-300 z-10 ${targetOverlayClass} ${deathClass}`}
               >
-                 {targetBadge}
+                 {/* clean board: hitChanceInfo shown in HUD */}
+                 {/* clean board: lock/range indicator is in HUD */}
                  {selectionReticle}
                  {activeUnitPulseRing}
+                 {mode === 'deploy' && hoverPopup}
                  
-                 {factionTag}
-                 {apLights}
                  {unitSpriteFrame}
-                 {healthBar}
               </div>
             );
         }
@@ -1623,13 +2074,16 @@ export default function Game({
                   if (dt.amount === -1) {
                      displayText = '+1 AP';
                      colorClass = 'text-amber-400';
+                  } else if (dt.amount === -2) {
+                     displayText = 'DEPLOYED';
+                     colorClass = 'text-cyan-400';
                   } else {
                      displayText = `+${Math.abs(dt.amount)} HP`;
                      colorClass = 'text-emerald-400';
                   }
                } else if (dt.amount === 0) {
-                  displayText = 'CONSTRUCT';
-                  colorClass = 'text-cyan-400';
+                  displayText = 'MISS';
+                  colorClass = 'text-zinc-400';
                }
                return (
                  <div key={dt.id} className="absolute inset-0 z-50 flex items-center justify-center animate-out slide-out-to-top-8 fade-out duration-1000 fill-mode-forwards pointer-events-none">
@@ -1692,7 +2146,11 @@ export default function Game({
               <button
                 key={c.className}
                 disabled={deployedCount >= 4 && !isSelected}
-                onClick={() => { setSelectedClass(c); setTeamSelection(team); }}
+                onClick={() => { 
+                  setSelectedClass(c); 
+                  setTeamSelection(team); 
+                  setActivePanel(null); // Automagic close for visual placement feedback on full board!
+                }}
                 className={`
                   text-left p-1 sm:p-1.5 rounded border transition-all flex flex-col justify-between cursor-pointer min-h-[48px] sm:min-h-[58px]
                   ${isSelected 
@@ -1727,115 +2185,6 @@ export default function Game({
     );
   };
 
-  const renderUnitInfo = (team: 'player' | 'enemy') => {
-    const isPlayer = team === 'player';
-    const activeColor = isPlayer ? 'text-sky-400' : 'text-rose-400';
-    const isMyUnitControl = mode === 'play' && selectedUnit && selectedUnit.team === team && activeTeam === team && (!isOnline || myTeam === team);
-
-    if (selectedUnit && selectedUnit.team === team) {
-      // Find the coordinate of this unit
-      const unitCoord = `${String.fromCharCode(65 + selectedUnit.x)}${(selectedUnit.y + 1).toString().padStart(2, '0')}`;
-      
-      return (
-         <div className="flex flex-col bg-black/45 rounded border border-[#2d3422]/65 w-full gap-3 p-3">
-            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-               <div className="flex gap-3 items-center min-w-0">
-                  {/* Tactical Holographic Video Feed Box */}
-                  <div className="w-12 h-12 relative bg-black border border-[#2d3422]/85 rounded overflow-hidden shrink-0 group shadow-md text-emerald-500">
-                    {/* Seeded Operator Satellite Image Styled to Cyberpunk Nightvision */}
-                    <img 
-                      src={`https://picsum.photos/seed/cyber-operator-${selectedUnit.class.className.toLowerCase()}-${selectedUnit.team}/110/110`}
-                      alt={`${selectedUnit.class.className} Live Feed`}
-                      referrerPolicy="no-referrer"
-                      className={`w-full h-full object-cover opacity-60 mix-blend-color-dodge transition-all duration-300 filter contrast-135 brightness-110 grayscale saturate-[150%] ${selectedUnit.team === 'player' ? 'hue-rotate-[140deg] sepia-[20%]' : 'hue-rotate-[-30deg] sepia-[10%] brightness-95 animate-pulse'}`}
-                    />
-                    
-                    {/* Dynamic Helmet Overlay centered on top */}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                      <UnitHelmetAvatar classNameVal={selectedUnit.class.className} team={selectedUnit.team} className="w-8 h-8 border-transparent bg-transparent shrink-0 opacity-85 shadow-none" />
-                    </div>
-
-                    {/* Scanlines Effect */}
-                    <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none opacity-40"></div>
-                  </div>
-                 <div className="min-w-0">
-                   <h3 className="font-extrabold uppercase tracking-wider text-white text-sm leading-tight flex items-center gap-2">
-                     {selectedUnit.class.className}
-                     <span className="text-[8px] bg-[#fbbf24]/10 border border-[#fbbf24]/30 rounded text-[#fbbf24] font-mono px-1.5 py-[1px] font-black select-none shrink-0">
-                       LOC: {unitCoord}
-                     </span>
-                   </h3>
-                   <p className="text-[10px] text-[#8b9180] mt-1 uppercase leading-snug">{selectedUnit.class.description}</p>
-                 </div>
-               </div>
-
-               <div className="flex gap-3 shrink-0 w-full md:w-auto mt-2 md:mt-0">
-                  <div className="text-center bg-black/40 border border-[#2d3422]/40 px-3 py-1.5 rounded flex-1 md:flex-initial">
-                    <div className="text-[8px] text-[#8b9180] font-bold uppercase tracking-wider mb-0.5">HEALTH POINTS</div>
-                    <div className="text-emerald-400 font-mono text-xs font-black tracking-wider flex items-center justify-center gap-1">
-                      {selectedUnit.hp} <span className="text-[9px] text-[#fbbf24]/60">/ {selectedUnit.class.stats.maxHP}</span>
-                    </div>
-                  </div>
-                  <div className="text-center bg-black/40 border border-[#2d3422]/40 px-3 py-1.5 rounded flex-1 md:flex-initial">
-                    <div className="text-[8px] text-[#8b9180] font-bold uppercase tracking-wider mb-0.5">ACTIONS (AP)</div>
-                    <div className="text-amber-400 font-mono text-xs font-black tracking-wider">
-                      {selectedUnit.ap} <span className="text-[9px] text-zinc-500">/ 2</span>
-                    </div>
-                  </div>
-                  <div className="text-left py-1 text-[8px] uppercase text-[#8b9180] font-bold space-y-0.5 pl-1 hidden sm:block">
-                    <div className="flex justify-between gap-3 font-mono"><span>Mobility:</span><span className="text-white font-black">{selectedUnit.class.stats.mobility}</span></div>
-                    <div className="flex justify-between gap-3 font-mono"><span>Damage:</span><span className="text-white font-black">{selectedUnit.class.stats.damage}</span></div>
-                    <div className="flex justify-between gap-3 font-mono"><span>Range:</span><span className="text-white font-black">{selectedUnit.class.stats.range}</span></div>
-                  </div>
-               </div>
-            </div>
-
-            {selectedUnit.class.ability && isMyUnitControl && (
-              <div className="pt-2 border-t border-[#2d3422]/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="flex-1 font-mono uppercase">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[8.5px] font-black text-amber-500 font-mono uppercase tracking-wider bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      SPE_ABIL: {selectedUnit.class.ability.name}
-                    </span>
-                    <span className="text-[8px] text-zinc-500 font-black">
-                      COSTS {selectedUnit.class.ability.apCost} Action Pt
-                    </span>
-                  </div>
-                  <p className="text-[8px] text-[#8b9180] lowercase italic leading-tight first-letter:uppercase mt-1.5">{selectedUnit.class.ability.description}</p>
-                </div>
-                
-                <button
-                  disabled={selectedUnit.ap < selectedUnit.class.ability.apCost}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (selectedUnit.class.ability?.type === 'self') {
-                       handleSelfAbility();
-                    } else {
-                       setIsAbilityActive(!isAbilityActive);
-                    }
-                  }}
-                  className={`
-                    px-4 py-1.5 text-[10px] font-black uppercase tracking-widest font-mono rounded border transition-all shrink-0 w-full sm:w-auto text-center cursor-pointer
-                    ${isAbilityActive 
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.15)] animate-pulse'
-                      : (selectedUnit.ap < selectedUnit.class.ability.apCost 
-                         ? 'bg-black/30 border-transparent text-zinc-600 cursor-not-allowed opacity-55' 
-                         : 'bg-[#202716] hover:bg-[#2d3a20] border-[#2d3422] text-[#fbbf24] shadow-[0_0_12px_rgba(45,52,34,0.3)] hover:scale-[1.01]')}
-                  `}
-                >
-                  {isAbilityActive ? 'Cancel Ability' : 'Activate Ability'}
-                </button>
-              </div>
-            )}
-         </div>
-      );
-    }
-    return (
-       <div className="text-[#8b9180] text-xs font-mono uppercase tracking-wider italic p-4 text-center border border-dashed border-[#2d3422]/50 rounded bg-black/10">
-         No active {team} squad unit selected. {mode === 'play' && team === activeTeam ? 'Click a unit on the grid battlefield to select.' : ''}
-       </div>
-    );
-  };
 
   const handleStartBattle = () => {
     let currentUnits = [...units];
@@ -1966,7 +2315,7 @@ export default function Game({
   };
 
   return (
-    <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-sans p-2 sm:p-4 flex flex-col items-center justify-start relative overflow-x-hidden md:overflow-y-auto">
+    <div className="min-h-screen w-full bg-[#0e100c] text-[#dae3ce] font-sans p-2 md:p-4 flex flex-col items-center justify-start relative overflow-y-auto select-none">
       {/* Subtle CRT Overlay */}
       <div className="pointer-events-none absolute inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
 
@@ -1990,27 +2339,22 @@ export default function Game({
       )}
 
       {winner && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-sm">
-           <div className="bg-[#141810] border-2 border-[#424f35] p-10 flex flex-col items-center min-w-[320px] shadow-2xl rounded-lg">
-              <h1 className={`text-4xl sm:text-6xl font-black uppercase tracking-[0.22em] mb-4 text-center ${winner === myTeam || winner === 'player' ? 'text-[#38bdf8] drop-shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'text-[#ef4444] drop-shadow-[0_0_15px_rgba(239,68,68,0.4)]'}`}>
-                {winner === myTeam ? 'TACTICAL VICTORY' : (myTeam ? 'TACTICAL DEFEAT' : (winner === 'player' ? 'BLUE TEAM WINS' : 'RED TEAM WINS'))}
-              </h1>
-              <p className="text-sm font-mono text-[#8b9180] tracking-widest uppercase mb-8">SECURE FIELD OPERATION DISMISSED</p>
-              <button 
-                onClick={onBack} 
-                className="px-8 py-3 bg-[#242b1e] hover:bg-[#323c2a] text-[#fbbf24] font-mono font-bold uppercase tracking-widest transition-colors border border-[#424f35] rounded shadow-md"
-              >
-                RETURN TO COMMAND
-              </button>
-           </div>
-        </div>
+        <PostBattleSummary
+          winner={winner}
+          myTeam={myTeam}
+          startingUnits={startingUnits}
+          survivingUnits={units}
+          battleStats={battleStats}
+          turn={turn}
+          onBack={onBack}
+        />
       )}
 
       {/* Main Grid Frame */}
-      <div className="w-full max-w-7xl mx-auto flex flex-col gap-4 relative z-10 animate-fade-in">
+      <div className="w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in">
         
         {/* TOP COMMAND HUD */}
-        <div className="w-full bg-[#141810] border border-[#2d3422] px-4 py-3.5 rounded-lg flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
+        <div className="w-full bg-[#141810] border border-[#2d3422] px-3.5 py-2 rounded-lg flex flex-col md:flex-row items-center justify-between gap-3 shadow-xl shrink-0">
           <div className="flex items-center gap-3">
             <div className="bg-[#21271b] p-2 rounded border border-[#3c4630] shrink-0">
               <Radar className="w-5 h-5 text-[#f59e0b] animate-spin" style={{ animationDuration: '6s' }} />
@@ -2038,24 +2382,36 @@ export default function Game({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+            {/* HUB PANEL POPUPS */}
             <div className="flex gap-1 p-0.5 bg-black/40 rounded border border-[#2d3324]/80 font-mono w-full sm:w-auto justify-center sm:justify-start">
               <button 
-                onClick={() => { 
-                   if (!isOnline && mode !== 'play') { setMode('deploy'); setSelectedUnitId(null); }
-                }}
-                className={`px-3 py-1.5 text-xs font-mono font-bold rounded uppercase transition-all flex items-center gap-1.5 ${mode === 'deploy' ? 'bg-[#2a3022] text-[#fbbf24] border border-[#48533b]' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'} ${mode === 'play' ? 'opacity-50 cursor-not-allowed hidden md:flex' : ''}`}
-                disabled={mode === 'play'}
+                onClick={() => setActivePanel(activePanel === 'roster' ? null : 'roster')}
+                className={`px-3 py-1.5 text-xs font-mono font-bold rounded uppercase transition-all flex items-center gap-1.5 ${activePanel === 'roster' ? 'bg-[#1e293b]/60 text-sky-400 border border-sky-500/30 font-black' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}
+                title="Toggle Roster & Integrity Stats"
               >
-                <Users className="w-3.5 h-3.5" /> Deploy Phase
+                <Users className="w-3.5 h-3.5" /> Roster
               </button>
               <button 
-                onClick={handleStartBattle}
-                disabled={!canStartBattleHook || (isOnline && !isHost && mode === 'deploy')}
-                className={`px-3 py-1.5 text-xs font-mono font-bold rounded uppercase transition-all flex items-center gap-1.5 ${mode === 'play' ? 'bg-[#2563eb]/20 border border-[#2563eb]/50 text-sky-300' : (canStartBattleHook ? 'bg-emerald-600 text-white animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)] border border-emerald-400' : 'text-zinc-400 hover:text-zinc-200 border border-transparent disabled:opacity-30')}`}
+                onClick={() => setActivePanel(activePanel === 'combat_log' ? null : 'combat_log')}
+                className={`px-3 py-1.5 text-xs font-mono font-bold rounded uppercase transition-all flex items-center gap-1.5 ${activePanel === 'combat_log' ? 'bg-[#3b2d16]/80 text-[#fbbf24] border border-amber-500/30 font-black' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}
+                title="Toggle Combat Logs"
               >
-                <Crosshair className="w-3.5 h-3.5" /> Battle Phase
+                <Activity className="w-3.5 h-3.5" /> Logs
+              </button>
+              <button 
+                onClick={() => setActivePanel(activePanel === 'leaderboard' ? null : 'leaderboard')}
+                className={`px-3 py-1.5 text-xs font-mono font-bold rounded uppercase transition-all flex items-center gap-1.5 ${activePanel === 'leaderboard' ? 'bg-[#3b0764]/20 text-purple-400 border border-purple-500/30 font-black' : 'text-zinc-400 hover:text-zinc-200 border border-transparent'}`}
+                title="Toggle Commander Leaderboard"
+              >
+                <Target className="w-3.5 h-3.5" /> Leaderboard
               </button>
             </div>
+
+            {mode === 'play' && (
+              <div className="flex gap-1 p-0.5 bg-black/40 rounded border border-[#2d3324]/80 font-mono text-xs text-[#afd19c] font-black items-center px-3 py-1.5 uppercase shrink-0">
+                <Crosshair className="w-3.5 h-3.5 text-red-500 animate-pulse" /> BATTLE LIVE
+              </div>
+            )}
 
             <button 
               onClick={onBack}
@@ -2067,171 +2423,669 @@ export default function Game({
         </div>
 
         {/* HUD CORE DISPLAY FLOW */}
-        <div className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col gap-3 w-full items-stretch relative">
           
-          {/* 0. SYSTEM STATUS CONTROL PORTAL */}
-          <div className="bg-[#141810] border border-[#38422a] p-3 sm:p-4 rounded-lg flex flex-col gap-3 shadow-lg select-none">
-            {/* STATUS BAR HUD */}
-            <div>
+          {/* 0. SYSTEM STATUS INTEGRATED HEADER */}
+          <div className="bg-[#12160d]/95 border border-[#303a24] p-2 rounded-lg flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0">
+            {/* HOVER FEEDBACK IN HEADER */}
+            <div className="flex-1 min-w-0">
               {renderHoverHUD()}
             </div>
 
-            {renderDeployGuidance()}
-
-            <TurnCounter 
-              turn={turn}
-              activeTeam={activeTeam}
-              mode={mode}
-              isOnline={isOnline}
-              myTeam={myTeam}
-              onEndTurn={handleEndTurn}
-              gameMode={gameMode}
-              timeLeft={timeLeft}
-              onForceEndTurn={handleEndTurn}
-              units={units}
-            />
+            {/* SECTOR RULES GUIDE BUTTONS & STATUS */}
+            <div className="w-full lg:w-auto flex items-center justify-start lg:justify-end shrink-0">
+              <TurnCounter 
+                turn={turn}
+                activeTeam={activeTeam}
+                mode={mode}
+                isOnline={isOnline}
+                myTeam={myTeam}
+                onEndTurn={handleEndTurn}
+                gameMode={gameMode}
+                timeLeft={timeLeft}
+                onForceEndTurn={handleEndTurn}
+                units={units}
+              />
+            </div>
           </div>
 
-          {/* 1. ENEMY/RED FORCES TERMINAL (TOP) */}
-          <div 
-            className={`p-2.5 sm:p-3.5 rounded-lg border transition-all duration-300 ${
-              (activeTeam === 'enemy' && mode === 'play') || (mode === 'deploy' && teamSelection === 'enemy') 
-                ? 'border-red-500/50 bg-red-950/10 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
-                : 'border-[#2d3422] bg-[#141810]/95'
-            } ${mode === 'deploy' && (!isOnline || myTeam === 'enemy') ? 'cursor-pointer hover:border-red-500/40' : ''}`}
-            onClick={() => {
-              if (mode === 'deploy' && (!isOnline || myTeam === 'enemy')) {
-                setTeamSelection('enemy');
-              }
-            }}
-          >
-             <h2 className="text-red-400 font-bold mb-3 uppercase tracking-widest text-xs font-mono flex items-center gap-2">
-               <div className={`w-2 h-2 rounded-full ${activeTeam === 'enemy' && mode === 'play' ? 'bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-red-910/20'}`}></div>
-               RED SQUAD (HOSTILE COMMAND) {isOnline && (myTeam === 'enemy' ? '(You)' : '(Opponent)')}
-               {mode === 'deploy' && <span className="text-zinc-500 font-normal font-mono normal-case text-[10px] ml-auto">Deploy in top rows</span>}
-             </h2>
-             {mode === 'deploy' ? renderRoster('enemy') : renderUnitInfo('enemy')}
-          </div>
-
-          {/* 2. GRID CONSOLE CARD (MIDDLE) */}
-          <div className="bg-[#141810] border border-[#2d3422] rounded-lg p-3 sm:p-5 flex flex-col items-center justify-start shadow-lg">
-            <div className="w-full">
-              
-              {/* Aligned Coordinate Scales with Battlefield Grid */}
-              <div className="w-full flex flex-col p-1 sm:p-2 bg-[#090b07] border border-[#1e2317] rounded overflow-hidden select-none">
-                {/* Column labels scale (A-O) */}
-                <div 
-                  className="grid gap-[1px] w-full mb-1" 
-                  style={{ 
-                    gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
-                    paddingLeft: '24px' // width of row labels column (20px) + gap space (4px)
-                  }}
-                >
-                  {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                    <div key={i} className="text-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black py-0.5 select-none uppercase tracking-wider bg-black/60 border border-[#445236] rounded-[1px]">
-                      {String.fromCharCode(65 + i)}
-                    </div>
-                  ))}
+          {/* TACTICAL REGION CALIBRATION (MAP SELECTION) */}
+          {mode === 'deploy' && (
+            <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-lg flex flex-col gap-3 shadow-lg select-none">
+              <div className="flex items-center justify-between border-b border-[#2d3422] pb-1.5 gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Radar className="w-4 h-4 text-amber-500 animate-spin" />
+                  <span className="text-[10px] sm:text-xs font-black font-mono uppercase tracking-widest text-amber-400">
+                    TACTICAL REGION CALIBRATION
+                  </span>
                 </div>
+                <span className="text-[8px] font-mono text-zinc-500 bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-800 uppercase">
+                  {MAPS.length} Balanced Arenas Available
+                </span>
+              </div>
 
-                <div className="flex w-full items-stretch">
-                  {/* Row labels vertical column (01-15) */}
-                  <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1">
-                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                      <div key={i} className="flex-1 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black bg-black/60 border border-[#445236] rounded-[1px] py-1 select-none">
-                        {(i + 1).toString().padStart(2, '0')}
-                      </div>
-                    ))}
+              {isOnline ? (
+                <div className="flex flex-col gap-3">
+                  <span className="text-[9px] font-mono text-zinc-405 text-zinc-400 uppercase leading-relaxed">
+                    SECNET multiplayer sector selection framework. Cast your tactical vote below. Final resolution is processed via Command AI evaluation or Grid Randomizer algorithms.
+                  </span>
+
+                  {/* THREE RANDOM SUGGESTIONS */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(onlineMatch?.suggestedMaps || []).map((mapId: string) => {
+                      const mapPreset = MAPS.find(m => m.id === mapId);
+                      if (!mapPreset) return null;
+                      
+                      const hostId = onlineMatch?.hostId;
+                      const guestId = onlineMatch?.guestId;
+                      const currentVotes = onlineMatch?.votes || {};
+                      
+                      const hasHostVoted = currentVotes[hostId] === mapId;
+                      const hasGuestVoted = guestId && currentVotes[guestId] === mapId;
+                      const myVote = currentVotes[userId || ''];
+                      const isMyVote = myVote === mapId;
+                      const isMapCurrentlyActive = selectedMapId === mapId;
+
+                      return (
+                        <button
+                          key={mapId}
+                          type="button"
+                          onClick={() => handleCastVote(mapId)}
+                          className={`text-left p-2 rounded transition-all text-xs font-mono uppercase flex flex-col justify-between min-h-[90px] border cursor-pointer group ${
+                            isMyVote
+                              ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)] font-extrabold'
+                              : isMapCurrentlyActive
+                              ? 'bg-zinc-900 border-zinc-700 text-zinc-300'
+                              : 'bg-black/30 border-zinc-800/80 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                          }`}
+                        >
+                          <div className="flex flex-col gap-1 w-full">
+                            <span className="font-extrabold text-[10.5px] tracking-tight flex items-center justify-between">
+                              {mapPreset.name}
+                              {isMapCurrentlyActive && (
+                                <span className="text-[7.5px] bg-sky-950/80 border border-sky-500/30 text-sky-400 px-1 py-0.5 rounded-sm font-black select-none">
+                                  ACTIVE
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[8px] font-normal text-zinc-500 group-hover:text-zinc-400 normal-case line-clamp-2 mt-0.5 leading-tight">
+                              {mapPreset.description}
+                            </span>
+                          </div>
+
+                          {/* VOTERS LABELS */}
+                          <div className="flex gap-1 items-center flex-wrap mt-2 pt-1 border-t border-zinc-800/50 w-full justify-between">
+                            <div className="flex gap-1">
+                              {hasHostVoted && (
+                                <span className="text-[7px] font-black bg-sky-500/10 text-sky-400 border border-sky-500/20 px-1 rounded" title="Blue Team Host Vote">
+                                  BLUE VOTE
+                                </span>
+                              )}
+                              {hasGuestVoted && (
+                                <span className="text-[7px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 px-1 rounded" title="Red Team Guest Vote">
+                                  RED VOTE
+                                </span>
+                              )}
+                            </div>
+                            {isMyVote && (
+                              <span className="text-[7px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1 rounded-sm">
+                                MY SELECTION
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  {/* Actual battlefield grid */}
-                  <div className="flex-1 relative">
-                    <div 
-                      className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'translate-x-1 translate-y-1' : ''}`}
-                      style={{ 
-                        gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                        backgroundColor: '#1b2015'
-                      }}
-                    >
-                      {renderGrid()}
-                    </div>
-                    {/* Floating Tactical Bubble for Selected Unit */}
-                    {selectedUnit && mode === 'play' && (
-                      <div 
-                        className="absolute z-50 pointer-events-none p-2"
-                        style={{
-                          left: selectedUnit.x > 7 ? '2px' : 'auto',
-                          right: selectedUnit.x <= 7 ? '2px' : 'auto',
-                          top: selectedUnit.y > 7 ? '2px' : 'auto',
-                          bottom: selectedUnit.y <= 7 ? '2px' : 'auto',
-                        }}
-                      >
-                        <div className="w-44 sm:w-52 bg-black/95 text-[#dae3ce] p-2 rounded border border-[#546843] shadow-[0_0_15px_rgba(0,0,0,0.8)] font-mono text-[8px] flex flex-col gap-1.5 opacity-95 backdrop-blur-sm relative">
-                           <div className="flex justify-between items-center border-b border-[#2d3422] pb-1">
-                             <span className={`font-extrabold text-[10px] truncate ${selectedUnit.team === 'player' ? 'text-sky-400' : 'text-rose-400'}`}>{selectedUnit.class.className}</span>
-                             <span className="bg-amber-400/20 border border-amber-500/30 text-amber-500 font-bold px-1 rounded truncate ml-1">{selectedUnit.class.archetype}</span>
-                           </div>
-                           <div className="text-[7.5px] italic text-[#8b9180] leading-tight break-words whitespace-normal">{selectedUnit.class.description}</div>
-                           <div className="grid grid-cols-4 gap-1 mt-1 text-center font-black">
-                             <div className="border border-[#2d3422] rounded p-1 bg-[#12150e] flex flex-col justify-center">
-                               <span className="text-[#8b9180] text-[6px] uppercase tracking-wider mb-0.5">HP</span>
-                               <span className="text-emerald-400">{selectedUnit.hp}</span>
-                             </div>
-                             <div className="border border-[#2d3422] rounded p-1 bg-[#12150e] flex flex-col justify-center">
-                               <span className="text-[#8b9180] text-[6px] uppercase tracking-wider mb-0.5">AP</span>
-                               <span className="text-amber-400">{selectedUnit.ap}</span>
-                             </div>
-                             <div className="border border-[#2d3422] rounded p-1 bg-[#12150e] flex flex-col justify-center">
-                               <span className="text-[#8b9180] text-[6px] uppercase tracking-wider mb-0.5">DMG</span>
-                               <span className="text-white">{selectedUnit.class.stats.damage}</span>
-                             </div>
-                             <div className="border border-[#2d3422] rounded p-1 bg-[#12150e] flex flex-col justify-center">
-                               <span className="text-[#8b9180] text-[6px] uppercase tracking-wider mb-0.5">RNG</span>
-                               <span className="text-white">{selectedUnit.class.stats.range}</span>
-                             </div>
-                           </div>
-                           {selectedUnit.class.ability && (
-                             <div className="border border-[#2d3422] rounded p-1.5 mt-0.5 bg-[#12150e]">
-                               <div className="flex justify-between items-center mb-0.5">
-                                 <span className="font-bold text-indigo-400 uppercase tracking-tighter">Spec: {selectedUnit.class.ability.name}</span>
-                                 <span className="text-zinc-500 text-[6.5px]">-{selectedUnit.class.ability.apCost} AP</span>
-                               </div>
-                               <span className="text-[#8b9180] text-[7px] break-words whitespace-normal leading-tight">{selectedUnit.class.ability.description}</span>
-                             </div>
-                           )}
-                        </div>
+                  {/* AI & RANDOM ALGORITHM STATUS + CONTROLS */}
+                  <div className="bg-black/60 border border-zinc-800/80 p-2.5 rounded-lg flex flex-col gap-2">
+                    
+                    {/* Votes cast status */}
+                    <div className="flex items-center justify-between gap-2 border-b border-zinc-800 pb-1.5 flex-wrap">
+                      <div className="flex gap-2.5">
+                        <span className="text-[8px] font-mono uppercase text-zinc-400 flex items-center gap-1">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${onlineMatch?.votes?.[onlineMatch.hostId] ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+                          BLUE CMD: {onlineMatch?.votes?.[onlineMatch.hostId] ? 'VOTE CAST' : 'VOTING...'}
+                        </span>
+                        {onlineMatch?.guestId && (
+                          <span className="text-[8px] font-mono uppercase text-zinc-400 flex items-center gap-1">
+                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${onlineMatch?.votes?.[onlineMatch.guestId] ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+                            RED CMD: {onlineMatch?.votes?.[onlineMatch.guestId] ? 'VOTE CAST' : 'VOTING...'}
+                          </span>
+                        )}
                       </div>
+                      
+                      <span className="text-[8.5px] font-mono text-zinc-500 font-extrabold uppercase">
+                        VOTES SCANNED: {Object.keys(onlineMatch?.votes || {}).length} / {onlineMatch?.guestId ? '2' : '1'}
+                      </span>
+                    </div>
+
+                    {/* AI Decision Text when resolved */}
+                    {onlineMatch?.aiDecisionText && (
+                      <div className="p-2 bg-sky-950/20 border border-sky-500/20 text-sky-300 font-mono text-[8.5px] rounded uppercase leading-relaxed animate-fade-in mb-1">
+                        {onlineMatch.aiDecisionText}
+                      </div>
+                    )}
+
+                    {/* HOST BUTTONS & CONTROLS */}
+                    {isHost ? (
+                      <div className="flex flex-col sm:flex-row gap-1.5 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleResolveVote('ai')}
+                          className="flex-1 py-1.5 px-3 bg-sky-950 hover:bg-sky-900 border border-sky-500/40 text-sky-400 font-mono text-[9px] font-black uppercase rounded tracking-wider cursor-pointer transition-colors active:scale-95 text-center flex items-center justify-center gap-1 hover:shadow-[0_0_8px_rgba(56,189,248,0.2)]"
+                        >
+                          <Terminal className="w-3 h-3" /> RESOLVE: COMMAND AI
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleResolveVote('random')}
+                          className="flex-1 py-1.5 px-3 bg-[#4c3b21]/20 hover:bg-[#4c3b21]/40 border border-amber-500/40 text-amber-500 font-mono text-[9px] font-black uppercase rounded tracking-wider cursor-pointer transition-colors active:scale-95 text-center flex items-center justify-center gap-1 hover:shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                        >
+                          <RotateCcw className="w-3 h-3 animate-[spin_5s_linear_infinite]" /> RESOLVE: RANDOM SECTOR
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleReRollSuggestions}
+                          className="py-1.5 px-3 bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 font-mono text-[9px] font-bold uppercase rounded cursor-pointer transition-all active:scale-95"
+                          title="Generate 3 New Suggested Sector Maps and Reset Current Ballots"
+                        >
+                          RE-ROLL MAP CONFIG
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-zinc-500 font-mono text-[8.5px] uppercase tracking-wider text-center py-1.5 flex items-center justify-center gap-1.5 bg-black/20 border border-dashed border-zinc-800/60 rounded">
+                        <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-ping shrink-0" />
+                        AWAITING HOST COMMANDER TO LOCK VOTING TERMINALS AND EXECUTE SECTOR RESOLUTION DECISION CORES...
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <span className="text-[9px] font-mono text-zinc-400 uppercase leading-relaxed">
+                    Re-initialize operational sector topography. Changing the sector resets current squad deployment configurations.
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                    {MAPS.map((mapPreset) => {
+                      const isSelected = selectedMapId === mapPreset.id;
+                      return (
+                        <button
+                          key={mapPreset.id}
+                          onClick={() => selectMap(mapPreset.id)}
+                          className={`text-left p-1.5 rounded border transition-all text-xs font-mono uppercase flex flex-col gap-0.5 group cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500/10 border-amber-500 text-amber-400 font-extrabold shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                              : 'bg-black/20 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
+                          }`}
+                        >
+                          <span className="font-black text-[10px] flex items-center justify-between">
+                            {mapPreset.name}
+                            {isSelected && <span className="text-[8px] bg-amber-500 text-black px-1 rounded-sm select-none">ACTIVE</span>}
+                          </span>
+                          <span className="text-[8px] font-normal text-zinc-500 group-hover:text-zinc-400 line-clamp-1 lowercase normal-case">
+                            {mapPreset.description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 1. ENEMY/RED FORCE DEPLOY SQUAD ROSTER (Placed ABOVE the Battlefield during deployment) */}
+          {mode === 'deploy' && (
+            <div 
+              className={`p-3 rounded-lg border transition-all duration-300 ${
+                teamSelection === 'enemy' 
+                  ? 'border-red-500/50 bg-red-950/15 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
+                  : 'border-[#2d3422] bg-[#141810]'
+              } ${!isOnline || myTeam === 'enemy' ? 'cursor-pointer hover:border-red-500/40' : ''}`}
+              onClick={() => {
+                if (!isOnline || myTeam === 'enemy') {
+                  setTeamSelection('enemy');
+                }
+              }}
+            >
+               <h2 className="text-red-400 font-bold mb-2 uppercase tracking-widest text-[10px] sm:text-xs font-mono flex items-center gap-1.5 border-b border-red-900/30 pb-2">
+                 <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_4px_#ef4444] animate-pulse animate-duration-1000"></div>
+                 RED SQUAD (TACTICAL ENEMY DEPLOYMENT AREA)
+                 <span className="text-zinc-500 font-normal font-mono normal-case text-[9px] ml-auto">Deploys on rows 01-07 (top side of battlefield)</span>
+               </h2>
+               {renderRoster('enemy')}
+            </div>
+          )}
+
+          {/* RECRUITMENT TIPS */}
+          {mode === 'deploy' && selectedClass && (
+            <div className="bg-[#1f1b0a]/90 border border-amber-500/30 p-2.5 rounded flex flex-col sm:flex-row items-center justify-between gap-y-2 select-none shadow animate-pulse font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-[7.5px] bg-[#fbbf24] text-black px-1.5 py-0.5 rounded font-black uppercase">PRE-DEPLOY</span>
+                <span className="text-[9.5px] font-mono text-zinc-100 uppercase font-black">
+                  ARMING SQUAD COMPONENT: <span className="text-[#fbbf24]">{selectedClass.className}</span> ({selectedClass.archetype})
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                <span className="text-[8.5px] font-mono text-[#afd19c] uppercase truncate flex-1 block">
+                  Click highlighted cells on {teamSelection === 'player' ? 'bottom rows 08-15' : 'top rows 01-07'} to deploy
+                </span>
+                <button 
+                  onClick={() => setSelectedClass(null)}
+                  className="bg-[#3b1111] hover:bg-rose-900 border border-red-500/30 text-rose-300 font-mono text-[9px] uppercase rounded px-2.5 py-0.5 font-bold cursor-pointer transition-colors"
+                >
+                  Cancel Selection
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
+          <div className="bg-[#141810] border border-[#2d3422] rounded-lg p-3 sm:p-4 flex flex-col items-center justify-center shadow-xl w-full">
+            <div className="w-full flex flex-col items-center justify-center">
+              
+              {/* HIGH-TECH COMBAT TIMER COUNTDOWN HUD (For Online Active Play) */}
+              {isOnline && mode === 'play' && !winner && (
+                <div className={`w-full max-w-[580px] mb-3.5 p-3 rounded-lg border font-mono text-[10px] sm:text-xs flex flex-col gap-2 select-none uppercase tracking-wider backdrop-blur-md transition-all duration-300 ${
+                  timeLeft <= 15
+                    ? 'bg-red-950/35 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.25)] animate-pulse'
+                    : activeTeam === myTeam
+                      ? 'bg-emerald-950/25 border-emerald-500/50 text-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.15)]'
+                      : 'bg-[#1a1f13] border-[#2d3422] text-[#8b9180]'
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      {timeLeft <= 15 ? (
+                        <>
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-550 animate-ping shrink-0" />
+                          <span className="text-red-400 font-extrabold tracking-widest animate-pulse">WARNING // INITIATE DECISION</span>
+                        </>
+                      ) : activeTeam === myTeam ? (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                          <span className="text-[#34d399] tracking-widest font-extrabold filter drop-shadow-[0_0_4px_rgba(52,211,153,0.4)]">ALLIED ACTION TURN active</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-[#8b9180] shrink-0" />
+                          <span className="tracking-widest">HOSTILE TARGET INTERFACE ACTIVE</span>
+                        </>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] text-[#8b9180]">OP_LIMIT:</span>
+                      <span className={`font-mono text-xs sm:text-sm font-black px-2 py-0.5 rounded border leading-none ${
+                        timeLeft <= 15 
+                          ? 'bg-red-950/60 text-red-400 border-red-500/60' 
+                          : activeTeam === myTeam 
+                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/35' 
+                            : 'bg-black/40 text-[#8b9180] border-[#2d3422]'
+                      }`}>
+                        {timeLeft.toString().padStart(2, '0')}s
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Scientific visual depleting progress bar */}
+                  <div className="w-full h-2 bg-black/50 rounded border border-[#2d3422]/60 overflow-hidden relative p-[0.5px]">
+                    <div 
+                      className={`h-full rounded-sm transition-all duration-1000 ease-linear ${
+                        timeLeft <= 15 
+                          ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)] animate-pulse' 
+                          : activeTeam === myTeam 
+                            ? 'bg-emerald-450 shadow-[0_0_8px_rgba(16,185,129,0.6)]' 
+                            : 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]'
+                      }`}
+                      style={{ width: `${(timeLeft / 60) * 100}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[8px] sm:text-[9.5px] font-bold text-[#8b9180] leading-none">
+                    <span>SECTOR_SYNC: ONLINE</span>
+                    {timeLeft === 0 && activeTeam !== myTeam ? (
+                      <button 
+                        onClick={handleEndTurn}
+                        className="bg-red-600 hover:bg-red-500 border border-red-400 text-white font-extrabold px-2 py-1 rounded text-[8.5px] transition-all cursor-pointer animate-bounce shadow-md"
+                      >
+                        CLAIM OVERTIME TURN »
+                      </button>
+                    ) : (
+                      <span>{activeTeam === myTeam ? "SELECT DEPLOYED UNIT AND TARGET ACTIONS" : "OPPOSING COMMANDER IS SOLVING CALCULUS..."}</span>
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* Aligned Coordinate Scales with Battlefield Grid & HUD Combat Log Side-by-Side Wrapper */}
+              <div className="flex flex-col xl:flex-row items-center xl:items-stretch justify-center gap-4 w-full max-w-[960px] animate-fade-in mt-1">
+                
+                {/* Aligned Coordinate Scales with Battlefield Grid */}
+                <div className="relative w-full max-w-[580px] min-w-[320px] flex items-center justify-center bg-[#090b07] border border-[#1e2317] rounded p-2 overflow-x-auto hide-scrollbar shrink-0">
+                  <div 
+                    className="w-full flex flex-col select-none"
+                  >
+                    {/* Column labels scale (A-O) */}
+                    <div 
+                      className="grid gap-[1px] w-full mb-1 shrink-0" 
+                      style={{ 
+                        gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
+                        paddingLeft: '24px' // width of row labels column (20px) + gap space (4px)
+                      }}
+                    >
+                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                        <div key={i} className="text-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black py-0.5 select-none uppercase tracking-wider bg-black/60 border border-[#445236] rounded-[1px]">
+                          {String.fromCharCode(65 + i)}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex w-full items-stretch">
+                      {/* Row labels vertical column (01-15) */}
+                      <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
+                        {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                          <div key={i} className="flex-1 flex items-center justify-center text-[7.5px] sm:text-[9.5px] font-mono text-[#afd19c] font-black bg-[#141810]/80 border border-[#445236] rounded-[1px] py-1 select-none">
+                            {(i + 1).toString().padStart(2, '0')}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Actual battlefield grid */}
+                      <div className="flex-1 relative">
+                        <div 
+                          className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'translate-x-1 translate-y-1' : ''}`}
+                          style={{ 
+                            gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                            backgroundColor: '#1b2015'
+                          }}
+                        >
+                          {renderGrid()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scrollable HUD Combat Log Panel */}
+                <HUDCombatLog 
+                  logs={logs} 
+                  onClear={() => setLogs([])}
+                  activeTeam={activeTeam}
+                />
+                
               </div>
+
+              {/* Unified 1-Button Deployment and Battle Launch Flow (Placed below grid to prevent covering any playable squares!) */}
+              {mode === 'deploy' && (
+                <div className="w-full max-w-[580px] mt-3.5 animate-fade-in flex justify-center">
+                  <button
+                    onClick={() => {
+                      if (canStartBattleHook) {
+                        if (isOnline && !isHost) return; // Wait for host
+                        handleStartBattle();
+                      }
+                    }}
+                    disabled={!canStartBattleHook || (isOnline && !isHost)}
+                    className={`pointer-events-auto px-6 py-4 rounded-xl border font-mono text-[11px] sm:text-xs uppercase tracking-wider shadow-2xl transition-all duration-300 flex flex-col items-center justify-center gap-1 w-full ${
+                      canStartBattleHook
+                        ? (isOnline && !isHost 
+                            ? 'bg-[#151c11]/90 border-[#303a24] text-zinc-500 cursor-not-allowed shadow-none'
+                            : 'bg-emerald-950/95 border-emerald-500 text-emerald-400 hover:bg-emerald-900 border-2 hover:scale-105 cursor-pointer shadow-[0_0_30px_rgba(16,185,129,0.5)] animate-pulse'
+                          )
+                        : 'bg-[#12150e]/95 border-[#475231]/70 text-amber-500 shadow-[0_4px_25px_rgba(0,0,0,0.6)] backdrop-blur-sm'
+                    }`}
+                  >
+                    {(() => {
+                      if (canStartBattleHook) {
+                        if (isOnline) {
+                          if (isHost) {
+                            return (
+                              <>
+                                <span className="font-extrabold text-[#34d399] tracking-widest text-xs sm:text-sm flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                                  ⚔️ INITIALIZE COIN TOSS
+                                </span>
+                                <span className="text-[9px] text-emerald-400/80 font-bold">ALL COMBATANTS READY // CLICK TO COMMENCE</span>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <span className="font-bold text-zinc-400 text-xs sm:text-sm flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-zinc-400 animate-pulse" />
+                                  DEPLOYMENT COMMITTED
+                                </span>
+                                <span className="text-[9px] text-zinc-500">WAITING FOR ENEMY COMMANDER TO COMMENCE BATTLE</span>
+                              </>
+                            );
+                          }
+                        } else {
+                          return (
+                            <>
+                              <span className="font-extrabold text-emerald-450 tracking-widest text-xs sm:text-sm flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-405 animate-ping" />
+                                ⚔️ START STRATEGIC ENGAGEMENT
+                              </span>
+                              <span className="text-[9px] text-[#afd19c] font-black animate-pulse">ALL SQUADS SYNCHRONIZED. CLICK TO ENTER FIELD</span>
+                            </>
+                          );
+                        }
+                      } else {
+                        // Deployment in progress
+                        if (isOnline) {
+                          const myDeployed = myTeam === 'player' ? playerDeployedCount : enemyDeployedCount;
+                          if (myDeployed < 4) {
+                            return (
+                              <>
+                                <span className="font-bold text-amber-500 tracking-wider flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse animate-duration-1000" />
+                                  PRE-DEPLOYING SQUAD
+                                </span>
+                                <span className="text-[9px] text-zinc-400 font-bold">PLACE {4 - myDeployed} MORE SQUAD UNITS ON GRID</span>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <span className="font-bold text-amber-500 tracking-wider flex items-center gap-1.5 animate-pulse">
+                                  <span className="border border-amber-500/30 rounded px-1.5 py-0.5 bg-amber-950/20 text-[9px] mr-1">DEPLOYED (4/4)</span>
+                                </span>
+                                <span className="text-[9px] text-zinc-400">AWAITING ADVERSARY FORWARD FORCES DIRECTIVE</span>
+                              </>
+                            );
+                          }
+                        } else if (gameMode === 'local_ai') {
+                          return (
+                            <>
+                              <span className="font-bold text-amber-450 tracking-wider flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                SQUAD ASSEMBLY IN PROGRESS
+                              </span>
+                              <span className="text-[9px] text-zinc-300 font-black">DEPLOY ALLIED SQUAD UNITS ({playerDeployedCount}/4)</span>
+                            </>
+                          );
+                        } else {
+                          // local p2p
+                          if (playerDeployedCount < 4) {
+                            return (
+                              <>
+                                <span className="font-bold text-sky-400 tracking-wider flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-sky-450 animate-pulse" />
+                                  BLUE SQUAD ASSEMBLY (P1)
+                                </span>
+                                <span className="text-[9px] text-sky-300 font-bold">DEPLOY BLUE SQUAD UNITS ({playerDeployedCount}/4)</span>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <span className="font-bold text-[#f43f5e] tracking-wider flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-[#f43f5e] animate-pulse" />
+                                  RED SQUAD ASSEMBLY (P2)
+                                </span>
+                                <span className="text-[9px] text-rose-350 font-bold">DEPLOY RED SQUAD UNITS ({enemyDeployedCount}/4)</span>
+                              </>
+                            );
+                          }
+                        }
+                      }
+                    })()}
+                  </button>
+                </div>
+              )}
 
             </div>
           </div>
 
-          {/* 3. PLAYER/BLUE FORCES TERMINAL (BOTTOM) */}
-          <div 
-            className={`p-2.5 sm:p-3.5 rounded-lg border transition-all duration-300 ${
-              (activeTeam === 'player' && mode === 'play') || (mode === 'deploy' && teamSelection === 'player') 
-                ? 'border-sky-500/50 bg-sky-950/10 shadow-[0_0_15px_rgba(56,189,248,0.15)]' 
-                : 'border-[#2d3422] bg-[#141810]/95'
-            } ${mode === 'deploy' && (!isOnline || myTeam === 'player') ? 'cursor-pointer hover:border-sky-500/40' : ''}`}
-            onClick={() => {
-              if (mode === 'deploy' && (!isOnline || myTeam === 'player')) {
-                setTeamSelection('player');
-              }
-            }}
-          >
-             <h2 className="text-sky-400 font-bold mb-3 uppercase tracking-widest text-xs font-mono flex items-center gap-2">
-               <div className={`w-2.5 h-2.5 rounded-full ${activeTeam === 'player' && mode === 'play' ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]' : 'bg-sky-910/20'}`}></div>
-               BLUE SQUAD (TACTICAL FRIENDLY) {isOnline && (myTeam === 'player' ? '(You)' : '(Opponent)')}
-               {mode === 'deploy' && <span className="text-zinc-500 font-normal font-mono normal-case text-[10px] ml-auto">Deploy in bottom rows</span>}
-             </h2>
-             {mode === 'deploy' ? renderRoster('player') : renderUnitInfo('player')}
-          </div>
+          {/* 3. PLAYER/BLUE FORCE DEPLOY SQUAD ROSTER (Placed BELOW the Battlefield during deployment) */}
+          {mode === 'deploy' && (
+            <div 
+              className={`p-3 rounded-lg border transition-all duration-300 ${
+                teamSelection === 'player' 
+                  ? 'border-sky-500/50 bg-sky-950/15 shadow-[0_0_15px_rgba(56,189,248,0.15)]' 
+                  : 'border-[#2d3422] bg-[#141810]'
+              } ${!isOnline || myTeam === 'player' ? 'cursor-pointer hover:border-sky-500/40' : ''}`}
+              onClick={() => {
+                if (!isOnline || myTeam === 'player') {
+                  setTeamSelection('player');
+                }
+              }}
+            >
+               <h2 className="text-sky-400 font-bold mb-2 uppercase tracking-widest text-[10px] sm:text-xs font-mono flex items-center gap-1.5 border-b border-sky-900/30 pb-2">
+                 <div className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-[0_0_4px_#38bdf8] animate-pulse"></div>
+                 BLUE SQUAD (YOUR TACTICAL DEPLOYMENT AREA)
+                 <span className="text-zinc-500 font-normal font-mono normal-case text-[9px] ml-auto">Deploys on rows 08-15 (bottom side of battlefield)</span>
+               </h2>
+               {renderRoster('player')}
+            </div>
+          )}
 
-          {/* 4. INTEGRATED LOG CARD */}
-          <CombatLog logs={logs} onClear={() => setLogs([])} />
+          {/* 4. SELECTED UNIT METRICS BAR / STANDBY CONSOLE (Play and Deploy Modes below the board inside the core control HUD) */}
+          {(mode === 'play' || (mode === 'deploy' && selectedClass)) && (
+            <div className="w-full animate-fade-in mt-1 z-35">
+              <SelectedUnitConsole
+                selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
+                  id: 'preview-' + selectedClass.className,
+                  class: selectedClass,
+                  x: -1,
+                  y: -1,
+                  hp: selectedClass.stats.maxHP,
+                  ap: 2,
+                  team: teamSelection,
+                } : null)}
+                activeTeam={activeTeam}
+                onEndTurn={handleEndTurn}
+                onCancelSelection={() => {
+                  if (mode === 'play') {
+                    setSelectedUnitId(null);
+                  } else {
+                    setSelectedClass(null);
+                  }
+                }}
+                isAbilityActive={isAbilityActive}
+                onToggleAbility={() => {
+                   if (selectedUnit?.class.ability?.type === 'self') {
+                     handleSelfAbility();
+                   } else {
+                     setIsAbilityActive(!isAbilityActive);
+                   }
+                }}
+                mapEnvironment={mapEnvironment}
+                units={units}
+                activeHoveredTile={hoveredTile}
+                isOnline={isOnline}
+                myTeam={myTeam}
+                onPassUnit={() => {
+                  if (selectedUnit) {
+                     setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, ap: 0 } : u));
+                     setSelectedUnitId(null);
+                  }
+                }}
+                mode={mode}
+              />
+            </div>
+          )}
+
+          {/* 5. GORGEOUS POPUP MODAL OVERLAYS (Toggled via Top Command Hub buttons) */}
+          {activePanel && (
+            <div 
+              className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 animate-fade-in" 
+              onClick={() => setActivePanel(null)}
+            >
+              <div 
+                className="bg-[#12160d] border-2 border-[#546843]/85 rounded-lg w-full max-w-4xl shadow-[0_0_35px_rgba(56,189,248,0.18)] max-h-[85vh] flex flex-col justify-start text-left relative font-mono animate-zoom-in overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                {/* Modal Title bar */}
+                <div className="flex items-center justify-between border-b border-[#2d3a20] px-4 py-3 bg-[#191e14] shrink-0 font-mono">
+                  <div className="flex items-center gap-2">
+                    {activePanel === 'roster' && <Users className="w-4 h-4 text-[#38bdf8]" />}
+                    {activePanel === 'combat_log' && <Activity className="w-4 h-4 text-amber-500 animate-pulse" />}
+                    {activePanel === 'leaderboard' && <Target className="w-4 h-4 text-purple-400" />}
+                    <h3 className="text-xs font-black uppercase text-zinc-100 tracking-wider">
+                      {activePanel === 'roster' && 'TACTICAL SQUAD ROSTERS & LIFE INTEGRITY'}
+                      {activePanel === 'combat_log' && 'COMBAT SENSORY MATRIX DATA FEED'}
+                      {activePanel === 'leaderboard' && 'SECTOR OPERATIONAL LEADERBOARDS'}
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => setActivePanel(null)}
+                    className="text-[10px] font-bold bg-[#10130d] hover:bg-[#202518] text-zinc-400 hover:text-rose-500 border border-[#2d3a20] rounded w-7 h-7 flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Modal Scrollable Contents */}
+                <div className="flex-1 overflow-y-auto p-4 bg-zinc-950/25">
+                  {activePanel === 'roster' && (
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="border border-sky-500/20 bg-sky-950/20 p-3 rounded-lg">
+                          <span className="text-[10px] text-sky-400 font-bold block mb-2 uppercase pb-1 border-b border-sky-500/15">BLUE SQUADRON</span>
+                          {renderRoster('player')}
+                        </div>
+                        <div className="border border-red-500/20 bg-red-955/20 p-3 rounded-lg">
+                          <span className="text-[10px] text-red-155 text-red-400 font-bold block mb-2 uppercase pb-1 border-b border-red-500/15">RED SQUADRON</span>
+                          {renderRoster('enemy')}
+                        </div>
+                      </div>
+                      <div className="mt-2 border-t border-[#2d3324]/50 pt-3">
+                        <RosterStatus 
+                          units={units}
+                          activeTeam={activeTeam}
+                          selectedUnitId={selectedUnitId}
+                          onSelectUnit={(id) => { setSelectedUnitId(id); setActivePanel(null); }}
+                          mode={mode}
+                          teamSelection={teamSelection}
+                          setTeamSelection={setTeamSelection}
+                          selectedClass={selectedClass}
+                          setSelectedClass={setSelectedClass}
+                          isOnline={!!isOnline}
+                          myTeam={myTeam}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {activePanel === 'combat_log' && (
+                    <div className="bg-[#0c0f0a] rounded border border-zinc-900 overflow-hidden h-[330px]">
+                      <CombatLog logs={logs} onClear={() => setLogs([])} />
+                    </div>
+                  )}
+
+                  {activePanel === 'leaderboard' && (
+                    <div className="w-full font-sans">
+                      <CommanderLeaderboard />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
 
