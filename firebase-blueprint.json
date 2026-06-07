@@ -18,12 +18,18 @@
       "properties": {
         "hostId": { "type": "string" },
         "guestId": { "type": "string" },
-        "status": { "type": "string", "enum": ["waiting", "in_progress", "finished"] },
+        "status": { "type": "string", "enum": ["waiting", "deploying", "ready", "play", "finished"] },
         "winner": { "type": "string" },
         "turn": { "type": "number" },
         "activeTeam": { "type": "string" },
         "units": { "type": "string" },
-        "gridEnv": { "type": "string" }
+        "gridEnv": { "type": "string" },
+        "mapId": { "type": "string" },
+        "suggestedMaps": { "type": "array", "items": { "type": "string" } },
+        "votes": { "type": "object" },
+        "voteResolved": { "type": "boolean" },
+        "votedMapId": { "type": "string" },
+        "aiDecisionText": { "type": "string" }
       },
       "required": ["hostId", "status"]
     },

@@ -43,7 +43,13 @@ service cloud.firestore {
         && (!data.keys().hasAny(['turn']) || data.turn is number)
         && (!data.keys().hasAny(['activeTeam']) || (data.activeTeam is string && data.activeTeam.size() <= 20))
         && (!data.keys().hasAny(['units']) || (data.units is string && data.units.size() <= 50000))
-        && (!data.keys().hasAny(['gridEnv']) || (data.gridEnv is string && data.gridEnv.size() <= 50000));
+        && (!data.keys().hasAny(['gridEnv']) || (data.gridEnv is string && data.gridEnv.size() <= 50000))
+        && (!data.keys().hasAny(['mapId']) || (data.mapId is string && data.mapId.size() <= 128))
+        && (!data.keys().hasAny(['suggestedMaps']) || data.suggestedMaps is list)
+        && (!data.keys().hasAny(['votes']) || data.votes is map)
+        && (!data.keys().hasAny(['voteResolved']) || data.voteResolved is bool)
+        && (!data.keys().hasAny(['votedMapId']) || (data.votedMapId is string && data.votedMapId.size() <= 128))
+        && (!data.keys().hasAny(['aiDecisionText']) || (data.aiDecisionText is string && data.aiDecisionText.size() <= 5000));
     }
 
     function isValidCommanderStat(data) {
@@ -86,7 +92,10 @@ service cloud.firestore {
                        (!existing().keys().hasAll(['guestId']) && incoming().guestId == request.auth.uid)
                     )
                     && (
-                      (incoming().diff(existing()).affectedKeys().hasOnly(['guestId', 'status', 'activeTeam', 'turn', 'units', 'gridEnv', 'winner']))
+                      (incoming().diff(existing()).affectedKeys().hasOnly([
+                        'guestId', 'status', 'activeTeam', 'turn', 'units', 'gridEnv', 'winner',
+                        'mapId', 'suggestedMaps', 'votes', 'voteResolved', 'votedMapId', 'aiDecisionText'
+                      ]))
                     );
                     
       allow delete: if isSignedIn() && existing().hostId == request.auth.uid;

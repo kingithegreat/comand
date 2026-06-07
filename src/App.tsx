@@ -3,16 +3,17 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw } from 'lucide-react';
 import { auth, db } from './firebase';
 import Game from './components/Game';
+import TutorialMode from './components/TutorialMode';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
 import CommanderLeaderboard from './components/CommanderLeaderboard';
 import { useAudio } from './contexts/AudioContext';
 
 export default function App() {
-  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | null>(null);
+  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'tutorial' | null>(null);
   const [user, loading] = useAuthState(auth);
   const [profile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
   const { soundEnabled, toggleSound } = useAudio();
@@ -28,16 +29,120 @@ export default function App() {
     onlineMatchId ? doc(db, 'matches', onlineMatchId) : null
   );
 
+  const [hostProfile, setHostProfile] = useState<any>(null);
+  const [guestProfile, setGuestProfile] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
      if (profile && !editingProfile) {
         setDisplayNameInput(profile.displayName);
      }
   }, [profile, editingProfile]);
 
+  useEffect(() => {
+    if (matchData?.hostId) {
+      getDoc(doc(db, 'users', matchData.hostId)).then(snap => {
+        if (snap.exists()) {
+          setHostProfile(snap.data());
+        } else {
+          setHostProfile({ displayName: 'Commander Host' });
+        }
+      }).catch(err => {
+        console.error("Error fetching host profile:", err);
+        setHostProfile({ displayName: 'Commander Host' });
+      });
+    } else {
+      setHostProfile(null);
+    }
+    
+    if (matchData?.guestId) {
+      getDoc(doc(db, 'users', matchData.guestId)).then(snap => {
+        if (snap.exists()) {
+          setGuestProfile(snap.data());
+        } else {
+          setGuestProfile({ displayName: 'Commander Guest' });
+        }
+      }).catch(err => {
+        console.error("Error fetching guest profile:", err);
+        setGuestProfile({ displayName: 'Commander Guest' });
+      });
+    } else {
+      setGuestProfile(null);
+    }
+  }, [matchData?.hostId, matchData?.guestId]);
+
+  const handleCopyCode = async (code: string) => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        const dummy = document.createElement("input");
+        document.body.appendChild(dummy);
+        dummy.value = code;
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err) {
+      console.error("Copy failed", err);
+    }
+  };
+
+  const handleAbortMatch = async () => {
+    if (!onlineMatchId) {
+      setGameMode(null);
+      setOnlineMatchId(null);
+      return;
+    }
+    try {
+      const matchRef = doc(db, 'matches', onlineMatchId);
+      if (matchData?.hostId === user?.uid) {
+        await updateDoc(matchRef, {
+          status: 'aborted'
+        });
+      } else {
+        await updateDoc(matchRef, {
+          guestId: ""
+        });
+      }
+    } catch (err) {
+      console.error("Match link abort error:", err);
+    }
+    setGameMode(null);
+    setOnlineMatchId(null);
+  };
+
+  const handleLaunchBattlefield = async () => {
+    if (!onlineMatchId) return;
+    try {
+      const matchRef = doc(db, 'matches', onlineMatchId);
+      await updateDoc(matchRef, {
+        status: 'deploying'
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to synchronize battlefield frequencies: " + err.message);
+    }
+  };
+
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const userRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+        await setDoc(userRef, {
+          userId: user.uid,
+          displayName: user.displayName || 'Commander',
+          email: user.email
+        });
+      }
     } catch (error) {
       console.error(error);
       alert("Please ensure third-party cookies are not blocked, or open the app in a new tab to authenticate.");
@@ -82,19 +187,19 @@ export default function App() {
 
   const joinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !joinCode) return;
+    const cleanCode = joinCode.trim().toUpperCase();
+    if (!user || !cleanCode) return;
     try {
-      const matchRef = doc(db, 'matches', joinCode.toUpperCase());
+      const matchRef = doc(db, 'matches', cleanCode);
       const matchSnap = await getDoc(matchRef);
       if (matchSnap.exists()) {
          const data = matchSnap.data();
          if (data.status === 'waiting' && data.hostId !== user.uid) {
             await updateDoc(matchRef, {
-               guestId: user.uid,
-               status: 'deploying'
+               guestId: user.uid
             });
          }
-         setOnlineMatchId(joinCode.toUpperCase());
+         setOnlineMatchId(cleanCode);
          setGameMode('online');
       } else {
         alert("Room not found!");
@@ -109,22 +214,207 @@ export default function App() {
     return <Game gameMode={gameMode} onBack={() => setGameMode(null)} />;
   }
 
+  if (gameMode === 'tutorial') {
+    return (
+      <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+        <TutorialMode onBack={() => setGameMode(null)} />
+      </div>
+    );
+  }
+
   if (gameMode === 'online' && onlineMatchId) {
     if (matchLoading) {
-       return <div className="min-h-screen bg-[#0e100c] flex items-center justify-center text-white"><Loader2 className="w-8 h-8 animate-spin text-amber-500" /></div>;
+       return <div className="min-h-screen bg-[#0e100c] flex items-center justify-center text-[#dae3ce] font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
     }
+
+    // Handlers for aborted rooms
+    if (matchData?.status === 'aborted') {
+      return (
+        <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-mono p-6 flex flex-col items-center justify-center relative">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
+          <div className="max-w-md w-full bg-[#141810]/95 border border-[#2d3422] p-6 rounded-xl flex flex-col gap-4 text-center relative overflow-hidden shadow-2xl">
+            <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/40 rounded-full flex items-center justify-center text-rose-500 mx-auto animate-pulse">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-black text-white uppercase tracking-wider font-mono">SECNET LINK BROKEN</h2>
+            <p className="text-[10px] text-zinc-400 uppercase leading-normal">
+              Operational telemetry channel has been de-synchronized or terminated by the other commander. Tactical synchronization aborted.
+            </p>
+            <button
+              onClick={() => {
+                setGameMode(null);
+                setOnlineMatchId(null);
+              }}
+              className="w-full py-2 bg-[#161a12] border border-[#2d3422] hover:border-amber-400 text-[#dae3ce] rounded font-bold text-xs uppercase cursor-pointer transition-colors"
+            >
+              DISCONNECT & RETURN TO HQ
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Matchmaking screen when status === 'waiting'
+    if (matchData?.status === 'waiting') {
+      const isRoomHost = matchData?.hostId === user?.uid;
+      const isOpponentConnected = !!matchData?.guestId;
+
+      return (
+        <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-mono p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+          {/* Scanlines overlay */}
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
+          
+          <div className="w-full max-w-lg bg-[#141810]/95 border border-[#2d3422]/60 p-6 rounded-xl flex flex-col gap-6 relative overflow-hidden shadow-2xl">
+            {/* Corner aesthetic highlights */}
+            <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-amber-500"></div>
+            <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-amber-500"></div>
+            <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-amber-500"></div>
+            <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-amber-500"></div>
+
+            <div className="text-center space-y-1 pb-3 border-b border-[#2d3422]/30">
+              <span className="text-[9px] text-[#fbbf24] font-bold tracking-widest uppercase">TACTICAL COMM MATCHMAKING TERMINAL</span>
+              <h2 className="text-lg font-black text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <Globe className="w-5 h-5 text-amber-500 animate-[spin_10s_linear_infinite]" /> SECNET HANDSHAKE
+              </h2>
+            </div>
+
+            {/* Radar / Sonar visualization */}
+            <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 border border-amber-500/10 rounded-full animate-ping [animation-duration:3s]"></div>
+              <div className="absolute inset-3 border border-amber-500/25 rounded-full animate-ping [animation-duration:2.2s]"></div>
+              <div className="absolute inset-6 border border-amber-500/35 rounded-full animate-ping [animation-duration:1.5s]"></div>
+              <div className="absolute inset-1 border border-dashed border-amber-500/30 rounded-full animate-[spin_12s_linear_infinite]"></div>
+              <Radio className="w-8 h-8 text-amber-400 relative z-10 animate-pulse" />
+            </div>
+
+            {/* Room Code Display */}
+            <div className="bg-black/50 border border-[#2d3422]/50 p-4 rounded flex flex-col items-center gap-1">
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">TRANSMISSION FREQUENCY CODE</span>
+              <div className="flex items-center gap-3">
+                <span className="text-3xl font-extrabold tracking-[0.25em] text-white font-mono select-all pl-2">{onlineMatchId}</span>
+                <button
+                  onClick={() => handleCopyCode(onlineMatchId)}
+                  className="p-1.5 rounded border border-[#2d3422]/60 bg-[#161a12] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold uppercase active:scale-95"
+                  title="Copy room code to clipboard"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" /> <span className="text-emerald-400 text-[8px]">COPIED</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> <span className="text-[8px]">COPY</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Commander Profiles & Connections indicators */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+              {/* Host Node */}
+              <div className="bg-black/30 border border-[#2d3422]/40 rounded p-3 flex flex-col gap-1.5 relative">
+                <span className="text-[8px] text-zinc-500 uppercase tracking-wide font-medium">BLUE LEADER (HOST)</span>
+                <span className="text-xs font-black text-white leading-normal uppercase truncate">
+                  {hostProfile?.displayName || 'Commander Host'}
+                </span>
+                <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
+                  <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping"></span> ONLINE
+                </span>
+              </div>
+
+              {/* Guest Node */}
+              <div className="bg-black/30 border border-[#2d3422]/40 rounded p-3 flex flex-col gap-1.5 relative">
+                <span className="text-[8px] text-zinc-500 uppercase tracking-wide font-medium">RED LEADER (GUEST)</span>
+                {isOpponentConnected ? (
+                  <>
+                    <span className="text-xs font-black text-white leading-normal uppercase truncate">
+                      {guestProfile?.displayName || 'Commander Guest'}
+                    </span>
+                    <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
+                      <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping"></span> READY TO SYNC
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold text-zinc-500 leading-normal uppercase animate-pulse flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" /> SCANNING SENSORS...
+                    </span>
+                    <span className="text-[8.5px] font-mono text-amber-400 bg-amber-400/5 border border-amber-500/10 px-1 hover:border-amber-400/30 rounded-full w-fit animate-pulse font-bold">
+                      AWAITING CONNECTION
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Launch Actions and controls */}
+            <div className="space-y-3 pt-2">
+              {isRoomHost ? (
+                <>
+                  {isOpponentConnected ? (
+                    <button
+                      onClick={handleLaunchBattlefield}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded border border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
+                    >
+                      <Play className="w-4 h-4 fill-black text-black" /> SYNCHRONIZE GRIDS & LAUNCH OPERATION
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-extrabold text-xs uppercase tracking-wider rounded cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> AWAITING COMM-LINK INSTANTIATION...
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="bg-amber-400/5 border border-amber-500/25 p-3 rounded text-center space-y-1">
+                  <div className="text-xs font-bold text-amber-400 flex items-center justify-center gap-1.5 uppercase">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> ESTABLISHED INGRESS LINK
+                  </div>
+                  <p className="text-[8.5px] text-zinc-400 uppercase leading-normal">
+                    Frequencies synchronized. Awaiting Host Commander to authorize tactical grid deployment blueprints and start matches.
+                  </p>
+                </div>
+              )}
+
+              {/* Status checklist feed */}
+              <div className="bg-black/70 border border-[#2d3422]/50 p-3 rounded text-[8.5px] text-zinc-500 text-left space-y-1 leading-relaxed uppercase">
+                <div className="flex items-center justify-between">
+                  <span>[TRANS] BEACON SPECTRUM INJECTION</span>
+                  <span className="text-emerald-400 font-bold">ACTIVE</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>[SYS_FREQ] COMMS RESOLVER HANDSHAKE</span>
+                  <span className="text-emerald-400 font-bold">AES-256 SECURED</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>[LOBBY] RED_CMD STATUS</span>
+                  <span className={isOpponentConnected ? "text-emerald-400 font-bold" : "text-amber-400 font-bold tracking-widest animate-pulse"}>
+                    {isOpponentConnected ? "SYNCHRONIZED" : "SCANNING SPECTRUM..."}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleAbortMatch}
+                className="w-full py-2 border border-[#2d3422] hover:border-rose-500 text-zinc-400 hover:text-rose-400 font-bold text-xs uppercase rounded transition-colors bg-transparent cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                title="Disconnect this matchmaking channel"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> ABORT TRANSMISSION & DISCONNECT
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
        <div className="min-h-screen bg-[#0e100c] select-none text-[#dae3ce]">
-         {matchData?.status === 'waiting' && matchData?.hostId === user?.uid && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#141810] border border-amber-500/50 p-4 rounded-xl shadow-2xl flex flex-col items-center">
-              <span className="text-sm text-amber-400 font-bold uppercase tracking-widest mb-1">Room Code</span>
-              <span className="text-3xl tracking-[0.2em] font-mono text-white text-center">{onlineMatchId}</span>
-              <p className="text-xs text-amber-500/70 mt-2">Waiting for opponent to join...</p>
-            </div>
-         )}
          <Game 
            gameMode="online" 
-           onBack={() => { setGameMode(null); setOnlineMatchId(null); }} 
+           onBack={() => { handleAbortMatch(); }} 
            onlineMatch={{ id: onlineMatchId, ...matchData }} 
            userId={user?.uid} 
          />
@@ -172,7 +462,7 @@ export default function App() {
          </div>
 
          {/* Modes Selection */}
-         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <button 
               onClick={() => setGameMode('local_ai')}
               className="p-5 bg-[#141810]/80 hover:bg-[#1a2014]/90 border border-[#2d3422]/60 hover:border-amber-400/50 rounded-lg text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
@@ -194,6 +484,17 @@ export default function App() {
                   <p className="text-[10px] text-[#8b9180] mt-1 leading-normal uppercase">Play hotseat 2-player mode locally. Formulate tactics, then hand off command.</p>
                </div>
                <span className="absolute bottom-2 right-3 text-[7.5px] font-mono text-emerald-400/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+            </button>
+            <button 
+              onClick={() => setGameMode('tutorial')}
+              className="p-5 bg-[#141810]/85 hover:bg-[#202716]/95 border border-[#2d3422]/60 hover:border-[#fbbf24]/60 rounded-lg text-left transition-all duration-300 group shadow-[0_0_15px_rgba(251,191,36,0.05)] flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+            >
+               <BookOpen className="w-7 h-7 text-amber-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
+               <div>
+                  <h3 className="font-extrabold text-[#dae3ce] text-sm font-mono tracking-wider uppercase flex items-center gap-1.5">BATTLE ACADEMY <span className="bg-amber-400 text-black text-[7px] px-1 font-black py-0.5 rounded leading-none">NEW</span></h3>
+                  <p className="text-[10px] text-[#8b9180] mt-1 leading-normal uppercase">Interactive tactical manual. Learn movement, analyze core abilities, try other characters.</p>
+               </div>
+               <span className="absolute bottom-2 right-3 text-[7.5px] font-mono text-amber-500/55 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
             </button>
          </div>
 
@@ -246,7 +547,7 @@ export default function App() {
                   </div>
 
                   {/* Room Actions */}
-                  {profile && !editingProfile && (
+                  {user && !editingProfile && (
                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                         <button onClick={createRoom} className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/35 text-[#fbbf24] font-bold border border-amber-500/50 rounded text-xs uppercase tracking-wider transition-all cursor-pointer">
                           ESTABLISH ROOM
@@ -338,6 +639,15 @@ export default function App() {
 
                 <div className="text-center text-[#fbbf24] font-black uppercase text-[8.5px] border border-dashed border-[#2d3422] p-1.5 rounded animate-pulse">
                   ⚡ PRO TIP: ALWAYS INJECT WEAK SQUADMATES WITH SPECIAL MEDIC NANITES TO RESTORE HEALTH DURING AI FLANK ACTIONS!
+                </div>
+
+                <div className="border border-amber-500/15 p-2 bg-amber-400/5 rounded text-center">
+                  <button 
+                    onClick={() => setGameMode('tutorial')}
+                    className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[9.5px] tracking-wider rounded uppercase cursor-pointer"
+                  >
+                    🚀 LAUNCH INTERACTIVE BATTLE ACADEMY SIMULATOR
+                  </button>
                 </div>
               </div>
             )}
