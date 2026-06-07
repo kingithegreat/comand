@@ -11,6 +11,8 @@ import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
 import CommanderLeaderboard from './components/CommanderLeaderboard';
 import { useAudio } from './contexts/AudioContext';
+import { getCharacterLevelInfo, getBoostedStats } from './logic';
+import { CHEMISTRIES, ChemistryDuo } from './chemistries';
 
 export default function App() {
   const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'tutorial' | null>(null);
@@ -20,7 +22,7 @@ export default function App() {
   
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
-  const [dbTab, setDbTab] = useState<'tutorial' | 'classes'>('tutorial');
+  const [dbTab, setDbTab] = useState<'tutorial' | 'classes' | 'chemistries'>('tutorial');
   const [activeClassDesc, setActiveClassDesc] = useState<string>('Scout');
 
   const [joinCode, setJoinCode] = useState('');
@@ -170,6 +172,56 @@ export default function App() {
     }
   };
 
+  const handleUnlockBoost = async (className: string, boostType: string) => {
+    if (!user || !profile) return;
+    const progress = (profile as any).characterProgress || {};
+    const classProg = progress[className] || { xp: 0, level: 1, boosts: [] };
+    const xp = classProg.xp || 0;
+    const levelInfo = getCharacterLevelInfo(xp);
+    const boosts = classProg.boosts || [];
+    
+    if (boosts.includes(boostType)) return;
+    if (boosts.length >= levelInfo.maxUpgrades) return;
+    
+    const updatedProgress = {
+      ...progress,
+      [className]: {
+        ...classProg,
+        boosts: [...boosts, boostType]
+      }
+    };
+    
+    try {
+      await setDoc(doc(db, 'users', user.uid), {
+        characterProgress: updatedProgress
+      }, { merge: true });
+    } catch (err) {
+      console.error("Failed to unlock boost", err);
+    }
+  };
+
+  const handleResetBoosts = async (className: string) => {
+    if (!user || !profile) return;
+    const progress = (profile as any).characterProgress || {};
+    const classProg = progress[className] || { xp: 0, level: 1, boosts: [] };
+    
+    const updatedProgress = {
+      ...progress,
+      [className]: {
+        ...classProg,
+        boosts: []
+      }
+    };
+    
+    try {
+      await setDoc(doc(db, 'users', user.uid), {
+        characterProgress: updatedProgress
+      }, { merge: true });
+    } catch (err) {
+      console.error("Failed to reset boosts", err);
+    }
+  };
+
   const createRoom = async () => {
     if (!user) return;
     try {
@@ -211,7 +263,7 @@ export default function App() {
 
   // Render Game Component if we selected a mode
   if (gameMode === 'local_ai' || gameMode === 'local_p2p') {
-    return <Game gameMode={gameMode} onBack={() => setGameMode(null)} />;
+    return <Game gameMode={gameMode} onBack={() => setGameMode(null)} userProfile={profile} />;
   }
 
   if (gameMode === 'tutorial') {
@@ -417,6 +469,7 @@ export default function App() {
            onBack={() => { handleAbortMatch(); }} 
            onlineMatch={{ id: onlineMatchId, ...matchData }} 
            userId={user?.uid} 
+           userProfile={profile}
          />
        </div>
     );
@@ -598,6 +651,16 @@ export default function App() {
                 >
                   Squad Bios
                 </button>
+                <button 
+                  onClick={() => setDbTab('chemistries')}
+                  className={`px-3 py-1 text-[8.5px] font-mono uppercase rounded transition-all font-black border ${
+                    dbTab === 'chemistries' 
+                      ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
+                      : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
+                  }`}
+                >
+                  Squad Chemistries
+                </button>
               </div>
             </div>
 
@@ -680,14 +743,18 @@ export default function App() {
                 {(() => {
                   const c = CLASSES.find(cl => cl.className === activeClassDesc) || CLASSES[0];
                   
+                  const progress = (profile as any)?.characterProgress?.[c.className] || { xp: 0, level: 1, boosts: [] };
+                  const boosts = progress.boosts || [];
+                  const boostedStats = getBoostedStats(c.stats, boosts);
+
                   // Compute stats percentage bars
-                  const hpPerc = Math.min(100, Math.round((c.stats.maxHP / 150) * 100));
-                  const dmgPerc = Math.min(100, Math.round((c.stats.damage / 60) * 100));
-                  const rangePerc = Math.min(100, Math.round((c.stats.range / 10) * 100));
-                  const speedPerc = Math.min(100, Math.round((c.stats.mobility / 7) * 100));
+                  const hpPerc = Math.min(100, Math.round((boostedStats.maxHP / 150) * 100));
+                  const dmgPerc = Math.min(100, Math.round((boostedStats.damage / 60) * 100));
+                  const rangePerc = Math.min(100, Math.round((boostedStats.range / 10) * 100));
+                  const speedPerc = Math.min(100, Math.round((boostedStats.mobility / 7) * 100));
 
                   return (
-                    <div className="md:col-span-7 border border-[#2d3422]/40 bg-black/40 p-3 rounded flex flex-col justify-between min-h-[220px] relative">
+                    <div className="md:col-span-7 border border-[#2d3422]/40 bg-black/40 p-3 rounded flex flex-col justify-between min-h-[300px] relative">
                       <div>
                         {/* Helmet + name block */}
                         <div className="flex gap-2.5 items-center mb-2 pb-1.5 border-b border-[#2d3422]/20">
@@ -718,27 +785,114 @@ export default function App() {
                             </p>
                           </div>
                         )}
+
+                        {/* Level Up & Stat boost panels */}
+                        {user && profile ? (() => {
+                          const levelInfo = getCharacterLevelInfo(progress.xp);
+                          const availablePoints = levelInfo.maxUpgrades - boosts.length;
+
+                          return (
+                            <div className="mt-2 pt-2 border-t border-[#2d3422]/20">
+                              {/* Level display bar */}
+                              <div className="flex gap-2.5 items-center mb-2.5 text-[8px] bg-sky-950/20 border border-sky-500/20 rounded p-1.5 font-mono">
+                                <div className="font-extrabold text-[#38bdf8] shrink-0 uppercase tracking-widest">
+                                  LEVEL {levelInfo.level}
+                                </div>
+                                <div className="flex-1 bg-black/50 h-2 rounded-sm border border-sky-900/30 overflow-hidden relative">
+                                  <div className="bg-sky-400 h-full transition-all duration-500" style={{ width: `${levelInfo.percentage}%` }} />
+                                </div>
+                                <div className="text-zinc-400 font-bold shrink-0">
+                                  {levelInfo.xp} / {levelInfo.isMaxLevel ? 'MAX' : levelInfo.nextLevelXp} XP
+                                </div>
+                              </div>
+
+                              {/* Upgrade modules */}
+                              <div className="bg-black/25 border border-[#2d3422]/30 p-2 rounded">
+                                <div className="flex justify-between items-center mb-1 pb-1 border-b border-[#2d3422]/15">
+                                  <span className="text-[7.5px] font-black text-[#fbbf24] uppercase flex items-center gap-1.5">
+                                    <Cpu className="w-3 h-3 text-[#fbbf24] animate-pulse" /> TACTICAL UPGRADE CHIPSETS
+                                  </span>
+                                  <span className="text-[7.5px] font-bold text-zinc-400">
+                                    {availablePoints > 0 ? `${availablePoints} SLOT(S) AVAILABLE` : '0 SLOTS'}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1.5 text-[7px] font-bold uppercase select-none">
+                                  {[
+                                    { id: 'HP_BOOST', label: 'Nano-Plating Upgrade', desc: '+15 MAX HP' },
+                                    { id: 'DMG_BOOST', label: 'High-Velocity Rounds', desc: '+4 ATTACK DMG' },
+                                    { id: 'RANGE_BOOST', label: 'Subviser Rangefinder', desc: '+1 WEAPON RANGE' },
+                                    { id: 'ACC_BOOST', label: 'Sensor Optimization', desc: '+10% ACCURACY' },
+                                  ].map((m) => {
+                                    const unlocked = boosts.includes(m.id);
+                                    return (
+                                      <button
+                                        key={m.id}
+                                        disabled={unlocked || availablePoints <= 0}
+                                        onClick={() => handleUnlockBoost(c.className, m.id)}
+                                        className={`p-1.5 rounded transition-all flex flex-col text-left border ${
+                                          unlocked
+                                            ? 'bg-emerald-500/10 border-emerald-500/60 text-emerald-400 cursor-not-allowed'
+                                            : availablePoints > 0
+                                              ? 'bg-sky-500/5 border-sky-500/40 text-sky-400 hover:bg-sky-500/15 cursor-pointer'
+                                              : 'bg-transparent border-[#2d3422]/30 text-[#8b9180] cursor-not-allowed'
+                                        }`}
+                                      >
+                                        <div className="flex justify-between w-full font-black leading-tight">
+                                          <span>{m.label}</span>
+                                          {unlocked && <span className="text-emerald-450 text-[6.5px]">✓</span>}
+                                        </div>
+                                        <span className={`text-[6.5px] leading-tight mt-0.5 font-bold ${unlocked ? 'text-emerald-500/80' : 'text-zinc-500'}`}>
+                                          {m.desc}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {boosts.length > 0 && (
+                                  <button
+                                    onClick={() => handleResetBoosts(c.className)}
+                                    className="w-full mt-2.5 py-1 text-center bg-red-950/15 border border-red-500/30 text-red-400 rounded text-[7px] font-bold hover:bg-red-950/30 transition-all cursor-pointer uppercase flex items-center justify-center gap-1"
+                                  >
+                                    <RefreshCw className="w-2.5 h-2.5" /> RESET CHIPSET ALLOCATIONS
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })() : (
+                          <div className="mt-2 p-2.5 border border-[#2d3422]/20 bg-black/10 rounded text-center text-[7.5px] text-[#8b9180] uppercase tracking-wider">
+                            🔑 Sign in to enable persistent squad levelling & upgrade modules
+                          </div>
+                        )}
                       </div>
 
                       {/* Stat Bars Grid */}
-                      <div className="space-y-1 pt-1.5 border-t border-[#2d3422]/20 text-[7.5px] font-bold text-[#8b9180]">
+                      <div className="space-y-1 pt-1.5 border-t border-[#2d3422]/20 text-[7.5px] font-bold text-[#8b9180] mt-3">
                         <div>
                           <div className="flex justify-between mb-0.5">
                             <span>HEALTH MAX (HP)</span>
-                            <span className="text-white">{c.stats.maxHP} pts</span>
+                            {boosts.includes('HP_BOOST') ? (
+                              <span className="text-emerald-400 font-black">{boostedStats.maxHP} pts <span className="text-emerald-500 font-bold text-[6.5px] ml-0.5">(+15 HP BOOST ACTIVE)</span></span>
+                            ) : (
+                              <span className="text-white">{c.stats.maxHP} pts</span>
+                            )}
                           </div>
                           <div className="w-full bg-black/40 h-1.5 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                            <div className="bg-emerald-400 h-full rounded-sm" style={{ width: `${hpPerc}%` }} />
+                            <div className={`h-full rounded-sm ${boosts.includes('HP_BOOST') ? 'bg-emerald-400' : 'bg-emerald-600'}`} style={{ width: `${hpPerc}%` }} />
                           </div>
                         </div>
 
                         <div>
                           <div className="flex justify-between mb-0.5">
                             <span>ATTACK EXERT (DMG)</span>
-                            <span className="text-white">{c.stats.damage} pts</span>
+                            {boosts.includes('DMG_BOOST') ? (
+                              <span className="text-emerald-400 font-black">{boostedStats.damage} pts <span className="text-emerald-500 font-bold text-[6.5px] ml-0.5">(+4 ATK BOOST ACTIVE)</span></span>
+                            ) : (
+                              <span className="text-white">{c.stats.damage} pts</span>
+                            )}
                           </div>
                           <div className="w-full bg-black/40 h-1.5 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                            <div className="bg-orange-500 h-full rounded-sm" style={{ width: `${dmgPerc}%` }} />
+                            <div className={`h-full rounded-sm ${boosts.includes('DMG_BOOST') ? 'bg-emerald-400' : 'bg-orange-500'}`} style={{ width: `${dmgPerc}%` }} />
                           </div>
                         </div>
 
@@ -746,10 +900,14 @@ export default function App() {
                           <div>
                             <div className="flex justify-between mb-0.5">
                               <span>WEAPON RANGE</span>
-                              <span className="text-white">{c.stats.range}</span>
+                              {boosts.includes('RANGE_BOOST') ? (
+                                <span className="text-emerald-400 font-black">{boostedStats.range} <span className="text-emerald-500 font-bold text-[6px] ml-0.5">(+1 RG ACTIVE)</span></span>
+                              ) : (
+                                <span className="text-white">{c.stats.range}</span>
+                              )}
                             </div>
                             <div className="w-full bg-black/40 h-1 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                              <div className="bg-sky-400 h-full rounded-sm" style={{ width: `${rangePerc}%` }} />
+                              <div className={`h-full rounded-sm ${boosts.includes('RANGE_BOOST') ? 'bg-emerald-450' : 'bg-sky-400'}`} style={{ width: `${rangePerc}%` }} />
                             </div>
                           </div>
                           <div>
@@ -762,10 +920,84 @@ export default function App() {
                             </div>
                           </div>
                         </div>
+
+                        {/* Show extra Sensor/Tac tactical stats adjustments if boosted */}
+                        {boosts.includes('ACC_BOOST') && (
+                          <div className="bg-emerald-500/5 border border-emerald-500/20 p-1.5 rounded mt-2.5 flex items-center justify-between text-[7px] text-[#8b9180] tracking-wider uppercase font-bold">
+                            <span className="text-emerald-400">⚡ SENSOR OPTIMIZATION (TACTICAL IMPLANT ACTIVE)</span>
+                            <span className="text-emerald-300 font-extrabold">+10% TAC ACCURACY OUTLET</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* TAB CONTENT: SQUAD CHEMISTRIES */}
+            {dbTab === 'chemistries' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-left font-mono">
+                {CHEMISTRIES.map((c) => {
+                  const classA = c.classes[0];
+                  const classB = c.classes[1];
+                  
+                  // Get progress levels if authenticated
+                  const progA = (profile as any)?.characterProgress?.[classA] || { xp: 0, level: 1 };
+                  const progB = (profile as any)?.characterProgress?.[classB] || { xp: 0, level: 1 };
+                  
+                  return (
+                    <div key={c.id} className="border border-[#2d3422]/45 bg-black/45 p-3.5 rounded-lg flex flex-col justify-between hover:border-amber-500/35 transition-all duration-300 relative group">
+                      <div className="absolute top-2.5 right-2.5 bg-amber-500/5 border border-amber-500/20 text-[#fbbf24] text-[6.5px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">
+                        SYNERGY DUO
+                      </div>
+                      
+                      <div>
+                        <h4 className="font-extrabold text-[#fbbf24] uppercase text-[10px] tracking-wide flex items-center gap-1.5 mb-1 animate-pulse">
+                          <Zap className="w-3 h-3 text-[#fbbf24]" /> {c.name}
+                        </h4>
+                        <p className="text-[7.5px] text-[#8b9180] uppercase mb-3 leading-relaxed">
+                          {c.description}
+                        </p>
+                        
+                        {/* Chemistry visual linking */}
+                        <div className="flex items-center gap-2 bg-black/20 border border-[#2d3422]/20 p-2 rounded mb-3 justify-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <UnitHelmetAvatar classNameVal={classA} className="w-7 h-7 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
+                            <span className="text-[7.5px] font-extrabold text-[#dae3ce] uppercase">{classA}</span>
+                            {user && profile && (
+                              <span className="text-[6px] text-zinc-500 font-bold uppercase">LV {progA.level || 1}</span>
+                            )}
+                          </div>
+                          
+                          <div className="h-[1px] flex-1 bg-gradient-to-r from-amber-500/10 via-amber-500/60 to-amber-500/10 flex items-center justify-center relative mx-1">
+                            <span className="absolute bg-zinc-950 border border-[#2d3422] text-[#fbbf24] text-[6px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none">
+                              +
+                            </span>
+                          </div>
+                          
+                          <div className="flex flex-col items-center gap-1">
+                            <UnitHelmetAvatar classNameVal={classB} className="w-7 h-7 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
+                            <span className="text-[7.5px] font-extrabold text-[#dae3ce] uppercase">{classB}</span>
+                            {user && profile && (
+                              <span className="text-[6px] text-zinc-500 font-bold uppercase">LV {progB.level || 1}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Buff Override Info */}
+                      <div className="bg-sky-950/10 border border-sky-500/20 p-2 rounded text-[7.5px] text-[#8b9180] relative overflow-hidden mt-1">
+                        <span className="text-sky-400 font-black tracking-wider uppercase block text-[7px] mb-0.5">
+                          ⚡ TACTICAL SYNERGY PASSIVE:
+                        </span>
+                        <div className="text-zinc-300 font-bold tracking-tight leading-normal uppercase">
+                          {c.buffText}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
          </div>

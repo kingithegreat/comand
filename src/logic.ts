@@ -147,3 +147,52 @@ export const checkLineOfSight = (
 
   return true;
 };
+
+export const getCharacterLevelInfo = (xp: number = 0) => {
+  const levels = [
+    { level: 1, reqXp: 0 },
+    { level: 2, reqXp: 100 },
+    { level: 3, reqXp: 250 },
+    { level: 4, reqXp: 500 },
+    { level: 5, reqXp: 900 },
+  ];
+  
+  let currentLevel = 1;
+  let nextLevelXp = 100;
+  let prevLevelXp = 0;
+  
+  for (let i = levels.length - 1; i >= 0; i--) {
+    if (xp >= levels[i].reqXp) {
+      currentLevel = levels[i].level;
+      prevLevelXp = levels[i].reqXp;
+      nextLevelXp = i < levels.length - 1 ? levels[i+1].reqXp : levels[i].reqXp;
+      break;
+    }
+  }
+  
+  const isMaxLevel = currentLevel === 5;
+  const xpInCurrentLevel = xp - prevLevelXp;
+  const xpNeededForNextLevel = nextLevelXp - prevLevelXp;
+  // If isMaxLevel, percentage is 100
+  const percentage = isMaxLevel ? 100 : Math.min(100, Math.round((xpInCurrentLevel / xpNeededForNextLevel) * 100));
+  
+  return {
+    level: currentLevel,
+    xp,
+    nextLevelXp,
+    prevLevelXp,
+    percentage,
+    isMaxLevel,
+    maxUpgrades: currentLevel - 1
+  };
+};
+
+export const getBoostedStats = (baseStats: { maxHP: number; damage: number; range: number; mobility: number; accuracy: number }, boosts: string[] = []) => {
+  const stats = { ...baseStats };
+  if (boosts.includes('HP_BOOST')) stats.maxHP += 15;
+  if (boosts.includes('DMG_BOOST')) stats.damage += 4;
+  if (boosts.includes('RANGE_BOOST')) stats.range += 1;
+  if (boosts.includes('ACC_BOOST')) stats.accuracy += 10;
+  return stats;
+};
+

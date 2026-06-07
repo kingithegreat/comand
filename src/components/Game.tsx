@@ -4,9 +4,10 @@ import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell } from '../types';
 import { generateMap, MAPS } from '../mapUtils';
-import { getReachableTiles, checkLineOfSight, calculateHitChance } from '../logic';
+import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats } from '../logic';
+import { getActiveChemistries, applyChemistryBuffsToStats, CHEMISTRIES } from '../chemistries';
 import { db, auth } from '../firebase';
-import { doc, updateDoc, setDoc, increment } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, getDoc, increment } from 'firebase/firestore';
 import CombatLog, { LogMessage } from './CombatLog';
 import HUDCombatLog from './HUDCombatLog';
 import RosterStatus from './RosterStatus';
@@ -67,18 +68,20 @@ export default function Game({
   gameMode, 
   onBack,
   onlineMatch,
-  userId
+  userId,
+  userProfile
 }: { 
   gameMode: 'local_ai' | 'local_p2p' | 'online',
   onBack: () => void,
   onlineMatch?: any,
-  userId?: string
+  userId?: string,
+  userProfile?: any
 }) {
   const { playSound } = useAudio();
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>('sector_alpha');
   const [mode, setMode] = useState<'deploy' | 'play'>('deploy');
-  const [selectedClass, setSelectedClass] = useState<CharacterClass | null>(CLASSES[0]);
+  const [selectedClass, setSelectedClass] = useState<CharacterClass | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [teamSelection, setTeamSelection] = useState<'player' | 'enemy'>('player');
   const [turn, setTurn] = useState(1);
@@ -115,24 +118,18 @@ export default function Game({
   const [pendingTurnData, setPendingTurnData] = useState<{ units: Unit[], turn: number, activeTeam: 'player' | 'enemy' } | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(60);
 
-  const [activeLeftTab, setActiveLeftTab] = useState<'map' | 'logs' | 'leaderboard' | null>('map');
-  const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>('roster');
+  const [activeLeftTab, setActiveLeftTab] = useState<'map' | 'logs' | 'leaderboard' | null>(null);
+  const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>(null);
 
   useEffect(() => {
     if (mode === 'play') {
-      setActiveLeftTab('logs');
-      setActiveRightTab('unit_console');
+      setActiveLeftTab(null);
+      setActiveRightTab(null);
     } else if (mode === 'deploy') {
-      setActiveLeftTab('map');
-      setActiveRightTab('roster');
+      setActiveLeftTab(null);
+      setActiveRightTab(null);
     }
   }, [mode]);
-
-  useEffect(() => {
-    if (selectedUnitId && mode === 'play') {
-      setActiveRightTab('unit_console');
-    }
-  }, [selectedUnitId, mode]);
 
   useEffect(() => {
     if (selectedClass && mode === 'deploy') {
@@ -204,11 +201,97 @@ export default function Game({
   const isHost = isOnline ? onlineMatch.hostId === userId : true;
   const myTeam = isOnline ? (isHost ? 'player' : 'enemy') : undefined;
 
+  const [deployedClasses, setDeployedClasses] = useState<string[]>([]);
+
+  const getUnitClassWithBoosts = useCallback((characterClass: any, team: 'player' | 'enemy') => {
+    let activeClass = { ...characterClass };
+    const userTeam = isOnline ? myTeam : 'player';
+    if (team === userTeam && userProfile?.characterProgress) {
+      const classProgress = userProfile.characterProgress[characterClass.className];
+      if (classProgress && classProgress.boosts && classProgress.boosts.length > 0) {
+        activeClass = {
+          ...activeClass,
+          stats: getBoostedStats(characterClass.stats, classProgress.boosts)
+        };
+      }
+    }
+    
+    // Squad chemistry boosts
+    const sameTeamUnits = units.filter(u => u.team === team);
+    const sameTeamClassNames = sameTeamUnits.map(u => u.class.className);
+    if (!sameTeamClassNames.includes(characterClass.className)) {
+      sameTeamClassNames.push(characterClass.className);
+    }
+    
+    activeClass = {
+      ...activeClass,
+      stats: applyChemistryBuffsToStats(characterClass.className, activeClass.stats, sameTeamClassNames)
+    };
+    
+    return activeClass;
+  }, [isOnline, myTeam, userProfile, units]);
+
+  const recalculateSquadStats = useCallback((allUnits: Unit[]) => {
+    return allUnits.map(unit => {
+      const baseClass = CLASSES.find(c => c.className === unit.class.className) || unit.class;
+      let adjustedClass = { ...baseClass };
+
+      // 1. Level up boosts
+      const userTeam = isOnline ? myTeam : 'player';
+      if (unit.team === userTeam && userProfile?.characterProgress) {
+        const classProgress = userProfile.characterProgress[baseClass.className];
+        if (classProgress && classProgress.boosts && classProgress.boosts.length > 0) {
+          adjustedClass = {
+            ...adjustedClass,
+            stats: getBoostedStats(baseClass.stats, classProgress.boosts)
+          };
+        }
+      }
+
+      // 2. Chemistry boosts
+      const sameTeamUnits = allUnits.filter(u => u.team === unit.team);
+      const sameTeamClassNames = sameTeamUnits.map(u => u.class.className);
+      adjustedClass = {
+        ...adjustedClass,
+        stats: applyChemistryBuffsToStats(baseClass.className, adjustedClass.stats, sameTeamClassNames)
+      };
+
+      const maxHP = adjustedClass.stats.maxHP;
+      const hp = unit.hp === unit.class.stats.maxHP || mode === 'deploy' ? maxHP : Math.min(maxHP, unit.hp);
+
+      return {
+        ...unit,
+        class: adjustedClass,
+        hp
+      };
+    });
+  }, [isOnline, myTeam, userProfile, mode]);
+
+  useEffect(() => {
+    if (mode === 'play') {
+      const userTeam = isOnline ? myTeam : 'player';
+      const myClasses = units
+        .filter(u => u.team === userTeam)
+        .map(u => u.class.className);
+      if (myClasses.length > 0) {
+        setDeployedClasses(myClasses);
+      }
+    }
+  }, [mode, isOnline, myTeam, units]);
+
   const isSyncInitializedRef = React.useRef(false);
+  const pendingTurnWriteRef = React.useRef<{ turn: number, activeTeam: 'player' | 'enemy' } | null>(null);
+  const lastProcessedTurnKeyRef = React.useRef<string>("");
 
   useEffect(() => {
      isSyncInitializedRef.current = false;
   }, [onlineMatch?.id]);
+
+  useEffect(() => {
+     if (isOnline && myTeam) {
+        setTeamSelection(myTeam);
+     }
+  }, [isOnline, myTeam]);
 
   const mergeUnits = (myNewTeamUnits: any[], myTeamName: string, latestOnlineUnitsStr?: string) => {
     try {
@@ -263,6 +346,53 @@ export default function Game({
 
   const unitsString = JSON.stringify(units);
 
+  enum OperationType {
+    CREATE = 'create',
+    UPDATE = 'update',
+    DELETE = 'delete',
+    LIST = 'list',
+    GET = 'get',
+    WRITE = 'write',
+  }
+
+  interface FirestoreErrorInfo {
+    error: string;
+    operationType: OperationType;
+    path: string | null;
+    authInfo: {
+      userId?: string | null;
+      email?: string | null;
+      emailVerified?: boolean | null;
+      isAnonymous?: boolean | null;
+      tenantId?: string | null;
+      providerInfo?: {
+        providerId?: string | null;
+        email?: string | null;
+      }[];
+    }
+  }
+
+  function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+    const errInfo: FirestoreErrorInfo = {
+      error: error instanceof Error ? error.message : String(error),
+      authInfo: {
+        userId: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+        isAnonymous: auth.currentUser?.isAnonymous,
+        tenantId: auth.currentUser?.tenantId,
+        providerInfo: auth.currentUser?.providerData?.map(provider => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || []
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  }
+
   // Sync state from onlineMatch
   useEffect(() => {
     if (isOnline && onlineMatch) {
@@ -282,12 +412,41 @@ export default function Game({
                 setUnits(merged);
              }
           } else if (mode === 'play') {
-             // If it is our turn, we are the sole author of the units array.
-             // We prioritize local optimistic state and ignore remote echoes to prevent timing lag and overrides.
-             // If it is the opponent's turn, we must apply their updates immediately.
-             if (activeTeam !== myTeam) {
+             const dbActiveTeam = onlineMatch.activeTeam;
+             const dbTurn = onlineMatch.turn || 1;
+             const dbTurnKey = `${dbActiveTeam}:${dbTurn}`;
+
+             if (pendingTurnWriteRef.current) {
+                if (dbActiveTeam === pendingTurnWriteRef.current.activeTeam && dbTurn === pendingTurnWriteRef.current.turn) {
+                   pendingTurnWriteRef.current = null;
+                   lastProcessedTurnKeyRef.current = dbTurnKey;
+                } else {
+                   return;
+                }
+             }
+
+             if (dbActiveTeam !== myTeam) {
                 if (JSON.stringify(remoteUnits) !== unitsString) {
                    setUnits(remoteUnits);
+                }
+                if (activeTeam !== dbActiveTeam) {
+                   setActiveTeam(dbActiveTeam as 'player' | 'enemy');
+                }
+                if (turn !== dbTurn) {
+                   setTurn(dbTurn);
+                }
+             } else {
+                if (lastProcessedTurnKeyRef.current !== dbTurnKey) {
+                   if (JSON.stringify(remoteUnits) !== unitsString) {
+                      setUnits(remoteUnits);
+                   }
+                   lastProcessedTurnKeyRef.current = dbTurnKey;
+                }
+                if (activeTeam !== myTeam) {
+                   setActiveTeam(myTeam);
+                }
+                if (turn !== dbTurn) {
+                   setTurn(dbTurn);
                 }
              }
           }
@@ -304,7 +463,7 @@ export default function Game({
           }
         })();
        }
-       if ((onlineMatch.status === 'play' || onlineMatch.status === 'in_progress') && mode !== 'play' && !coinFlipping) {
+       if (onlineMatch.mode === 'play' && mode !== 'play' && !coinFlipping) {
           setCoinFlipping(true);
           setCoinSpinning(true);
           const syncedWinner = onlineMatch.activeTeam || 'player';
@@ -319,7 +478,7 @@ export default function Game({
              setCoinFlipping(false);
              addLog(`[COIN TOSS] Satellite positioning telemetry initialized. ${syncedWinner === 'player' ? 'Blue' : 'Red'} Squad won initiative and receives the first move!`, 'system');
           }, 2500);
-       } else if ((onlineMatch.status === 'play' || onlineMatch.status === 'in_progress') && mode === 'play') {
+       } else if (onlineMatch.mode === 'play' && mode === 'play' && !pendingTurnWriteRef.current && onlineMatch.activeTeam !== myTeam) {
           // If already in play, keep syncing activeTeam
           if (onlineMatch.activeTeam) {
              setActiveTeam(onlineMatch.activeTeam);
@@ -328,8 +487,8 @@ export default function Game({
        if (onlineMatch.winner) {
           setWinner(onlineMatch.winner);
        }
-       setTurn(onlineMatch.turn || 1);
-       if (onlineMatch.activeTeam && !coinFlipping && mode === 'play') {
+       if (!pendingTurnWriteRef.current && onlineMatch.activeTeam !== myTeam) { setTurn(onlineMatch.turn || 1); }
+       if (onlineMatch.activeTeam && !coinFlipping && mode === 'play' && !pendingTurnWriteRef.current && onlineMatch.activeTeam !== myTeam) {
           setActiveTeam(onlineMatch.activeTeam);
        }
     }
@@ -495,7 +654,13 @@ export default function Game({
     });
 
     setTimeout(() => {
-       setUnits(curr => curr.map(u => u.id === selectedUnit.id ? { ...u, pose: 'idle' as const } : u));
+       setUnits(curr => {
+          const updated = curr.map(u => u.id === selectedUnit.id ? { ...u, pose: 'idle' as const } : u);
+          if (isOnline) {
+             updateOnlineState(updated, turn, activeTeam);
+          }
+          return updated;
+       });
     }, 800);
 
     if (selectedUnit.class.className === 'Medic') {
@@ -707,6 +872,7 @@ export default function Game({
        setUnits(updatedUnits);
        setActiveTeam(nextTeam);
        setTurn(nextTurn);
+       pendingTurnWriteRef.current = { turn: nextTurn, activeTeam: nextTeam };
        updateOnlineState(updatedUnits, nextTurn, nextTeam);
     } else {
        if (gameMode === 'local_p2p') {
@@ -1203,8 +1369,38 @@ export default function Game({
 
         if (newWinner && !winner) {
           setWinner(newWinner as any);
-          if (newWinner === myTeam || (!myTeam && newWinner === 'player')) {
+          const isPlayerWin = newWinner === myTeam || (!myTeam && newWinner === 'player');
+          if (isPlayerWin) {
             playSound('win');
+            if (auth.currentUser) {
+              const userRef = doc(db, 'users', auth.currentUser.uid);
+              getDoc(userRef).then((snap) => {
+                if (snap.exists()) {
+                  const userData = snap.data();
+                  const currentProgress = userData.characterProgress || {};
+                  const updatedProgress = { ...currentProgress };
+                  
+                  deployedClasses.forEach((className) => {
+                    const classProg = updatedProgress[className] || { xp: 0, level: 1, boosts: [] };
+                    const newXp = (classProg.xp || 0) + 100;
+                    const levelInfo = getCharacterLevelInfo(newXp);
+                    
+                    updatedProgress[className] = {
+                      ...classProg,
+                      xp: newXp,
+                      level: levelInfo.level,
+                      boosts: classProg.boosts || []
+                    };
+                  });
+                  
+                  updateDoc(userRef, {
+                    characterProgress: updatedProgress
+                  }).then(() => {
+                    addLog(`[SQUAD SYNC] Mission Successful! Deployed squad members gained 100 XP. Check the Squad Database in the main menu to unlock minor stat boosts!`, 'system');
+                  }).catch(err => console.error("Error updating squad XP:", err));
+                }
+              }).catch(err => console.error("Error loading user profile for XP:", err));
+            }
           } else {
             playSound('lose');
           }
@@ -1219,10 +1415,9 @@ export default function Game({
 
         if (isOnline) {
            updateOnlineState(newUnits, turn, activeTeam, newStatus, newWinner);
-        } else {
-           setUnits(newUnits);
-           if (newStatus !== mode) setMode(newStatus as any);
         }
+        setUnits(newUnits);
+        if (newStatus !== mode) setMode(newStatus as any);
       }, 500); 
       return () => clearTimeout(timer);
     }
@@ -1243,9 +1438,10 @@ export default function Game({
       if (existingUnit) {
          if (isOnline && existingUnit.team !== myTeam) return; 
          const myNewTeamUnits = units.filter(u => u.team === teamSelection && u.id !== existingUnit.id);
-         const newUnits = isOnline 
+         const baseNewUnits = isOnline 
            ? mergeUnits(myNewTeamUnits, teamSelection, onlineMatch?.units) 
            : units.filter(u => u.id !== existingUnit.id);
+         const newUnits = recalculateSquadStats(baseNewUnits);
 
          addLog(`[RECALL] ${existingUnit.team === 'player' ? 'Blue' : 'Red'} ${existingUnit.class.className} withdrawn from grid.`, 'system');
          playSound('click');
@@ -1262,11 +1458,12 @@ export default function Game({
       if (selectedClass) {
         if (units.filter(u => u.team === teamSelection).length >= 4) return;
         
+        const activeClass = getUnitClassWithBoosts(selectedClass, teamSelection);
         const newUnit: Unit = {
           id: crypto.randomUUID(),
-          class: selectedClass,
+          class: activeClass,
           x, y,
-          hp: selectedClass.stats.maxHP,
+          hp: activeClass.stats.maxHP,
           ap: 2,
           team: teamSelection,
         };
@@ -1277,9 +1474,22 @@ export default function Game({
         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== deployId)), 1000);
         
         const myNewTeamUnits = [...units.filter(u => u.team === teamSelection), newUnit];
-        const newUnitsArray = isOnline 
+        
+        const prevClassNames = units.filter(u => u.team === teamSelection).map(u => u.class.className);
+        const newClassNames = myNewTeamUnits.map(u => u.class.className);
+        const prevChems = getActiveChemistries(prevClassNames);
+        const newChems = getActiveChemistries(newClassNames);
+        
+        newChems.forEach(chem => {
+          if (!prevChems.some(c => c.id === chem.id)) {
+            addLog(`[CHEMISTRY TRIGGER] ${chem.name} online! ${chem.buffText}`, 'system');
+          }
+        });
+
+        const baseUnitsArray = isOnline 
           ? mergeUnits(myNewTeamUnits, teamSelection, onlineMatch?.units) 
           : [...units, newUnit];
+        const newUnitsArray = recalculateSquadStats(baseUnitsArray);
 
         setUnits(newUnitsArray);
         if (isOnline) {
@@ -1342,7 +1552,13 @@ export default function Game({
                     });
 
                     setTimeout(() => {
-                      setUnits(curr => curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u));
+                      setUnits(curr => {
+                        const updated = curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u);
+                        if (isOnline) {
+                          updateOnlineState(updated, turn, activeTeam);
+                        }
+                        return updated;
+                      });
                     }, 800);
                     
                     const relHP = existingUnit.hp - unit.class.stats.damage;
@@ -1372,7 +1588,13 @@ export default function Game({
                     });
 
                     setTimeout(() => {
-                      setUnits(curr => curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u));
+                      setUnits(curr => {
+                        const updated = curr.map(u => u.id === unit.id ? { ...u, pose: 'idle' as const } : u);
+                        if (isOnline) {
+                          updateOnlineState(updated, turn, activeTeam);
+                        }
+                        return updated;
+                      });
                     }, 800);
 
                     addLog(`[MISS] ${attackerColor} ${unit.class.className} fired on ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) but missed!${isCovered ? ' (Target shielded by cover)' : ''}`, 'info');
@@ -1409,8 +1631,11 @@ export default function Game({
            addLog(`[MANEUVER] ${unitTeamColor} ${unit.class.className} advanced to quadrant ${getCoord(x, y)} (used ${reachableObj.apCost} AP).`, 'info');
            playSound('move');
            setSelectedUnitId(null);
-           if(isOnline) updateOnlineState(newUnits, turn, activeTeam);
-           else setUnits(newUnits);
+           setUnits(newUnits);
+           if (isOnline) {
+             updateOnlineState(newUnits, turn, activeTeam);
+           }
+            // State updated locally above
          }
       }
     }
@@ -1465,7 +1690,7 @@ export default function Game({
   const renderHoverHUD = () => {
     if (!hoveredTile) {
       return (
-        <div className="w-full bg-[#12150e]/95 border border-[#2d3324]/80 py-1.5 px-3 rounded-t-lg flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
+        <div className="w-full h-full bg-[#12150e]/95 border border-[#2d3324]/80 py-1.5 px-3 rounded-t-lg flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/45 animate-ping"></span>
             <span className="glow-text-green font-semibold">SYSTEM IDLE // SELECT ACTIVE VECTOR</span>
@@ -1529,7 +1754,7 @@ export default function Game({
     const isPlayerTeam = unitOnTile?.team === 'player';
 
     return (
-      <div className="w-full bg-[#12150e]/95 border border-[#2d3324] py-2 px-3 rounded-t-lg flex flex-col md:flex-row justify-between items-start md:items-center text-[10px] font-mono select-none gap-2 animate-fade-in shrink-0">
+      <div className="w-full h-full bg-[#12150e]/95 border border-[#2d3324] py-2 px-3 rounded-t-lg flex flex-col xl:flex-row justify-between items-start xl:items-center text-[10px] font-mono select-none gap-2 animate-fade-in shrink-0 overflow-hidden">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-zinc-500 font-bold">SECTOR:</span>
           <span className="text-white bg-[#1a2014] px-1.5 py-0.5 rounded border border-[#2d3324] font-bold font-mono">
@@ -1750,12 +1975,12 @@ export default function Game({
               } else if (y <= 6) {
                 const isActive = teamSelection === 'enemy';
                 overlayClass = isActive 
-                  ? 'warning-stripes-red opacity-35 border-b border-red-500/20'
-                  : 'warning-stripes-red opacity-15 border-b border-red-505/10';
+                  ? 'warning-stripes-fuchsia opacity-35 border-b border-fuchsia-500/20'
+                  : 'warning-stripes-fuchsia opacity-15 border-b border-fuchsia-900/40';
                 deployGridOverlay = (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1 text-center">
-                    <span className={`text-[6px] font-mono ${isActive ? 'text-red-305 font-black' : 'text-red-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
-                      RED ZONE
+                    <span className={`text-[6px] font-mono ${isActive ? 'text-fuchsia-400 font-black' : 'text-fuchsia-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
+                      PURPLE ZONE
                     </span>
                   </div>
                 );
@@ -1810,7 +2035,7 @@ export default function Game({
         if (mode === 'play' && selectedUnit && selectedUnit.team === activeTeam && hoveredTile?.x === x && hoveredTile?.y === y && unit && unit.team !== activeTeam) {
            const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
            if (hasLos) {
-             losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10 scale-105 transition-transform';
+             losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10';
              const { chance } = calculateHitChance(selectedUnit, unit, mapEnvironment);
              hitChanceInfo = (
                 <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 z-20">
@@ -1895,7 +2120,7 @@ export default function Game({
                const inRange = dist <= selectedUnit.class.stats.range;
                
                if (inRange && hasLos && selectedUnit.ap >= 1) {
-                  targetOverlayClass = 'ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-pulse scale-105';
+                  targetOverlayClass = 'ring-2 ring-red-500 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-pulse';
                   targetBadge = (
                      <div className="absolute -top-1 -right-1 bg-red-600 border border-red-400 text-[6.5px] text-white font-mono scale-90 px-1 py-0.5 rounded shadow z-40 font-black animate-bounce tracking-tighter">
                         LOCK
@@ -1921,62 +2146,6 @@ export default function Game({
             const isPlayerTeam = unit.team === 'player';
             const isHovered = hoveredTile?.x === unit.x && hoveredTile?.y === unit.y;
 
-            // Dynamic tactical HUD pop-up panel info card shown only on hover
-            const hoverPopup = isHovered ? (
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-44 bg-[#0d100a]/95 border-2 border-[#475231]/90 rounded-lg p-2 shadow-[0_10px_25px_rgba(0,0,0,0.9)] pointer-events-none select-none z-50 animate-fade-in font-mono flex flex-col gap-1 text-[8.5px] uppercase tracking-wider backdrop-blur-md">
-                {/* Header with Title and Team */}
-                <div className="flex items-center justify-between border-b border-[#2d3324] pb-1 mb-1">
-                  <span className={`font-black ${isPlayerTeam ? 'text-sky-400' : 'text-rose-405'}`}>
-                    {unit.class.className}
-                  </span>
-                  <span className={`text-[7px] font-bold px-1 rounded ${isPlayerTeam ? 'bg-sky-955 text-sky-400 border border-sky-850' : 'bg-rose-955 text-rose-455 border border-rose-900'}`}>
-                    {isPlayerTeam ? 'BLUE' : 'RED'}
-                  </span>
-                </div>
-                {/* HP Stats */}
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex justify-between text-[#bfcfb5] text-[7.5px] font-bold">
-                    <span>HP / INTEGRITY:</span>
-                    <span className="font-mono text-white font-black">{unit.hp} / {unit.class.stats.maxHP}</span>
-                  </div>
-                  <div className="w-full h-1 bg-black/50 border border-[#2d3422] rounded overflow-hidden p-[0.3px]">
-                    <div 
-                      className={`h-full rounded-sm transition-all duration-300 ${unit.hp < unit.class.stats.maxHP * 0.35 ? 'bg-red-500' : 'bg-emerald-450'}`}
-                      style={{ width: `${Math.max(0, (unit.hp / unit.class.stats.maxHP) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-                {/* AP & Range Stats */}
-                <div className="flex justify-between items-center text-[#bfcfb5] text-[7.5px] mt-0.5">
-                  <div className="flex items-center gap-1">
-                     <span>AP / ACTION:</span>
-                     <div className="flex gap-[2px]">
-                       {Array.from({ length: 2 }).map((_, i) => (
-                          <span 
-                            key={i} 
-                            className={`w-1.5 h-1.5 rounded-full ${
-                               i < unit.ap 
-                               ? 'bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.9)]' 
-                               : 'bg-zinc-850'
-                            }`}
-                          />
-                       ))}
-                     </div>
-                  </div>
-                  <div>
-                    <span>RNG: <span className="text-white font-black">{unit.class.stats.range}T</span></span>
-                  </div>
-                </div>
-                {/* Status Indicator */}
-                <div className="text-[7px] font-bold text-center mt-1 pt-0.5 border-t border-[#2d3324]/50 flex items-center justify-center gap-1 text-[#bfcfb5]">
-                  <span className={`w-1 h-1 rounded-full ${unit.ap > 0 ? 'bg-emerald-400 animate-ping' : 'bg-zinc-500'}`} />
-                  <span>
-                    {unit.ap > 0 ? "ACTION AVAILABLE" : "STANDBY"}
-                  </span>
-                </div>
-              </div>
-            ) : null;
-
             const unitSpriteFrame = (
               <div className="w-full h-full p-1 flex items-center justify-center relative overflow-visible select-none pointer-events-none">
                 <UnitSprite 
@@ -1998,9 +2167,27 @@ export default function Game({
                  {/* clean board: lock/range indicator is in HUD */}
                  {selectionReticle}
                  {activeUnitPulseRing}
-                 {mode === 'deploy' && hoverPopup}
                  
                  {unitSpriteFrame}
+                 
+                 {/* Unit Status Overlays (HP & AP) */}
+                 {mode === 'play' && (
+                    <div className="absolute bottom-0 w-full px-1 pb-1 flex flex-col items-center gap-[2px] z-30 pointer-events-none">
+                       {/* AP Pips */}
+                       <div className="flex gap-1 justify-center mb-[1px]">
+                          {Array.from({ length: 2 }).map((_, i) => (
+                             <div key={i} className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full border border-black/90 ${i < unit.ap ? 'bg-amber-400 shadow-[0_0_3px_rgba(251,191,36,0.9)]' : 'bg-black/80 shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)]'}`} />
+                          ))}
+                       </div>
+                       {/* HP Bar */}
+                       <div className="w-4/5 sm:w-full max-w-[28px] h-[3px] bg-black/80 border border-black/90 rounded-sm overflow-hidden flex">
+                          <div 
+                             className={`h-full transition-all duration-300 ${unit.hp / unit.class.stats.maxHP > 0.5 ? 'bg-emerald-400' : unit.hp / unit.class.stats.maxHP > 0.25 ? 'bg-amber-400' : 'bg-rose-500'}`}
+                             style={{ width: `${Math.max(0, (unit.hp / unit.class.stats.maxHP) * 100)}%` }}
+                          />
+                       </div>
+                    </div>
+                 )}
               </div>
             );
         }
@@ -2142,7 +2329,7 @@ export default function Game({
 
 
   const handleStartBattle = () => {
-    let currentUnits = [...units];
+    let currentUnits = units.map(u => ({ ...u, ap: 2 }));
     if (gameMode === 'local_ai' && currentUnits.filter(u => u.team === 'enemy').length === 0) {
        for(let i=0; i<4; i++) {
           let x, y;
@@ -2157,8 +2344,10 @@ export default function Game({
              x, y, hp: randClass.stats.maxHP, ap: 2, team: 'enemy'
           });
        }
-       setUnits(currentUnits);
     }
+
+    currentUnits = recalculateSquadStats(currentUnits);
+    setUnits(currentUnits);
 
     const rolledWinner = Math.random() < 0.5 ? 'player' : 'enemy';
 
@@ -2209,9 +2398,9 @@ export default function Game({
         );
       } else if (enemyDeployedCount < 4) {
         return (
-          <div className="bg-red-950/20 border border-red-500/30 p-2.5 rounded text-[10px] font-mono uppercase text-[#ef4444] leading-normal">
-            <span className="font-extrabold text-red-550 bg-red-400/10 border border-red-410/40 px-1.5 py-0.5 rounded mr-2">STEP 2 / 2</span>
-            Now, <span className="font-extrabold text-rose-450">Player 2 (Red Squad)</span>: Click inside the Red Forces Terminal (the top panel header) to switch deployment team, then choose unit classes and deploy exactly 4 units in the top rows (Rows 01-07).
+          <div className="bg-fuchsia-950/20 border border-fuchsia-500/30 p-2.5 rounded text-[10px] font-mono uppercase text-fuchsia-400 leading-normal">
+            <span className="font-extrabold text-fuchsia-400 bg-fuchsia-400/10 border border-fuchsia-500/40 px-1.5 py-0.5 rounded mr-2">STEP 2 / 2</span>
+            Now, <span className="font-extrabold text-fuchsia-400">Player 2 (Purple Squad)</span>: Click inside the Purple Forces Terminal (the top panel header) to switch deployment team, then choose unit classes and deploy exactly 4 units in the top rows (Rows 01-07).
           </div>
         );
       } else {
@@ -2270,18 +2459,18 @@ export default function Game({
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0e100c] text-[#dae3ce] font-sans p-2 md:p-4 flex flex-col items-center justify-start relative overflow-y-auto select-none">
+    <div className="h-screen w-full bg-[#0e100c] text-[#dae3ce] font-sans flex flex-col relative xl:overflow-hidden overflow-y-auto overflow-x-hidden select-none">
       {/* Subtle CRT Overlay */}
-      <div className="pointer-events-none absolute inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
+      <div className="pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
 
       {showHandoff && pendingTurnData && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm">
            <div className="bg-[#141810] border-2 border-[#424f35] p-10 flex flex-col items-center min-w-[320px] shadow-2xl rounded-lg max-w-sm text-center">
-              <h1 className={`text-4xl font-black uppercase tracking-[0.2em] mb-4 text-center ${handoffTarget === 'player' ? 'text-[#38bdf8] drop-shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'text-[#ef4444] drop-shadow-[0_0_15px_rgba(239,68,68,0.4)]'}`}>
-                {handoffTarget === 'player' ? 'BLUE SQUAD' : 'RED SQUAD'} TURN
+              <h1 className={`text-4xl font-black uppercase tracking-[0.2em] mb-4 text-center ${handoffTarget === 'player' ? 'text-[#38bdf8] drop-shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'text-[#c026d3] drop-shadow-[0_0_15px_rgba(192,38,211,0.4)]'}`}>
+                {handoffTarget === 'player' ? 'BLUE SQUAD' : 'PURPLE SQUAD'} TURN
               </h1>
               <p className="text-sm font-mono text-amber-500/80 tracking-widest uppercase mb-8 leading-relaxed">
-                PASS THE DEVICE TO {handoffTarget === 'player' ? 'PLAYER 1 (BLUE)' : 'PLAYER 2 (RED)'}
+                PASS THE DEVICE TO {handoffTarget === 'player' ? 'PLAYER 1 (BLUE)' : 'PLAYER 2 (PURPLE)'}
               </p>
               <button 
                 onClick={handleConfirmHandoff} 
@@ -2289,6 +2478,59 @@ export default function Game({
               >
                 I AM READY
               </button>
+           </div>
+        </div>
+      )}
+
+      {coinFlipping && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm">
+           <div className="bg-[#141810]/95 border-2 border-amber-500/45 p-10 flex flex-col items-center min-w-[340px] shadow-[0_0_50px_rgba(245,158,11,0.2)] rounded-xl max-w-sm text-center relative overflow-hidden">
+              {/* Retro digital circuit scanning borders */}
+              <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-amber-400"></div>
+              <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-amber-400"></div>
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-amber-400"></div>
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-amber-400"></div>
+              
+              <div className="w-24 h-24 mb-6 relative flex items-center justify-center">
+                 <div className="absolute inset-0 border border-amber-500/20 rounded-full animate-ping [animation-duration:1.6s]"></div>
+                 <div className="absolute inset-2 border border-dashed border-amber-500/35 rounded-full animate-[spin_8s_linear_infinite]"></div>
+                 <div className="absolute inset-4 border border-amber-550/15 rounded-full"></div>
+                 
+                 {/* The holographic spinning "coin" */}
+                 <div className={`w-14 h-14 rounded-full border-4 flex items-center justify-center font-mono font-black text-xs sm:text-sm tracking-wide transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] ${coinSpinning ? 'animate-[spin_0.2s_linear_infinite] border-amber-550 text-amber-400 bg-amber-500/5' : (coinWinner === 'player' ? 'border-sky-500 text-sky-450 bg-sky-950/20 shadow-[0_0_25px_rgba(56,189,248,0.5)] scale-110' : 'border-rose-500 text-rose-500 bg-rose-950/20 shadow-[0_0_25px_rgba(239,68,68,0.5)] scale-110')}`}>
+                   {coinSpinning ? 'INIT' : (coinWinner === 'player' ? 'BLUE' : 'RED')}
+                 </div>
+              </div>
+              
+              <h2 className="text-xs font-mono text-amber-400 font-extrabold tracking-widest uppercase mb-1 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span>
+                INITIATIVE SEQUENCING ENGINE
+              </h2>
+              <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#2d3422] to-transparent my-4"></div>
+              
+              {coinSpinning ? (
+                <div className="space-y-1.5 animate-pulse">
+                   <p className="text-[#8c9c7c] text-[9px] font-mono uppercase tracking-widest leading-normal">
+                     PULSED INITIATIVE SCAN IN PROGRESS...
+                   </p>
+                   <p className="text-[10px] text-zinc-500 font-mono uppercase font-bold">
+                     DECODING COMBAT NET SYNCHRONIZER
+                   </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                   <p className="text-zinc-400 text-[10px] font-mono uppercase tracking-widest leading-normal mb-1">
+                     TACTICAL ADVANTAGE DETECTED
+                   </p>
+                   <h1 className={`text-3xl font-black uppercase tracking-[0.15em] ${coinWinner === 'player' ? 'text-sky-400 drop-shadow-[0_0_12px_rgba(56,189,248,0.45)]' : 'text-fuchsia-500 drop-shadow-[0_0_12px_rgba(217,70,239,0.45)]'}`}>
+                     {coinWinner === 'player' ? 'BLUE LEADER' : 'PURPLE OPPONENT'}
+                   </h1>
+                   <div className="h-2"></div>
+                   <p className={`text-[9.5px] font-mono uppercase tracking-wider px-2.5 py-1.5 rounded-md border text-center font-bold relative overflow-hidden shrink-0 ${coinWinner === 'player' ? 'bg-sky-500/10 text-sky-350 border-sky-500/25' : 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/25'}`}>
+                     {coinWinner === 'player' ? 'BLUE SQUAD OPENS TARGET CHANNELS' : 'PURPLE SQUAD COMMANDS INITIATION'}
+                   </p>
+                </div>
+              )}
            </div>
         </div>
       )}
@@ -2306,7 +2548,7 @@ export default function Game({
       )}
 
       {/* Main Grid Frame */}
-      <div className="w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in">
+      <div className="w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in xl:flex-1 xl:overflow-hidden h-full">
         
         {/* TOP COMMAND HUD */}
         <div className="w-full bg-[#141810] border border-[#2d3422] px-3.5 py-2 rounded-lg flex flex-col md:flex-row items-center justify-between gap-3 shadow-xl shrink-0">
@@ -2353,12 +2595,17 @@ export default function Game({
         </div>
 
         {/* HUD CORE DISPLAY FLOW */}
-        <div className="w-full flex flex-col xl:flex-row gap-4 items-stretch justify-center h-full relative">
+        <div className="w-full xl:flex-1 flex flex-col xl:flex-row flex-wrap xl:flex-nowrap gap-4 items-center xl:items-stretch justify-center relative xl:overflow-hidden min-h-0">
           
           {/* LEFT COLUMN AUX PANEL */}
           {activeLeftTab && (
-            <div className="w-full xl:w-[320px] shrink-0 flex flex-col gap-3 animate-fade-in text-left">
-              <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-lg flex flex-col gap-3 shadow-lg select-none">
+            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-[#0e100c]/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
+              <div className="w-full max-w-2xl flex flex-col gap-3">
+              {/* Close Button */}
+              <div className="flex justify-end">
+                 <button onClick={() => setActiveLeftTab(null)} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+              </div>
+              <div className="bg-[#12160d]/95 border border-[#303a24] p-4 rounded-lg flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,1)] select-none">
                 {activeLeftTab === 'map' && (
                   <div className="flex flex-col gap-2">
                     <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24] flex items-center gap-1.5">
@@ -2414,197 +2661,107 @@ export default function Game({
                 )}
               </div>
             </div>
+            </div>
           )}
 
           {/* MAIN CENTER GROUND ASSIGNER CONTAINER */}
-          <div className="flex-1 max-w-[600px] flex flex-col gap-3 items-stretch justify-start min-w-[320px]">
+          <div className="flex-1 w-full flex flex-col gap-3 items-center justify-start shrink-0 order-1 overflow-y-auto custom-scrollbar h-full min-h-0 relative z-10 px-2 sm:px-4">
           
           {/* 0. SYSTEM STATUS INTEGRATED HEADER */}
           <div className="bg-[#12160d]/95 border border-[#303a24] p-2 rounded-lg flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0">
             {/* HOVER FEEDBACK IN HEADER */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 h-[80px] md:h-[60px] xl:h-[44px] overflow-hidden">
               {renderHoverHUD()}
             </div>
 
-            {/* SECTOR RULES GUIDE BUTTONS & STATUS */}
-            <div className="w-full lg:w-auto flex items-center justify-start lg:justify-end shrink-0">
-              <TurnCounter 
-                turn={turn}
-                activeTeam={activeTeam}
-                mode={mode}
-                isOnline={isOnline}
-                myTeam={myTeam}
-                onEndTurn={handleEndTurn}
-                gameMode={gameMode}
-                timeLeft={timeLeft}
-                onForceEndTurn={handleEndTurn}
-                units={units}
-              />
-            </div>
           </div>
 
-          {/* MASTER DOCK BAR FOR PANELS DOCKED AROUND THE BOARD */}
-          <div className="w-full flex items-center justify-between bg-[#0e1208]/90 border border-[#2d3422] p-1.5 rounded-lg gap-2 shrink-0 font-mono text-[9px] select-none text-left">
-            <div className="flex gap-1.5 flex-wrap">
+          {/* MASTER COMMAND BAR (PANEL TOGGLES) */}
+          <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between bg-[#1a2014] border border-[#445236] p-2 rounded-lg gap-2 shrink-0 font-mono text-[9px] sm:text-[10px] select-none text-left shadow-[0_4px_15px_rgba(0,0,0,0.5)] mt-1">
+            <div className="flex gap-2 flex-wrap items-center">
+              <span className="text-[#8b9180] font-black tracking-widest px-1 mr-1">OVERLAYS:</span>
               <button
                 type="button"
                 onClick={() => setActiveLeftTab(activeLeftTab === 'map' ? null : 'map')}
-                className={`px-2 py-1 rounded uppercase font-black transition-all flex items-center gap-1 border cursor-pointer ${
-                  activeLeftTab === 'map' ? 'bg-[#fbbf24]/10 border-[#fbbf24]/30 text-[#fbbf24] shadow-[0_0_6px_rgba(251,191,36,0.15)]' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                className={`px-3 py-1.5 rounded uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  activeLeftTab === 'map' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
                 }`}
               >
-                <Radar className="w-3 h-3" /> Sector {activeLeftTab === 'map' ? '◀' : '▶'}
+                <Radar className="w-3.5 h-3.5" /> Sector Map
               </button>
               <button
                 type="button"
                 onClick={() => setActiveLeftTab(activeLeftTab === 'logs' ? null : 'logs')}
-                className={`px-2 py-1 rounded uppercase font-black transition-all flex items-center gap-1 border cursor-pointer ${
-                  activeLeftTab === 'logs' ? 'bg-[#fbbf24]/10 border-[#fbbf24]/30 text-[#fbbf24] shadow-[0_0_6px_rgba(251,191,36,0.15)]' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                className={`px-3 py-1.5 rounded uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  activeLeftTab === 'logs' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
                 }`}
               >
-                <Activity className="w-3 h-3" /> Logs {activeLeftTab === 'logs' ? '◀' : '▶'}
+                <Activity className="w-3.5 h-3.5" /> Sensors
               </button>
               <button
                 type="button"
                 onClick={() => setActiveLeftTab(activeLeftTab === 'leaderboard' ? null : 'leaderboard')}
-                className={`px-2 py-1 rounded uppercase font-black transition-all flex items-center gap-1 border cursor-pointer ${
-                  activeLeftTab === 'leaderboard' ? 'bg-purple-950/20 border-purple-800/30 text-purple-400' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                className={`px-3 py-1.5 rounded uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  activeLeftTab === 'leaderboard' ? 'bg-purple-950/40 border-purple-800/50 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
                 }`}
               >
-                <Target className="w-3 h-3" /> Rankings {activeLeftTab === 'leaderboard' ? '◀' : '▶'}
+                <Target className="w-3.5 h-3.5" /> Rankings
               </button>
             </div>
 
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-2 flex-wrap justify-end">
               <button
                 type="button"
                 onClick={() => setActiveRightTab(activeRightTab === 'roster' ? null : 'roster')}
-                className={`px-2 py-1 rounded uppercase font-black transition-all flex items-center gap-1 border cursor-pointer ${
-                  activeRightTab === 'roster' ? 'bg-sky-500/10 border border-sky-500/30 text-sky-450 shadow-[0_0_6px_rgba(56,189,248,0.15)]' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                className={`px-3 py-1.5 rounded uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  activeRightTab === 'roster' ? 'bg-sky-500/20 border-sky-500/50 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
                 }`}
               >
-                <Users className="w-3 h-3" /> Squads {activeRightTab === 'roster' ? '▶' : '◀'}
+                <Users className="w-3.5 h-3.5" /> Squads
               </button>
               <button
                 type="button"
                 onClick={() => setActiveRightTab(activeRightTab === 'unit_console' ? null : 'unit_console')}
-                className={`px-2 py-1 rounded uppercase font-black transition-all flex items-center gap-1 border cursor-pointer ${
-                  activeRightTab === 'unit_console' ? 'bg-[#fbbf24]/10 border-[#fbbf24]/30 text-[#fbbf24] shadow-[0_0_6px_rgba(251,191,36,0.15)]' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                className={`px-3 py-1.5 rounded uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  activeRightTab === 'unit_console' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
                 }`}
               >
-                <Crosshair className="w-3 h-3" /> Unit Panel {activeRightTab === 'unit_console' ? '▶' : '◀'}
+                <Crosshair className="w-3.5 h-3.5" /> Targeting
               </button>
             </div>
           </div>
 
           {/* TACTICAL REGION CALIBRATION (MAP SELECTION) */}
           {mode === 'deploy' && (
-            <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-lg flex flex-col gap-3 shadow-lg select-none">
-              <div className="flex items-center justify-between border-b border-[#2d3422] pb-1.5 gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Radar className="w-4 h-4 text-amber-500 animate-spin" />
-                  <span className="text-[10px] sm:text-xs font-black font-mono uppercase tracking-widest text-amber-400">
-                    TACTICAL REGION CALIBRATION
+            <div className="w-full max-w-3xl flex border border-[#303a24] p-3 md:p-4 rounded-lg flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none bg-[#141810] shadow-[0_10px_25px_rgba(0,0,0,0.5)] shrink-0">
+              <div className="flex items-start gap-3">
+                <Radar className="w-6 h-6 text-amber-500 animate-spin shrink-0 mt-0.5" />
+                <div className="flex flex-col">
+                  <span className="text-[11px] sm:text-xs font-black font-mono uppercase tracking-widest text-[#dae3ce]">
+                    TOPOGRAPHY SECTOR CALIBRATION
+                  </span>
+                  <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 uppercase leading-relaxed max-w-md border-t border-[#303a24] pt-1.5 mt-1.5">
+                    Current sector layout determines grid constraints. <br className="hidden sm:block" /> {isOnline && !isHost ? 'Waiting for host to configure...' : 'Open map settings to adjust.'}
                   </span>
                 </div>
-                <span className="text-[8px] font-mono text-zinc-500 bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-800 uppercase">
-                  {MAPS.length} Balanced Arenas Available
-                </span>
               </div>
 
-              {isOnline ? (
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-y-1.5 border-b border-[#2d3422] pb-1.5">
-                    <span className="text-[9px] font-mono text-zinc-400 uppercase leading-relaxed max-w-[400px]">
-                      {isHost 
-                        ? 'SECNET multiplayer sector selection framework. As Host Commander, select the active tactical grid below to synchronize sector topography for all players.'
-                        : 'SECNET multiplayer sector selection framework. Awaiting Host Commander to select the active tactical grid.'
-                      }
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                    {MAPS.map((mapPreset) => {
-                      const isSelected = selectedMapId === mapPreset.id;
-                      return (
-                        <button
-                          key={mapPreset.id}
-                          type="button"
-                          disabled={!isHost}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (isHost) {
-                              selectMap(mapPreset.id);
-                            }
-                          }}
-                          className={`text-left p-1.5 rounded border transition-all text-xs font-mono uppercase flex flex-col justify-between h-[50px] group overflow-hidden ${
-                            isSelected
-                              ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)] font-black'
-                              : isHost 
-                              ? 'bg-black/20 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 cursor-pointer'
-                              : 'bg-black/10 border-zinc-900 text-zinc-650 cursor-not-allowed'
-                          }`}
-                        >
-                          <span className="font-bold text-[10px] flex items-center justify-between w-full">
-                            <span className="truncate">{mapPreset.name}</span>
-                            {isSelected && <span className="text-[7.5px] bg-amber-500 text-black px-1 rounded-sm select-none shrink-0 font-black">ACTIVE</span>}
-                          </span>
-                          <span className="text-[8px] font-normal text-zinc-500 group-hover:text-zinc-400 line-clamp-1 lowercase normal-case">
-                            {mapPreset.description}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-y-1.5 border-b border-[#2d3422] pb-1.5">
-                    <span className="text-[9px] font-mono text-zinc-400 uppercase leading-relaxed max-w-[400px]">
-                      Re-initialize operational sector topography. Changing the sector resets current squad deployment configurations.
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const otherPresets = MAPS.filter(m => m.id !== selectedMapId);
-                        const randPreset = otherPresets[Math.floor(Math.random() * otherPresets.length)] || MAPS[0];
-                        selectMap(randPreset.id);
-                      }}
-                      className="px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/35 hover:border-amber-500 text-amber-400 font-mono text-[8.5px] font-black uppercase rounded cursor-pointer transition-colors active:scale-95 shrink-0 flex items-center justify-center gap-1"
-                    >
-                      🎲 RANDOM SECTOR
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                    {MAPS.map((mapPreset) => {
-                      const isSelected = selectedMapId === mapPreset.id;
-                      return (
-                        <button
-                          key={mapPreset.id}
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            selectMap(mapPreset.id);
-                          }}
-                          className={`text-left p-1.5 rounded border transition-all text-xs font-mono uppercase flex flex-col justify-between h-[50px] group cursor-pointer overflow-hidden ${
-                            isSelected
-                              ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.2)] font-black'
-                              : 'bg-black/20 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300'
-                          }`}
-                        >
-                          <span className="font-bold text-[10px] flex items-center justify-between w-full">
-                            <span className="truncate">{mapPreset.name}</span>
-                            {isSelected && <span className="text-[7.5px] bg-amber-500 text-black px-1 rounded-sm select-none shrink-0 font-black">ACTIVE</span>}
-                          </span>
-                          <span className="text-[8px] font-normal text-zinc-500 group-hover:text-zinc-400 line-clamp-1 lowercase normal-case">
-                            {mapPreset.description}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              <div className="flex flex-col items-end gap-1 w-full sm:w-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveLeftTab('map')}
+                  disabled={isOnline && !isHost}
+                  className={`px-5 py-2.5 bg-amber-950/20 text-amber-400 rounded-lg flex items-center justify-center gap-2 font-mono text-[10px] sm:text-xs font-black uppercase transition-all whitespace-nowrap active:scale-95 w-full sm:w-auto shadow-md ${isOnline && !isHost ? 'opacity-50 cursor-not-allowed border border-amber-900/50' : 'cursor-pointer hover:bg-amber-900/40 hover:border-amber-400 border border-amber-500/50 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(245,158,11,0.15)]'}`}
+                >
+                  <Radar className="w-4 h-4" />
+                  Select Sector Map &raquo;
+                </button>
+                {selectedMapId && (
+                  <span className="text-[8px] font-black text-emerald-400 font-mono tracking-widest uppercase">
+                    ACTIVE: {MAPS.find(m => m.id === selectedMapId)?.name || 'UNKNOWN'}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -2613,18 +2770,18 @@ export default function Game({
             <div 
               className={`p-3 rounded-lg border transition-all duration-300 ${
                 teamSelection === 'enemy' 
-                  ? 'border-red-500/50 bg-red-950/15 shadow-[0_0_15px_rgba(239,68,68,0.15)]' 
+                  ? 'border-fuchsia-500/50 bg-fuchsia-950/15 shadow-[0_0_15px_rgba(217,70,239,0.15)]' 
                   : 'border-[#2d3422] bg-[#141810]'
-              } ${!isOnline || myTeam === 'enemy' ? 'cursor-pointer hover:border-red-500/40' : ''}`}
+              } ${!isOnline || myTeam === 'enemy' ? 'cursor-pointer hover:border-fuchsia-500/40' : ''}`}
               onClick={() => {
                 if (!isOnline || myTeam === 'enemy') {
                   setTeamSelection('enemy');
                 }
               }}
             >
-               <h2 className="text-red-400 font-bold mb-2 uppercase tracking-widest text-[10px] sm:text-xs font-mono flex items-center gap-1.5 border-b border-red-900/30 pb-2">
-                 <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_4px_#ef4444] animate-pulse animate-duration-1000"></div>
-                 RED SQUAD (TACTICAL ENEMY DEPLOYMENT AREA)
+               <h2 className="text-fuchsia-400 font-bold mb-2 uppercase tracking-widest text-[10px] sm:text-xs font-mono flex items-center gap-1.5 border-b border-fuchsia-900/30 pb-2">
+                 <div className="w-2 h-2 rounded-full bg-fuchsia-500 shadow-[0_0_4px_#d946ef] animate-pulse animate-duration-1000"></div>
+                 PURPLE SQUAD (TACTICAL ENEMY DEPLOYMENT AREA)
                  <span className="text-zinc-500 font-normal font-mono normal-case text-[9px] ml-auto">Deploys on rows 01-07 (top side of battlefield)</span>
                </h2>
                {renderRoster('enemy')}
@@ -2655,12 +2812,27 @@ export default function Game({
           )}
 
           {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
-          <div className="bg-[#141810] border border-[#2d3422] rounded-lg p-3 sm:p-4 flex flex-col items-center justify-center shadow-xl w-full">
+          <div className="bg-[#141810] border border-[#2d3422] rounded-lg p-3 sm:p-4 flex flex-col items-center justify-center shadow-xl w-full relative">
             <div className="w-full flex flex-col items-center justify-center">
-              
+
+              <div className="w-full max-w-3xl flex items-center justify-center mb-2 shrink-0">
+                <TurnCounter 
+                  turn={turn}
+                  activeTeam={activeTeam}
+                  mode={mode}
+                  isOnline={isOnline}
+                  myTeam={myTeam}
+                  onEndTurn={handleEndTurn}
+                  gameMode={gameMode}
+                  timeLeft={timeLeft}
+                  onForceEndTurn={handleEndTurn}
+                  units={units}
+                />
+              </div>
+
               {/* HIGH-TECH COMBAT TIMER COUNTDOWN HUD (For Online Active Play) */}
               {isOnline && mode === 'play' && !winner && (
-                <div className={`w-full max-w-[580px] mb-3.5 p-3 rounded-lg border font-mono text-[10px] sm:text-xs flex flex-col gap-2 select-none uppercase tracking-wider backdrop-blur-md transition-all duration-300 ${
+                <div className={`w-full max-w-3xl mb-3.5 p-3 rounded-lg border font-mono text-[10px] sm:text-xs flex flex-col gap-2 select-none uppercase tracking-wider backdrop-blur-md transition-all duration-300 ${
                   timeLeft <= 15
                     ? 'bg-red-950/35 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.25)] animate-pulse'
                     : activeTeam === myTeam
@@ -2731,9 +2903,9 @@ export default function Game({
                 </div>
               )}
               {/* Aligned Coordinate Scales with Battlefield Grid */}
-              <div className="relative w-full max-w-[580px] min-w-[320px] flex items-center justify-center bg-[#090b07] border border-[#1e2317] rounded p-2 overflow-x-auto hide-scrollbar shrink-0 animate-fade-in mt-1">
+              <div className="relative w-full max-w-none min-w-[320px] flex items-center justify-center bg-[#090b07] border border-[#1e2317] rounded p-2 overflow-x-auto hide-scrollbar shrink-0 animate-fade-in mt-1">
                 <div 
-                  className="w-full flex flex-col select-none"
+                  className="w-full flex flex-col select-none max-w-3xl"
                 >
                   {/* Column labels scale (A-O) */}
                   <div 
@@ -2764,7 +2936,7 @@ export default function Game({
                     {/* Actual battlefield grid */}
                     <div className="flex-1 relative">
                       <div 
-                        className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'translate-x-1 translate-y-1' : ''}`}
+                        className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-[#12150e] shadow-inner rounded overflow-hidden ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(239,68,68,0.30)] border-red-600/85' : ''}`}
                         style={{ 
                           gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                           backgroundColor: '#1b2015'
@@ -2804,7 +2976,7 @@ export default function Game({
 
               {/* Unified 1-Button Deployment and Battle Launch Flow (Placed below grid to prevent covering any playable squares!) */}
               {mode === 'deploy' && (
-                <div className="w-full max-w-[580px] mt-3.5 animate-fade-in flex justify-center">
+                <div className="w-full max-w-3xl mt-3.5 animate-fade-in flex justify-center">
                   <button
                     onClick={() => {
                       if (canStartBattleHook) {
@@ -2953,10 +3125,10 @@ export default function Game({
               <SelectedUnitConsole
                 selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
                   id: 'preview-' + selectedClass.className,
-                  class: selectedClass,
+                  class: getUnitClassWithBoosts(selectedClass, teamSelection),
                   x: -1,
                   y: -1,
-                  hp: selectedClass.stats.maxHP,
+                  hp: getUnitClassWithBoosts(selectedClass, teamSelection).stats.maxHP,
                   ap: 2,
                   team: teamSelection,
                 } : null)}
@@ -2982,12 +3154,7 @@ export default function Game({
                 activeHoveredTile={hoveredTile}
                 isOnline={isOnline}
                 myTeam={myTeam}
-                onPassUnit={() => {
-                  if (selectedUnit) {
-                     setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, ap: 0 } : u));
-                     setSelectedUnitId(null);
-                  }
-                }}
+                onPassUnit={handlePassUnit}
                 mode={mode}
               />
             </div>
@@ -2996,7 +3163,7 @@ export default function Game({
           {/* 4.5. SEMI-TRANSPARENT COMBAT FEED LOG (Placed directly under unit/battle controls during gameplay) */}
           {mode === 'play' && activeLeftTab !== 'logs' && (
             <div className="w-full flex justify-center animate-fade-in mt-1">
-              <div className="w-full max-w-[580px] xl:max-w-none">
+              <div className="w-full max-w-3xl xl:max-w-none">
                 <HUDCombatLog 
                   logs={logs} 
                   onClear={() => setLogs([])}
@@ -3011,7 +3178,12 @@ export default function Game({
 
           {/* RIGHT COLUMN AUX PANEL */}
           {activeRightTab && (
-            <div className="w-full xl:w-[325px] shrink-0 flex flex-col gap-3 animate-fade-in text-left">
+            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-[#0e100c]/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
+              <div className="w-full max-w-2xl flex flex-col gap-3">
+              {/* Close Button */}
+              <div className="flex justify-end">
+                 <button onClick={() => setActiveRightTab(null)} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+              </div>
               {activeRightTab === 'roster' && (
                 <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-lg flex flex-col gap-3 shadow-lg select-none">
                   <div className="flex items-center gap-2 border-b border-[#2d3422] pb-1.5 shrink-0">
@@ -3029,6 +3201,45 @@ export default function Game({
                       <span className="text-[9px] text-red-155 text-red-400 font-extrabold block mb-1 uppercase pb-1 border-b border-red-500/15">RED SQUADRON</span>
                       {renderRoster('enemy')}
                     </div>
+
+                    {/* ACTIVE SQUAD CHEMISTRIES */}
+                    {(() => {
+                      const pClassNames = units.filter(u => u.team === 'player').map(u => u.class.className);
+                      const eClassNames = units.filter(u => u.team === 'enemy').map(u => u.class.className);
+                      const pChems = getActiveChemistries(pClassNames);
+                      const eChems = getActiveChemistries(eClassNames);
+                      const hasChems = pChems.length > 0 || eChems.length > 0;
+
+                      if (!hasChems) return null;
+
+                      return (
+                        <div className="border border-[#2d3422]/60 bg-black/40 p-2 rounded flex flex-col gap-1.5 mt-1 text-[7.5px]">
+                          <span className="text-[8px] text-[#fbbf24] font-black tracking-widest uppercase flex items-center gap-1.5 pb-1 border-b border-[#2d3422]/20">
+                            <Zap className="w-3 h-3 text-[#fbbf24] animate-pulse" /> SQUAD CHEMISTRY SYNERGIES
+                          </span>
+                          
+                          {pChems.map(chem => (
+                            <div key={`p-${chem.id}`} className="bg-sky-500/5 border border-sky-500/20 p-1.5 rounded uppercase">
+                              <div className="flex justify-between items-center font-black text-sky-400 mb-0.5">
+                                <span>⚡ {chem.name}</span>
+                                <span className="text-[5.5px] bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold px-1 rounded">BLUE</span>
+                              </div>
+                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
+                            </div>
+                          ))}
+
+                          {eChems.map(chem => (
+                            <div key={`e-${chem.id}`} className="bg-orange-500/5 border border-orange-500/20 p-1.5 rounded uppercase">
+                              <div className="flex justify-between items-center font-black text-orange-400 mb-0.5">
+                                <span>⚡ {chem.name}</span>
+                                <span className="text-[5.5px] bg-orange-500/15 border border-orange-500/30 text-orange-300 font-bold px-1 rounded">RED</span>
+                              </div>
+                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="border-t border-zinc-800/60 pt-2 shrink-0">
                     <RosterStatus 
@@ -3059,10 +3270,10 @@ export default function Game({
                     <SelectedUnitConsole
                       selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
                         id: 'preview-' + selectedClass.className,
-                        class: selectedClass,
+                        class: getUnitClassWithBoosts(selectedClass, teamSelection),
                         x: -1,
                         y: -1,
-                        hp: selectedClass.stats.maxHP,
+                        hp: getUnitClassWithBoosts(selectedClass, teamSelection).stats.maxHP,
                         ap: 2,
                         team: teamSelection,
                       } : null)}
@@ -3088,17 +3299,13 @@ export default function Game({
                       activeHoveredTile={hoveredTile}
                       isOnline={isOnline}
                       myTeam={myTeam}
-                      onPassUnit={() => {
-                        if (selectedUnit) {
-                           setUnits(prev => prev.map(u => u.id === selectedUnit.id ? { ...u, ap: 0 } : u));
-                           setSelectedUnitId(null);
-                        }
-                      }}
+                      onPassUnit={handlePassUnit}
                       mode={mode}
                     />
                   </div>
                 </div>
               )}
+            </div>
             </div>
           )}
 

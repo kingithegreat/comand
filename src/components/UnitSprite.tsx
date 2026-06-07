@@ -51,7 +51,7 @@ export default function UnitSprite({
 
   const bgTheme = team === 'player' 
     ? 'bg-[#13273e]/90 border-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.4)] text-sky-400' 
-    : 'bg-[#311721]/90 border-[#f43f5e] shadow-[0_0_12px_rgba(244,63,94,0.4)] text-rose-400';
+    : 'bg-[#2e1065]/90 border-[#c026d3] shadow-[0_0_12px_rgba(192,38,211,0.4)] text-fuchsia-400';
 
   return (
     <div 

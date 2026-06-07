@@ -17,7 +17,8 @@ service cloud.firestore {
       return data.keys().hasAll(['userId', 'displayName'])
         && data.userId is string && data.userId.size() <= 128
         && data.displayName is string && data.displayName.size() <= 100
-        && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200));
+        && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200))
+        && (!data.keys().hasAny(['characterProgress']) || data.characterProgress is map);
     }
 
     match /users/{userId} {
@@ -31,7 +32,7 @@ service cloud.firestore {
                     && isValidUserProfile(incoming())
                     && existing().userId == request.auth.uid
                     && incoming().userId == existing().userId
-                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email']);
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'characterProgress']);
     }
 
     function isValidMatch(data) {

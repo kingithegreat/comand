@@ -28,11 +28,11 @@ export default function TurnCounter({
 }: TurnCounterProps) {
   let TurnLabel = '';
   if (gameMode === 'local_p2p') {
-    TurnLabel = activeTeam === 'player' ? 'Blue Squad (P1) Turn' : 'Red Squad (P2) Turn';
+    TurnLabel = activeTeam === 'player' ? 'Blue Squad (P1) Turn' : 'Purple Squad (P2) Turn';
   } else if (gameMode === 'local_ai') {
     TurnLabel = activeTeam === 'player' ? 'Your Turn' : 'AI Turn';
   } else {
-    TurnLabel = activeTeam === 'player' ? 'Blue Turn' : 'Red Turn';
+    TurnLabel = activeTeam === 'player' ? 'Blue Turn' : 'Purple Turn';
   }
 
   const isMyTurn = isOnline && activeTeam === myTeam;

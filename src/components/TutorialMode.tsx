@@ -31,6 +31,11 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
   const [placedCrate, setPlacedCrate] = useState<{ x: number; y: number } | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null);
 
+  // High production visual states
+  const [isShaking, setIsShaking] = useState<boolean>(false);
+  const [fireLine, setFireLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number; color: string } | null>(null);
+  const [activeDamageText, setActiveDamageText] = useState<{ x: number; y: number; text: string; color: string } | null>(null);
+
   const selectedClass = CLASSES.find(c => c.className === selectedClassName) || CLASSES[0];
 
   // Synthesized log helper
@@ -51,6 +56,19 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
     setPlacedCrate(null);
     setStep('movement');
   };
+
+  // Automatically advance to ability phase if AP runs out in movement step to prevent stale stuck states
+  useEffect(() => {
+    if (step === 'movement' && ap === 0) {
+      const timer = setTimeout(() => {
+        setStep('ability');
+        setAp(1); // Ensure they always have 1 AP to perform their class ability
+        playSound('click');
+        addLog(`[UPLINK] Spent all Movement AP. Auto-routing to Action Phase...`);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [ap, step, playSound]);
 
   // Mock grid coordinates (6 columns x 6 rows)
   const cols = 6;
@@ -102,23 +120,23 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Check if cell is within current ability target bounds
+  // Check if cell is within current ability target bounds (relaxed to prevent lock-outs or stuck states in tutorial, with log feedback)
   const checkAbilityTarget = (x: number, y: number) => {
     if (step !== 'ability' || ap < 1) return false;
     const dist = Math.abs(x - unitX) + Math.abs(y - unitY);
 
     if (selectedClassName === 'Sniper') {
-      // Sniper range is long, can reach anywhere except behind thick cover
       return x === 4 && y === 1;
     } else if (selectedClassName === 'Assault') {
-      // Assault needs range within 3
-      return x === 4 && y === 1 && dist <= 3;
+      // Allow target selection anywhere, later log if out of normal bounds
+      return x === 4 && y === 1;
     } else if (selectedClassName === 'Medic') {
-      // Medic needs adjacent or up to range 2 for ally
-      return x === 2 && y === 4 && dist <= 2;
+      // Allow healing anywhere, log later if out of normal bounds
+      return x === 2 && y === 4;
     } else if (selectedClassName === 'Technician') {
-      // Technician places adjoining grid
-      return dist === 1 && getCellType(x, y) === 'floor';
+      // Allow placing cover on any floor tile except current position
+      const isSelf = unitX === x && unitY === y;
+      return getCellType(x, y) === 'floor' && !isSelf;
     }
     return false;
   };
@@ -128,28 +146,83 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
     playSound('attack');
     setAp(0);
 
+    const dist = Math.abs(x - unitX) + Math.abs(y - unitY);
+
     if (selectedClassName === 'Sniper') {
-      setTargetDummyHP(0);
-      playSound('damage');
+      // Sniper lasers are electric cyan
+      setFireLine({ fromX: unitX, fromY: unitY, toX: 4, toY: 1, color: '#06b6d4' });
+      setActiveDamageText({ x: 4, y: 1, text: '-55 DMG CRITICAL!', color: '#ef4444' });
+      setIsShaking(true);
+      
+      setTimeout(() => {
+        setTargetDummyHP(0);
+        playSound('damage');
+      }, 250);
+
       addLog(`[CRITICAL] Fired Piercing Round on target dummy for 55 absolute damage!`);
     } else if (selectedClassName === 'Assault') {
-      setTargetDummyHP(prev => Math.max(0, prev - 25));
-      playSound('damage');
-      addLog(`[ENGAGE] Used Tactical Flush on target dummy. Damage: 25. AP drained.`);
+      // Assault tracer lines are fiery orange
+      setFireLine({ fromX: unitX, fromY: unitY, toX: 4, toY: 1, color: '#f97316' });
+      setActiveDamageText({ x: 4, y: 1, text: '-25 DMG tactical flush!', color: '#f97316' });
+      setIsShaking(true);
+
+      setTimeout(() => {
+        setTargetDummyHP(prev => Math.max(0, prev - 25));
+        playSound('damage');
+      }, 200);
+
+      if (dist > 3) {
+        addLog(`[RANGE BYPASS] Real Assault range < 3. Sim override fired at ${dist} tiles!`);
+      } else {
+        addLog(`[ENGAGE] Used Tactical Flush on target dummy. Damage: 25. AP drained.`);
+      }
     } else if (selectedClassName === 'Medic') {
-      playSound('win');
-      setInjuredAllyHP(85);
-      addLog(`[SUPPORT] Injected Nanite healing. Allies repaired back to full 85 HP.`);
+      // Medic nanites are neon system sky green/cyan
+      setFireLine({ fromX: unitX, fromY: unitY, toX: 2, toY: 4, color: '#10b981' });
+      setActiveDamageText({ x: 2, y: 4, text: '+55 HP REPAIRED!', color: '#38bdf8' });
+
+      setTimeout(() => {
+        setInjuredAllyHP(85);
+        playSound('win');
+      }, 200);
+
+      if (dist > 2) {
+        addLog(`[RANGE BYPASS] Real Medic range < 2. Sim override injected healing at ${dist} tiles!`);
+      } else {
+        addLog(`[SUPPORT] Injected Nanite healing. Allies repaired back to full 85 HP.`);
+      }
     } else if (selectedClassName === 'Technician') {
+      // Technician deploy construct waveforms
+      setFireLine({ fromX: unitX, fromY: unitY, toX: x, toY: y, color: '#f59e0b' });
+      setActiveDamageText({ x, y, text: 'DEPLOY COVER!', color: '#fbbf24' });
       playSound('deploy');
-      setPlacedCrate({ x, y });
-      addLog(`[CONSTRUCT] Deployed localized cover shielding at sector (${x}, ${y}).`);
+
+      setTimeout(() => {
+        setPlacedCrate({ x, y });
+        playSound('deploy');
+      }, 200);
+
+      if (dist > 1) {
+        addLog(`[RANGE BYPASS] Real tech constructs adjacent. Sim coverage deployed at ${dist} tiles!`);
+      } else {
+        addLog(`[CONSTRUCT] Deployed localized cover shielding at sector (${x}, ${y}).`);
+      }
     }
+
+    // Clear effects timers
+    setTimeout(() => {
+      setFireLine(null);
+      setIsShaking(false);
+    }, 550);
+
+    setTimeout(() => {
+      setActiveDamageText(null);
+    }, 1200);
 
     setTimeout(() => {
       setStep('completed');
       playSound('win');
-    }, 1500);
+    }, 1800);
   };
 
   return (
@@ -344,19 +417,31 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
 
               {/* Actions below guidance */}
-              {step === 'movement' && ap < 2 && (
+              {step === 'movement' && (
                 <button
-                  onClick={() => setStep('ability')}
+                  onClick={() => {
+                    setStep('ability');
+                    setAp(1); // Set AP to exactly 1 so they can execute their ability
+                    playSound('click');
+                    addLog(`[UPLINK] Transitioning unit to active tactical phase.`);
+                  }}
                   className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider rounded border border-amber-400 shadow cursor-pointer transition-all active:scale-95 text-center flex items-center justify-center gap-1.5"
                 >
-                  Confirm Movement Phase <ArrowRight className="w-4 h-4 ml-1" />
+                  {ap < 2 ? "Confirm Movement Phase" : "Skip Movement Phase"} <ArrowRight className="w-4 h-4 ml-1" />
                 </button>
               )}
             </div>
 
             {/* Tactical Interactive Grid (Right side) */}
             <div className="md:col-span-7 flex flex-col items-center justify-center">
-              <div className="bg-black/60 border border-[#2d3422] rounded-xl p-3.5 relative overflow-hidden shadow-xl w-full max-w-[380px]">
+              <motion.div 
+                animate={isShaking ? {
+                  x: [0, -8, 8, -8, 8, -4, 4, -2, 2, 0],
+                  y: [0, 5, -5, 3, -3, 2, -2, 0]
+                } : {}}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
+                className="bg-black/60 border border-[#2d3422] rounded-xl p-3.5 relative overflow-hidden shadow-xl w-full max-w-[380px]"
+              >
                 {/* Coordinates labeling helper */}
                 <div className="grid grid-cols-6 gap-1 w-full text-center text-[7px] text-[#475231] font-mono font-black mb-1 select-none">
                   <span>COL 0</span>
@@ -368,6 +453,46 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                 </div>
 
                 <div className="grid grid-cols-6 gap-1.5 w-full relative">
+                  {/* Dynamic laser trace beam overlay */}
+                  {fireLine && (
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-40">
+                      <defs>
+                        <filter id="laser-glow">
+                          <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                          <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                          </feMerge>
+                        </filter>
+                      </defs>
+                      <motion.line
+                        x1={`${((fireLine.fromX + 0.5) / 6) * 100}%`}
+                        y1={`${((fireLine.fromY + 0.5) / 6) * 100}%`}
+                        x2={`${((fireLine.toX + 0.5) / 6) * 100}%`}
+                        y2={`${((fireLine.toY + 0.5) / 6) * 100}%`}
+                        stroke={fireLine.color}
+                        strokeWidth="4"
+                        filter="url(#laser-glow)"
+                        initial={{ pathLength: 0, opacity: 1 }}
+                        animate={{ pathLength: [0, 1, 1], opacity: [0.2, 1, 0] }}
+                        transition={{ duration: 0.55, times: [0, 0.15, 1] }}
+                        strokeLinecap="round"
+                      />
+                      <motion.line
+                        x1={`${((fireLine.fromX + 0.5) / 6) * 100}%`}
+                        y1={`${((fireLine.fromY + 0.5) / 6) * 100}%`}
+                        x2={`${((fireLine.toX + 0.5) / 6) * 100}%`}
+                        y2={`${((fireLine.toY + 0.5) / 6) * 100}%`}
+                        stroke="#ffffff"
+                        strokeWidth="1.5"
+                        initial={{ pathLength: 0 }}
+                        animate={{ pathLength: [0, 1] }}
+                        transition={{ duration: 0.25 }}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  )}
+
                   {Array.from({ length: rows }).map((_, y) => {
                     return Array.from({ length: cols }).map((_, x) => {
                       const cellType = getCellType(x, y);
@@ -390,7 +515,13 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                       if (reachable) {
                         bgClass = "bg-emerald-950/40 border-emerald-500/70 hover:bg-emerald-900/60 transition-colors animate-pulse";
                       } else if (isTargetable) {
-                        bgClass = "bg-rose-950/40 border-rose-500/80 hover:bg-rose-900/60 cursor-pointer transition-colors animate-pulse";
+                        if (selectedClassName === 'Medic') {
+                          bgClass = "bg-sky-950/40 border-sky-500/80 hover:bg-sky-900/60 cursor-pointer transition-colors animate-pulse";
+                        } else if (selectedClassName === 'Technician') {
+                          bgClass = "bg-amber-950/40 border-amber-500/80 hover:bg-amber-900/60 cursor-pointer transition-colors animate-pulse";
+                        } else {
+                          bgClass = "bg-rose-950/40 border-rose-500/80 hover:bg-rose-900/60 cursor-pointer transition-colors animate-pulse";
+                        }
                       }
 
                       return (
@@ -403,6 +534,19 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                           title={`Sector ${x},${y}`}
                         >
                           <div className="absolute inset-0 flex items-center justify-center p-0.5">
+                            {/* NEW: Rising Floating Combat Indicator text popup */}
+                            {activeDamageText && activeDamageText.x === x && activeDamageText.y === y && (
+                              <motion.div
+                                initial={{ opacity: 0, scale: 0.5, y: 15 }}
+                                animate={{ opacity: [0, 1, 1, 0], scale: [0.8, 1.45, 1.45, 0.9], y: [-5, -30, -52, -65] }}
+                                transition={{ duration: 1.2, times: [0, 0.12, 0.82, 1] }}
+                                className="absolute pointer-events-none z-50 font-black tracking-widest text-[9.5px] whitespace-nowrap bg-black text-white px-2 py-1 rounded border border-current shadow-[0_0_15px_rgba(0,0,0,0.95)] uppercase select-none"
+                                style={{ color: activeDamageText.color }}
+                              >
+                                {activeDamageText.text}
+                              </motion.div>
+                            )}
+
                             {/* Wall asset */}
                             {cellType === 'wall' && (
                               <svg className="w-5 h-5 text-[#5e6c46]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -436,7 +580,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                               <div className="w-[85%] h-[85%] bg-rose-500/20 border-2 border-rose-500 rounded flex flex-col items-center justify-center p-0.5 relative shadow-[0_0_12px_rgba(239,68,68,0.4)]">
                                 <Target className="w-5 h-5 text-rose-500 animate-pulse" />
                                 <div className="w-full bg-zinc-950 h-1 rounded overflow-hidden mt-0.5 p-[0.3px] border border-zinc-900 absolute -bottom-1">
-                                  <div className="bg-red-500 h-full" style={{ width: `${(targetDummyHP / 80) * 100}%` }} />
+                                  <div className="bg-red-500 h-full animate-pulse" style={{ width: `${(targetDummyHP / 80) * 100}%` }} />
                                 </div>
                               </div>
                             )}
@@ -447,7 +591,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                                 <UnitHelmetAvatar classNameVal="Assault" className="w-[70%] h-[70%] text-sky-450" />
                                 <Heart className="w-2.5 h-2.5 text-sky-400 absolute top-0.5 right-0.5 animate-pulse" />
                                 <div className="w-full bg-zinc-950 h-1 rounded overflow-hidden mt-0.5 p-[0.3px] border border-zinc-900 absolute -bottom-1">
-                                  <div className={injuredAllyHP < 55 ? "bg-amber-500 h-full" : "bg-sky-400 h-full"} style={{ width: `${(injuredAllyHP / 85) * 100}%` }} />
+                                  <div className={injuredAllyHP < 55 ? "bg-amber-500 h-full animate-pulse" : "bg-sky-400 h-full"} style={{ width: `${(injuredAllyHP / 85) * 100}%` }} />
                                 </div>
                               </div>
                             )}
@@ -462,7 +606,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                     });
                   })}
                 </div>
-              </div>
+              </motion.div>
 
               {/* Reset button inside grid loop */}
               <button

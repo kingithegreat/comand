@@ -178,17 +178,17 @@ export default function RosterStatus({
               onClick={() => { setTeamSelection('enemy'); }}
               className={`py-1 text-[9px] font-bold uppercase rounded ${
                 teamSelection === 'enemy' 
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/40' 
+                  ? 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/40' 
                   : 'text-zinc-500 border border-transparent'
               }`}
             >
-              RED TEAM (ENEMY AI)
+              PURPLE TEAM (ENEMY AI)
             </button>
           </div>
         )}
 
         {isOnline && teamSelection !== myTeam && (
-          <div className="text-center py-4 text-[10px] text-red-400 bg-red-950/20 border border-red-950/40 rounded">
+          <div className="text-center py-4 text-[10px] text-fuchsia-400 bg-fuchsia-950/20 border border-fuchsia-950/40 rounded">
             LOCKED: OPPONENT TEAM DEPLOYMENT UNDERWAY
           </div>
         )}
@@ -207,7 +207,7 @@ export default function RosterStatus({
                   className={`
                     w-full text-left p-2 rounded border transition-all flex items-center justify-between
                     ${isSelected 
-                      ? (isPlayer ? 'border-sky-500 bg-sky-500/10 text-sky-300' : 'border-red-500 bg-red-500/10 text-red-300')
+                      ? (isPlayer ? 'border-sky-500 bg-sky-500/10 text-sky-300' : 'border-fuchsia-500 bg-fuchsia-500/10 text-fuchsia-300')
                       : 'border-[#2d3324] bg-[#1a2014]/40 text-zinc-400 hover:border-zinc-700'}
                     ${disabled ? 'opacity-35 cursor-not-allowed' : 'cursor-pointer'}
                   `}
@@ -237,7 +237,7 @@ export default function RosterStatus({
         <div className="text-[9px] text-zinc-500 bg-black/20 border border-[#2d3324]/55 p-2 rounded leading-relaxed">
           {teamSelection === 'player' 
             ? "DEPLOY ADVICE: Place your Blue forces in rows 8-14. Select class, then click valid highlighted grid floor."
-            : "DEPLOY ADVICE: Place Red forces in rows 0-6. AI forces auto-populate if left empty upon Battle launch."
+            : "DEPLOY ADVICE: Place Purple forces in rows 0-6. AI forces auto-populate if left empty upon Battle launch."
           }
         </div>
       </div>
@@ -297,12 +297,12 @@ export default function RosterStatus({
         <div>
           <div className="flex justify-between items-center mb-1.5 font-mono text-[10px]">
             <div className="flex items-center gap-1.5">
-              <Skull className="w-3.5 h-3.5 text-red-500" />
-              <span className="font-black text-red-400 tracking-wider uppercase">RED SQUAD (ENEMIES)</span>
+              <Skull className="w-3.5 h-3.5 text-fuchsia-400" />
+              <span className="font-black text-fuchsia-400 tracking-wider uppercase">PURPLE SQUAD (ENEMIES)</span>
             </div>
             <div className="text-right flex items-center gap-1.5">
               <span className="text-zinc-500 font-bold font-mono">INTEGRITY:</span>
-              <span className={`font-black tracking-widest ${eHealthPerc < 40 ? 'text-red-400 animate-pulse' : 'text-rose-500'}`}>
+              <span className={`font-black tracking-widest ${eHealthPerc < 40 ? 'text-fuchsia-400 animate-pulse' : 'text-fuchsia-500'}`}>
                 {eHealthPerc}%
               </span>
             </div>
@@ -311,8 +311,8 @@ export default function RosterStatus({
           {/* Progress Bar of Enemy Integrity */}
           <div className="w-full bg-[#1b2014] h-1.5 rounded border border-[#2d3324]/60 overflow-hidden mb-2 p-[0.5px]">
             <div 
-              className={`h-full rounded-sm transition-all duration-500 shadow-[0_0_6px_rgba(239,68,68,0.3)] ${
-                eHealthPerc < 40 ? 'bg-rose-600' : 'bg-rose-500'
+              className={`h-full rounded-sm transition-all duration-500 shadow-[0_0_6px_rgba(217,70,239,0.3)] ${
+                eHealthPerc < 40 ? 'bg-fuchsia-600' : 'bg-fuchsia-500'
               }`}
               style={{ width: `${eHealthPerc}%` }}
             />

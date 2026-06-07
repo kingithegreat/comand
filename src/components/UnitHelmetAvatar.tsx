@@ -20,7 +20,7 @@ interface UnitHelmetAvatarProps {
 }
 
 export default function UnitHelmetAvatar({ className = "w-10 h-10", classNameVal, team }: UnitHelmetAvatarProps) {
-  const teamAccent = team === 'player' ? 'text-sky-400' : 'text-rose-400';
+  const teamAccent = team === 'player' ? 'text-sky-400' : 'text-fuchsia-400';
 
   const getIcon = () => {
     const props = { className: "w-3/4 h-3/4 opacity-80", strokeWidth: 1.5 };

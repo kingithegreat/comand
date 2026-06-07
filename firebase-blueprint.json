@@ -7,7 +7,8 @@
       "properties": {
         "userId": { "type": "string" },
         "displayName": { "type": "string" },
-        "email": { "type": "string" }
+        "email": { "type": "string" },
+        "characterProgress": { "type": "object", "description": "Persistent XP, levels, and stat boosts for character classes" }
       },
       "required": ["userId", "displayName"]
     },
