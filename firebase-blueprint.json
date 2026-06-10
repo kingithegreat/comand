@@ -30,7 +30,9 @@
         "votes": { "type": "object" },
         "voteResolved": { "type": "boolean" },
         "votedMapId": { "type": "string" },
-        "aiDecisionText": { "type": "string" }
+        "aiDecisionText": { "type": "string" },
+        "squadSize": { "type": "number" },
+        "smogEnabled": { "type": "boolean" }
       },
       "required": ["hostId", "status"]
     },

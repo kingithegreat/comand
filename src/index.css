@@ -83,14 +83,14 @@
   }
 }
 
-@keyframes tactical-pulse-red {
+@keyframes tactical-pulse-purple {
   0%, 100% {
-    box-shadow: 0 0 5px rgba(248, 113, 113, 0.3), inset 0 0 5px rgba(248, 113, 113, 0.1);
-    border-color: rgba(248, 113, 113, 0.4);
+    box-shadow: 0 0 5px rgba(168, 85, 247, 0.3), inset 0 0 5px rgba(168, 85, 247, 0.1);
+    border-color: rgba(168, 85, 247, 0.4);
   }
   50% {
-    box-shadow: 0 0 12px rgba(248, 113, 113, 0.6), inset 0 0 8px rgba(248, 113, 113, 0.25);
-    border-color: rgba(248, 113, 113, 0.8);
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.6), inset 0 0 8px rgba(168, 85, 247, 0.25);
+    border-color: rgba(168, 85, 247, 0.8);
   }
 }
 
@@ -98,8 +98,8 @@
   animation: tactical-pulse-blue 1.5s infinite ease-in-out;
 }
 
-.selected-unit-red {
-  animation: tactical-pulse-red 1.5s infinite ease-in-out;
+.selected-unit-purple {
+  animation: tactical-pulse-purple 1.5s infinite ease-in-out;
 }
 
 /* Tactile HUD scan grids */
@@ -145,9 +145,38 @@
 
 /* Subtle amber dot layout filter */
 .amber-grid-bg {
-  background-color: #07090c;
-  background-image: radial-gradient(rgba(148, 163, 184, 0.16) 1.2px, transparent 1.2px);
+  background-color: transparent;
+  background-image: radial-gradient(rgba(161, 161, 170, 0.1) 1.2px, transparent 1.2px);
   background-size: 14px 14px;
+}
+
+/* Custom tactical colored grid regions */
+.allied-grid-bg {
+  background-color: transparent;
+  background-image: radial-gradient(rgba(14, 165, 233, 0.1) 1.2px, transparent 1.2px);
+  background-size: 14px 14px;
+}
+
+.hostile-grid-bg {
+  background-color: transparent;
+  background-image: radial-gradient(rgba(168, 85, 247, 0.1) 1.2px, transparent 1.2px);
+  background-size: 14px 14px;
+}
+
+.meridian-grid-bg {
+  background-color: transparent;
+  background-image: radial-gradient(rgba(245, 158, 11, 0.1) 1.2px, transparent 1.2px);
+  background-size: 14px 14px;
+}
+
+.warning-stripes-fuchsia {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(217, 70, 239, 0.15),
+    rgba(217, 70, 239, 0.15) 6px,
+    transparent 6px,
+    transparent 12px
+  );
 }
 
 .amber-field-tick {
@@ -181,10 +210,10 @@
 
 /* Metal crate panel hatch */
 .metal-hatch {
-  background: linear-gradient(135deg, #2d3527 25%, transparent 25%) -12px 0/ 24px 24px,
-              linear-gradient(225deg, #2d3527 25%, transparent 25%) -12px 0/ 24px 24px,
-              linear-gradient(45deg, #2d3527 25%, transparent 25%) 0 0/ 24px 24px,
-              linear-gradient(315deg, #2d3527 25%, #232a1e 25%) 0 0/ 24px 24px;
+  background: linear-gradient(135deg, #27272a 25%, transparent 25%) -12px 0/ 24px 24px,
+              linear-gradient(225deg, #27272a 25%, transparent 25%) -12px 0/ 24px 24px,
+              linear-gradient(45deg, #27272a 25%, transparent 25%) 0 0/ 24px 24px,
+              linear-gradient(315deg, #27272a 25%, #18181b 25%) 0 0/ 24px 24px;
 }
 
 /* Glow lines */
@@ -215,4 +244,15 @@
 
 .animate-screenshake-heavy {
   animation: screenshake-heavy 0.15s infinite;
+}
+
+@keyframes sweep-in-out {
+  0% { transform: translateY(20px) scale(0.95); opacity: 0; filter: blur(10px); }
+  15% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0px); }
+  85% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0px); }
+  100% { transform: translateY(-20px) scale(1.05); opacity: 0; filter: blur(10px); }
+}
+
+.animate-sweep-banner {
+  animation: sweep-in-out 2.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

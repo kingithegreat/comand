@@ -102,8 +102,13 @@ export const calculateHitChance = (
 
   let finalChance = baseAccuracy - distPenalty - coverPenalty;
   
-  // Minimum hit chance of 30% ensures interesting underdog mechanics rather than extreme 0% misses
-  finalChance = Math.max(30, Math.min(100, finalChance));
+  // Easy range override: units should never miss in easy/close ranges (distance of 2 or less)
+  if (dist <= 2) {
+    finalChance = 100;
+  } else {
+    // Minimum hit chance of 30% ensures interesting underdog mechanics rather than extreme 0% misses
+    finalChance = Math.max(30, Math.min(100, finalChance));
+  }
 
   return { chance: finalChance, isCovered };
 };

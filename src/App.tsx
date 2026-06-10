@@ -2,23 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw } from 'lucide-react';
-import { auth, db } from './firebase';
+import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion } from 'firebase/firestore';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind } from 'lucide-react';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import Game from './components/Game';
 import TutorialMode from './components/TutorialMode';
+import CampaignMode, { BASE_REGIONS } from './components/CampaignMode';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
 import CommanderLeaderboard from './components/CommanderLeaderboard';
+import MatchHistory from './components/MatchHistory';
 import { useAudio } from './contexts/AudioContext';
 import { getCharacterLevelInfo, getBoostedStats } from './logic';
 import { CHEMISTRIES, ChemistryDuo } from './chemistries';
+import { AbilityTooltip } from './components/AbilityTooltip';
 
 export default function App() {
-  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'tutorial' | null>(null);
+  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | null>(null);
+  const [campaignMissionId, setCampaignMissionId] = useState<string | null>(null);
   const [user, loading] = useAuthState(auth);
-  const [profile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
-  const { soundEnabled, toggleSound } = useAudio();
+  const [dbProfile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
+  const [localProfile, setLocalProfile] = useState<any>(() => {
+    try {
+      const stored = localStorage.getItem('local_campaign_profile');
+      return stored ? JSON.parse(stored) : { characterProgress: {} };
+    } catch(e) {
+      return { characterProgress: {} };
+    }
+  });
+  
+  const profile = user ? dbProfile : localProfile;
+  const { soundEnabled, toggleSound, playSound } = useAudio();
   
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
@@ -34,6 +48,9 @@ export default function App() {
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [guestProfile, setGuestProfile] = useState<any>(null);
   const [copied, setCopied] = useState(false);
+  const [smogMode, setSmogMode] = useState(false);
+  const [squadSize, setSquadSize] = useState<number>(4);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   useEffect(() => {
      if (profile && !editingProfile) {
@@ -94,9 +111,14 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    setIsLaunching(false);
+  }, [onlineMatchId]);
+
   const handleAbortMatch = async () => {
     if (!onlineMatchId) {
       setGameMode(null);
+      setCampaignMissionId(null);
       setOnlineMatchId(null);
       return;
     }
@@ -118,16 +140,36 @@ export default function App() {
     setOnlineMatchId(null);
   };
 
+  const handleUpdateLobbySettings = async (size: number, smog: boolean) => {
+    if (!onlineMatchId) return;
+    try {
+      const matchRef = doc(db, 'matches', onlineMatchId);
+      await updateDoc(matchRef, {
+        squadSize: size,
+        smogEnabled: smog
+      });
+      // Update local states so they are in sync if the user returns to main screen
+      setSquadSize(size);
+      setSmogMode(smog);
+    } catch (err: any) {
+      console.error("Failed to update lobby settings:", err);
+    }
+  };
+
   const handleLaunchBattlefield = async () => {
     if (!onlineMatchId) return;
+    setIsLaunching(true);
     try {
       const matchRef = doc(db, 'matches', onlineMatchId);
       await updateDoc(matchRef, {
         status: 'deploying'
       });
+      // Do not set isLaunching(false) here on success, because the redirect will happen
+      // when matchData.status changes to 'deploying'. It acts as a permanent loading state.
     } catch (err: any) {
       console.error(err);
       alert("Failed to synchronize battlefield frequencies: " + err.message);
+      setIsLaunching(false);
     }
   };
 
@@ -139,15 +181,23 @@ export default function App() {
       const userRef = doc(db, 'users', user.uid);
       const snap = await getDoc(userRef);
       if (!snap.exists()) {
-        await setDoc(userRef, {
-          userId: user.uid,
-          displayName: user.displayName || 'Commander',
-          email: user.email
-        });
+        try {
+          await setDoc(userRef, {
+            userId: user.uid,
+            displayName: user.displayName || 'Commander',
+            email: user.email
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Please ensure third-party cookies are not blocked, or open the app in a new tab to authenticate.");
+      if (error.message && error.message.startsWith('{') && error.message.endsWith('}')) {
+        alert("Authentication frequency synchronization issue: " + error.message);
+      } else {
+        alert("Please ensure third-party cookies are not blocked, or open the app in a new tab to authenticate.");
+      }
     }
   };
 
@@ -168,12 +218,16 @@ export default function App() {
       setEditingProfile(false);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error saving profile');
+      try {
+        handleFirestoreError(err, profile ? OperationType.UPDATE : OperationType.CREATE, `users/${user.uid}`);
+      } catch (richErr: any) {
+        alert(richErr.message || 'Error saving profile');
+      }
     }
   };
 
   const handleUnlockBoost = async (className: string, boostType: string) => {
-    if (!user || !profile) return;
+    if (!profile) return;
     const progress = (profile as any).characterProgress || {};
     const classProg = progress[className] || { xp: 0, level: 1, boosts: [] };
     const xp = classProg.xp || 0;
@@ -191,17 +245,28 @@ export default function App() {
       }
     };
     
-    try {
-      await setDoc(doc(db, 'users', user.uid), {
-        characterProgress: updatedProgress
-      }, { merge: true });
-    } catch (err) {
-      console.error("Failed to unlock boost", err);
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          characterProgress: updatedProgress
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to unlock boost", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+        } catch (richErr: any) {
+          alert("Upgrade synchronization failed: " + richErr.message);
+        }
+      }
+    } else {
+       const newLocal = { ...localProfile, characterProgress: updatedProgress };
+       setLocalProfile(newLocal);
+       localStorage.setItem('local_campaign_profile', JSON.stringify(newLocal));
     }
   };
 
   const handleResetBoosts = async (className: string) => {
-    if (!user || !profile) return;
+    if (!profile) return;
     const progress = (profile as any).characterProgress || {};
     const classProg = progress[className] || { xp: 0, level: 1, boosts: [] };
     
@@ -213,27 +278,83 @@ export default function App() {
       }
     };
     
-    try {
-      await setDoc(doc(db, 'users', user.uid), {
-        characterProgress: updatedProgress
-      }, { merge: true });
-    } catch (err) {
-      console.error("Failed to reset boosts", err);
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          characterProgress: updatedProgress
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to reset boosts", err);
+        try {
+          handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+        } catch (richErr: any) {
+          alert("Boost reset failed to synchronize: " + richErr.message);
+        }
+      }
+    } else {
+       const newLocal = { ...localProfile, characterProgress: updatedProgress };
+       setLocalProfile(newLocal);
+       localStorage.setItem('local_campaign_profile', JSON.stringify(newLocal));
     }
   };
 
-  const createRoom = async () => {
+  const createRoom = async (isPublic: boolean = false, isCoop: boolean = false) => {
     if (!user) return;
     try {
       const newMatchId = Math.random().toString(36).substring(2, 8).toUpperCase();
       await setDoc(doc(db, 'matches', newMatchId), {
         hostId: user.uid,
         status: 'waiting',
+        smogEnabled: smogMode,
+        squadSize: squadSize,
+        isPublic: isPublic,
+        isCoop: isCoop
       });
       setOnlineMatchId(newMatchId);
-      setGameMode('online');
+      setGameMode(isCoop ? 'online_coop' : 'online');
     } catch(err: any) {
       alert(err.message || "Failed to create room.");
+    }
+  };
+
+  const quickMatch = async () => {
+    if (!user) return;
+    try {
+      // Look for open public match
+      const matchesRef = collection(db, 'matches');
+      const q = query(
+        matchesRef, 
+        where('status', '==', 'waiting'), 
+        where('isPublic', '==', true),
+        limit(5)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      let foundMatch = null;
+      for (const matchDoc of querySnapshot.docs) {
+        const data = matchDoc.data();
+        if (data.hostId !== user.uid) {
+          foundMatch = { id: matchDoc.id, ...data };
+          break;
+        }
+      }
+
+      if (foundMatch) {
+        // Join the discovered match
+        const matchRef = doc(db, 'matches', foundMatch.id);
+        const data = foundMatch.data();
+        await updateDoc(matchRef, {
+           guestId: user.uid
+        });
+        setOnlineMatchId(foundMatch.id);
+        setGameMode(data.isCoop ? 'online_coop' : 'online');
+      } else {
+        // Create new public match if none found
+        await createRoom(true);
+      }
+    } catch(err: any) {
+      alert("Failed to find or create quick match.");
+      console.error(err);
     }
   };
 
@@ -246,13 +367,19 @@ export default function App() {
       const matchSnap = await getDoc(matchRef);
       if (matchSnap.exists()) {
          const data = matchSnap.data();
-         if (data.status === 'waiting' && data.hostId !== user.uid) {
-            await updateDoc(matchRef, {
-               guestId: user.uid
-            });
+         if (data.hostId !== user.uid) {
+            if (data.status === 'waiting' && !data.guestId) {
+               await updateDoc(matchRef, {
+                  guestId: user.uid
+               });
+            } else if (data.guestId !== user.uid) {
+               await updateDoc(matchRef, {
+                  spectators: arrayUnion(user.uid)
+               });
+            }
          }
          setOnlineMatchId(cleanCode);
-         setGameMode('online');
+         setGameMode(data.isCoop ? 'online_coop' : 'online');
       } else {
         alert("Room not found!");
       }
@@ -263,29 +390,65 @@ export default function App() {
 
   // Render Game Component if we selected a mode
   if (gameMode === 'local_ai' || gameMode === 'local_p2p') {
-    return <Game gameMode={gameMode} onBack={() => setGameMode(null)} userProfile={profile} />;
+    return <Game 
+      key={`game-${gameMode}-${campaignMissionId || 'freeplay'}`}
+      campaignMissionId={campaignMissionId} 
+      gameMode={gameMode} 
+      onBack={() => { 
+        if (campaignMissionId) {
+          setGameMode('campaign');
+          setCampaignMissionId(null);
+        } else {
+          setGameMode(null); 
+          setCampaignMissionId(null);
+        }
+      }} 
+      onNextMission={() => {
+        if (campaignMissionId) {
+           const currentIndex = BASE_REGIONS.findIndex(r => r.id === campaignMissionId);
+           if (currentIndex >= 0 && currentIndex < BASE_REGIONS.length - 1) {
+             setCampaignMissionId(BASE_REGIONS[currentIndex + 1].id);
+           } else {
+             // Go back to campaign if there are no more missions
+             setGameMode('campaign');
+             setCampaignMissionId(null);
+           }
+        }
+      }}
+      userProfile={profile} 
+      smogMode={smogMode} 
+      squadSize={squadSize} 
+    />;
   }
 
   if (gameMode === 'tutorial') {
     return (
-      <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+      <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
         <TutorialMode onBack={() => setGameMode(null)} />
+      </div>
+    );
+  }
+
+  if (gameMode === 'campaign') {
+    return (
+      <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+        <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} />
       </div>
     );
   }
 
   if (gameMode === 'online' && onlineMatchId) {
     if (matchLoading) {
-       return <div className="min-h-screen bg-[#0e100c] flex items-center justify-center text-[#dae3ce] font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
+       return <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
     }
 
     // Handlers for aborted rooms
     if (matchData?.status === 'aborted') {
       return (
-        <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-mono p-6 flex flex-col items-center justify-center relative">
+        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
-          <div className="max-w-md w-full bg-[#141810]/95 border border-[#2d3422] p-6 rounded-xl flex flex-col gap-4 text-center relative overflow-hidden shadow-2xl">
-            <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/40 rounded-full flex items-center justify-center text-rose-500 mx-auto animate-pulse">
+          <div className="max-w-md w-full bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50 p-6 rounded-xl flex flex-col gap-4 text-center relative overflow-hidden shadow-2xl">
+            <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/40 rounded-full flex items-center justify-center text-purple-500 mx-auto animate-pulse">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h2 className="text-lg font-black text-white uppercase tracking-wider font-mono">SECNET LINK BROKEN</h2>
@@ -297,7 +460,7 @@ export default function App() {
                 setGameMode(null);
                 setOnlineMatchId(null);
               }}
-              className="w-full py-2 bg-[#161a12] border border-[#2d3422] hover:border-amber-400 text-[#dae3ce] rounded font-bold text-xs uppercase cursor-pointer transition-colors"
+              className="w-full py-2 bg-[#161a12] border border-zinc-800 border-opacity-50 hover:border-amber-400 text-zinc-300 rounded-lg font-bold text-xs uppercase cursor-pointer transition-colors"
             >
               DISCONNECT & RETURN TO HQ
             </button>
@@ -312,18 +475,18 @@ export default function App() {
       const isOpponentConnected = !!matchData?.guestId;
 
       return (
-        <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-mono p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
           {/* Scanlines overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
           
-          <div className="w-full max-w-lg bg-[#141810]/95 border border-[#2d3422]/60 p-6 rounded-xl flex flex-col gap-6 relative overflow-hidden shadow-2xl">
+          <div className="w-full max-w-lg bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50/60 p-6 rounded-xl flex flex-col gap-6 relative overflow-hidden shadow-2xl">
             {/* Corner aesthetic highlights */}
             <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-amber-500"></div>
             <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-amber-500"></div>
             <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-amber-500"></div>
             <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-amber-500"></div>
 
-            <div className="text-center space-y-1 pb-3 border-b border-[#2d3422]/30">
+            <div className="text-center space-y-1 pb-3 border-b border-zinc-800 border-opacity-50/30">
               <span className="text-[9px] text-[#fbbf24] font-bold tracking-widest uppercase">TACTICAL COMM MATCHMAKING TERMINAL</span>
               <h2 className="text-lg font-black text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
                 <Globe className="w-5 h-5 text-amber-500 animate-[spin_10s_linear_infinite]" /> SECNET HANDSHAKE
@@ -340,13 +503,13 @@ export default function App() {
             </div>
 
             {/* Room Code Display */}
-            <div className="bg-black/50 border border-[#2d3422]/50 p-4 rounded flex flex-col items-center gap-1">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">TRANSMISSION FREQUENCY CODE</span>
+            <div className="bg-black/50 border border-zinc-800 border-opacity-50/50 p-4 rounded-lg flex flex-col items-center gap-1">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold flex items-center gap-2">TRANSMISSION FREQUENCY CODE <span className={`text-[8.5px] px-1 py-0.5 rounded-lg leading-none ${matchData?.isPublic ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-[#2d3422] text-[#8b9180] border border-zinc-800 border-opacity-50'}`}>{matchData?.isPublic ? 'PUBLIC' : 'PRIVATE'}</span></div>
               <div className="flex items-center gap-3">
                 <span className="text-3xl font-extrabold tracking-[0.25em] text-white font-mono select-all pl-2">{onlineMatchId}</span>
                 <button
                   onClick={() => handleCopyCode(onlineMatchId)}
-                  className="p-1.5 rounded border border-[#2d3422]/60 bg-[#161a12] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold uppercase active:scale-95"
+                  className="p-1.5 rounded-lg border border-zinc-800 border-opacity-50/60 bg-[#161a12] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold uppercase active:scale-95"
                   title="Copy room code to clipboard"
                 >
                   {copied ? (
@@ -365,25 +528,25 @@ export default function App() {
             {/* Commander Profiles & Connections indicators */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
               {/* Host Node */}
-              <div className="bg-black/30 border border-[#2d3422]/40 rounded p-3 flex flex-col gap-1.5 relative">
+              <div className="bg-black/30 border border-zinc-800 border-opacity-50/40 rounded-lg p-3 flex flex-col gap-1.5 relative">
                 <span className="text-[8px] text-zinc-500 uppercase tracking-wide font-medium">BLUE LEADER (HOST)</span>
                 <span className="text-xs font-black text-white leading-normal uppercase truncate">
                   {hostProfile?.displayName || 'Commander Host'}
                 </span>
-                <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
+                <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
                   <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping"></span> ONLINE
                 </span>
               </div>
 
               {/* Guest Node */}
-              <div className="bg-black/30 border border-[#2d3422]/40 rounded p-3 flex flex-col gap-1.5 relative">
-                <span className="text-[8px] text-zinc-500 uppercase tracking-wide font-medium">RED LEADER (GUEST)</span>
+              <div className="bg-black/30 border border-zinc-800 border-opacity-50/40 rounded-lg p-3 flex flex-col gap-1.5 relative">
+                <span className="text-[8px] text-zinc-500 uppercase tracking-wide font-medium">PURPLE LEADER (GUEST)</span>
                 {isOpponentConnected ? (
                   <>
                     <span className="text-xs font-black text-white leading-normal uppercase truncate">
                       {guestProfile?.displayName || 'Commander Guest'}
                     </span>
-                    <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
+                    <span className="text-[8px] font-bold py-0.5 px-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit uppercase flex items-center gap-1">
                       <span className="w-1 h-1 bg-emerald-400 rounded-full animate-ping"></span> READY TO SYNC
                     </span>
                   </>
@@ -398,6 +561,109 @@ export default function App() {
                   </>
                 )}
               </div>
+              
+              {/* Spectators Node */}
+              {matchData?.spectators && matchData.spectators.length > 0 && (
+                <div className="bg-black/30 border border-fuchsia-900/40 rounded-lg p-3 flex flex-col gap-1.5 relative sm:col-span-2">
+                  <span className="text-[8px] text-fuchsia-400 uppercase tracking-wide font-medium flex items-center justify-between">
+                     <span>OBSERVATORY SENSORS (SPECTATORS)</span>
+                     <span className="bg-fuchsia-500/20 px-1.5 py-0.5 rounded-lg text-fuchsia-300 font-bold">{matchData.spectators.length} ONLINE</span>
+                  </span>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                     {matchData.spectators.map((specId: string, idx: number) => (
+                        <span key={specId} className="text-[10px] font-mono text-zinc-400 bg-black/50 border border-fuchsia-900/50 px-2 py-0.5 rounded-lg uppercase flex items-center gap-1.5">
+                           <div className="w-1.5 h-1.5 bg-fuchsia-500 rounded-full animate-pulse" /> OBSERVER {idx + 1}
+                        </span>
+                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Real-time Mutator / Setup Console inside Lobby */}
+            <div className="bg-zinc-900 bg-opacity-80/40 border border-zinc-800 border-opacity-50/60 rounded-2xl p-4 text-left space-y-3 shadow-inner">
+              <span className="text-[8.5px] text-amber-500 font-bold uppercase tracking-wider block border-b border-zinc-800 border-opacity-50/30 pb-1.5 font-mono">
+                [LOBBY] STRATEGIC MUTATORS CONSOLE
+              </span>
+              
+              <div className="grid grid-cols-1 gap-3">
+                {/* Smog Protocol Toggle */}
+                <div className="flex items-center justify-between gap-4 bg-black/20 p-2.5 rounded-lg border border-zinc-800 border-opacity-50/40">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] font-bold text-zinc-300 font-mono tracking-wider">SMOG PROTOCOL (FOG OF WAR)</span>
+                    <span className="text-[8px] text-[#8b9180] leading-normal uppercase">
+                      Hides targets out of friendly visual ranges
+                    </span>
+                  </div>
+                  {isRoomHost ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUpdateLobbySettings(matchData?.squadSize ?? squadSize, !matchData?.smogEnabled);
+                        playSound('click');
+                      }}
+                      className={`px-3 py-1 border font-mono font-black text-[8px] tracking-wider uppercase transition-all duration-150 rounded-lg cursor-pointer ${
+                        matchData?.smogEnabled 
+                          ? 'bg-amber-500 border-amber-400 text-black shadow-[0_0_8px_rgba(251,191,36,0.2)]' 
+                          : 'bg-black/50 border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 hover:border-[#8b9180]'
+                      }`}
+                    >
+                      {matchData?.smogEnabled ? 'ACTIVE' : 'DEACTIVATE'}
+                    </button>
+                  ) : (
+                    <span className={`px-2.5 py-1 border font-mono font-bold text-[8px] tracking-wider gap-1.5 uppercase rounded-lg bg-black/60 ${
+                      matchData?.smogEnabled 
+                        ? 'border-amber-500/50 text-amber-400' 
+                        : 'border-zinc-800 border-opacity-50 text-[#8b9180]'
+                    }`}>
+                      {matchData?.smogEnabled ? 'HOST_ACTIVE' : 'HOST_INACTIVE'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Squad Count Counter */}
+                <div className="flex items-center justify-between gap-4 bg-black/20 p-2.5 rounded-lg border border-zinc-800 border-opacity-50/40">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] font-bold text-zinc-300 font-mono tracking-wider">SQUAD OPERATIONS COUNT</span>
+                    <span className="text-[8px] text-[#8b9180] leading-normal uppercase">
+                      Total active tactical units deployed per side
+                    </span>
+                  </div>
+                  {isRoomHost ? (
+                    <div className="flex items-center gap-1.5">
+                      <button 
+                        type="button"
+                        disabled={(matchData?.squadSize ?? squadSize) <= 1}
+                        onClick={() => {
+                          handleUpdateLobbySettings(Math.max(1, (matchData?.squadSize ?? squadSize) - 1), !!matchData?.smogEnabled);
+                          playSound('click');
+                        }}
+                        className="w-6 h-6 flex items-center justify-center bg-black/50 border border-zinc-800 border-opacity-50 hover:border-amber-400 hover:text-amber-400 text-zinc-400 font-mono font-bold text-xs rounded-lg transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                      >
+                        -
+                      </button>
+                      <span className="w-14 text-center font-black text-amber-500 text-[10px] font-mono">
+                        {matchData?.squadSize ?? squadSize} { (matchData?.squadSize ?? squadSize) === 1 ? 'UNIT' : 'UNITS' }
+                      </span>
+                      <button
+                        type="button"
+                        disabled={(matchData?.squadSize ?? squadSize) >= 8}
+                        onClick={() => {
+                          handleUpdateLobbySettings(Math.min(8, (matchData?.squadSize ?? squadSize) + 1), !!matchData?.smogEnabled);
+                          playSound('click');
+                        }}
+                        className="w-6 h-6 flex items-center justify-center bg-black/50 border border-zinc-800 border-opacity-50 hover:border-amber-400 hover:text-amber-400 text-zinc-400 font-mono font-bold text-xs rounded-lg transition-all disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="px-2.5 py-1 border border-zinc-800 border-opacity-50 text-zinc-400 font-mono font-black text-[8px] tracking-wider rounded-lg bg-black/60 font-bold">
+                      {matchData?.squadSize ?? squadSize} { (matchData?.squadSize ?? squadSize) === 1 ? 'UNIT' : 'UNITS' } ACTIVE
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Launch Actions and controls */}
@@ -407,32 +673,50 @@ export default function App() {
                   {isOpponentConnected ? (
                     <button
                       onClick={handleLaunchBattlefield}
-                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded border border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
+                      disabled={isLaunching}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:from-amber-700 disabled:to-amber-800 text-black font-black text-xs uppercase tracking-wider rounded-lg border border-amber-400 disabled:border-amber-700 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 disabled:transform-none disabled:cursor-wait flex flex-col items-center justify-center gap-1.5"
                     >
-                      <Play className="w-4 h-4 fill-black text-black" /> SYNCHRONIZE GRIDS & LAUNCH OPERATION
+                      {isLaunching ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                             <Loader2 className="w-4 h-4 animate-spin text-black" />
+                             <span className="text-black">TRANSMITTING SECURE BLUEPRINTS...</span>
+                          </div>
+                          <div className="w-48 h-1 bg-black/20 rounded-full overflow-hidden">
+                             <div className="h-full bg-black animate-pulse rounded-full" style={{ width: '100%', animationDuration: '1.5s' }} />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                           <Play className="w-4 h-4 fill-black text-black" /> 
+                           <span>SYNCHRONIZE GRIDS & LAUNCH OPERATION</span>
+                        </div>
+                      )}
                     </button>
                   ) : (
                     <button
                       disabled
-                      className="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-extrabold text-xs uppercase tracking-wider rounded cursor-not-allowed flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-extrabold text-xs uppercase tracking-wider rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       <Loader2 className="w-4 h-4 animate-spin text-amber-500" /> AWAITING COMM-LINK INSTANTIATION...
                     </button>
                   )}
                 </>
               ) : (
-                <div className="bg-amber-400/5 border border-amber-500/25 p-3 rounded text-center space-y-1">
+                <div className="bg-amber-400/5 border border-amber-500/25 p-3 rounded-lg text-center space-y-1">
                   <div className="text-xs font-bold text-amber-400 flex items-center justify-center gap-1.5 uppercase">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> ESTABLISHED INGRESS LINK
                   </div>
                   <p className="text-[8.5px] text-zinc-400 uppercase leading-normal">
-                    Frequencies synchronized. Awaiting Host Commander to authorize tactical grid deployment blueprints and start matches.
+                    {matchData?.guestId !== user?.uid 
+                       ? 'Spectator feed synchronized. Awaiting Host Commander to authorize tactical grid deployment blueprints and start match.'
+                       : 'Frequencies synchronized. Awaiting Host Commander to authorize tactical grid deployment blueprints and start matches.'}
                   </p>
                 </div>
               )}
 
               {/* Status checklist feed */}
-              <div className="bg-black/70 border border-[#2d3422]/50 p-3 rounded text-[8.5px] text-zinc-500 text-left space-y-1 leading-relaxed uppercase">
+              <div className="bg-black/70 border border-zinc-800 border-opacity-50/50 p-3 rounded-lg text-[8.5px] text-zinc-500 text-left space-y-1 leading-relaxed uppercase">
                 <div className="flex items-center justify-between">
                   <span>[TRANS] BEACON SPECTRUM INJECTION</span>
                   <span className="text-emerald-400 font-bold">ACTIVE</span>
@@ -442,7 +726,7 @@ export default function App() {
                   <span className="text-emerald-400 font-bold">AES-256 SECURED</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>[LOBBY] RED_CMD STATUS</span>
+                  <span>[LOBBY] PURPLE_CMD STATUS</span>
                   <span className={isOpponentConnected ? "text-emerald-400 font-bold" : "text-amber-400 font-bold tracking-widest animate-pulse"}>
                     {isOpponentConnected ? "SYNCHRONIZED" : "SCANNING SPECTRUM..."}
                   </span>
@@ -451,7 +735,7 @@ export default function App() {
 
               <button
                 onClick={handleAbortMatch}
-                className="w-full py-2 border border-[#2d3422] hover:border-rose-500 text-zinc-400 hover:text-rose-400 font-bold text-xs uppercase rounded transition-colors bg-transparent cursor-pointer flex items-center justify-center gap-1.5 font-mono"
+                className="w-full py-2 border border-zinc-800 border-opacity-50 hover:border-purple-500 text-zinc-400 hover:text-purple-400 font-bold text-xs uppercase rounded-lg transition-colors bg-transparent cursor-pointer flex items-center justify-center gap-1.5 font-mono"
                 title="Disconnect this matchmaking channel"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> ABORT TRANSMISSION & DISCONNECT
@@ -463,46 +747,47 @@ export default function App() {
     }
 
     return (
-       <div className="min-h-screen bg-[#0e100c] select-none text-[#dae3ce]">
+       <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
          <Game 
            gameMode="online" 
            onBack={() => { handleAbortMatch(); }} 
            onlineMatch={{ id: onlineMatchId, ...matchData }} 
            userId={user?.uid} 
            userProfile={profile}
+           squadSize={squadSize}
          />
        </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0e100c] text-[#dae3ce] font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+    <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
       {/* Visual CRT Glass Scanlines overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
       
       {/* Ambient background tactical radar layout */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] border border-[#2d3422]/15 rounded-full pointer-events-none z-0">
-        <div className="absolute inset-20 border border-[#2d3422]/10 rounded-full"></div>
-        <div className="absolute inset-40 border border-[#2d3422]/5 rounded-full"></div>
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] border border-zinc-800 border-opacity-50/15 rounded-full pointer-events-none z-0">
+        <div className="absolute inset-20 border border-zinc-800 border-opacity-50/10 rounded-full"></div>
+        <div className="absolute inset-40 border border-zinc-800 border-opacity-50/5 rounded-full"></div>
         <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-[#2d3422]/10"></div>
         <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-[#2d3422]/10"></div>
       </div>
 
       <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
          {/* Terminal Header */}
-         <div className="text-center space-y-3 pb-2 border-b border-[#2d3422]/30 relative">
+         <div className="text-center space-y-3 pb-2 border-b border-zinc-800 border-opacity-50/30 relative">
            <button 
              onClick={toggleSound} 
-             className="absolute right-0 top-0 p-2 rounded-full border border-[#2d3422] bg-[#141810] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-colors"
+             className="absolute right-0 top-0 p-2 rounded-full border border-zinc-800 border-opacity-50 bg-zinc-900 bg-opacity-80 text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-colors"
              title={soundEnabled ? "Disable Audio" : "Enable Audio"}
            >
              {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
            </button>
-           <div className="w-16 h-16 bg-[#161a12] border border-[#2d3422] rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(45,52,34,0.4)] mx-auto relative group">
+           <div className="w-16 h-16 bg-[#161a12] border border-zinc-800 border-opacity-50 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(45,52,34,0.4)] mx-auto relative group">
               <Target className="w-8 h-8 text-amber-500 absolute scale-105 opacity-40 blur-sm animate-pulse" />
               <Target className="w-8 h-8 text-amber-400 relative z-10 transition-transform group-hover:rotate-45 duration-700" />
            </div>
-           <h1 className="text-4xl font-extrabold tracking-widest text-[#dae3ce] font-mono uppercase">
+           <h1 className="text-4xl font-extrabold tracking-widest text-zinc-300 font-mono uppercase">
              TACTICAL <span className="text-[#fbbf24] font-black filter drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]">COMMAND</span>
            </h1>
            <div className="flex items-center justify-center gap-4 text-[9.5px] font-mono text-[#8b9180] tracking-wider uppercase">
@@ -514,48 +799,145 @@ export default function App() {
            </div>
          </div>
 
+         {/* Tactical Mutators Dashboard */}
+         <div className="flex flex-col gap-4 mb-6">
+            {/* Section 1: Smog Protocol */}
+            <div className="bg-zinc-900 bg-opacity-80/60 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-left shadow-lg">
+               <div className="flex gap-4 items-start">
+                  <div className={`p-2.5 rounded-lg border transition-all ${smogMode ? 'bg-amber-500/10 border-amber-500/80 text-amber-400 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-black/40 border-zinc-800 border-opacity-50 text-[#8b9180]'}`}>
+                     <Wind className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div>
+                     <h4 className="text-sm sm:text-base font-mono font-black text-zinc-300 uppercase tracking-wider flex items-center gap-2 leading-none mb-1">
+                        SMOG CLASSIFICATION PROTOCOL
+                        {smogMode && <span className="bg-amber-400 text-black text-[9px] px-1.5 font-mono font-black py-0.5 rounded-lg leading-none">ACTIVE TESTBED</span>}
+                     </h4>
+                     <p className="text-xs text-[#8b9180] mt-1.5 uppercase leading-relaxed max-w-sm sm:max-w-md">
+                        Hides tactical quadrants under thick cloud covers. Squares and enemy vectors are visible ONLY if they fall inside friendly units' visual ranges and lines of sight.
+                     </p>
+                  </div>
+               </div>
+               <button
+                  type="button"
+                  onClick={() => {
+                    setSmogMode(!smogMode);
+                    playSound('click');
+                  }}
+                  className={`w-full sm:w-auto px-5 py-3 border font-mono font-black text-xs sm:text-sm tracking-widest uppercase transition-all duration-200 rounded-lg cursor-pointer shrink-0 ${
+                    smogMode 
+                      ? 'bg-amber-500 border-amber-400 text-zinc-950 hover:bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.25)]' 
+                      : 'bg-black/50 border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 hover:border-[#8b9180]'
+                  }`}
+               >
+                  {smogMode ? 'DEACTIVATE SMOG' : 'ACTIVATE SMOG'}
+               </button>
+            </div>
+
+            {/* Section 2: Squad Configuration Slider */}
+            <div className="bg-zinc-900 bg-opacity-80/60 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 text-left shadow-lg">
+               <div className="flex gap-4 items-start flex-1 w-full">
+                  <div className="p-2.5 rounded-lg border bg-black/40 border-zinc-800 border-opacity-50 text-[#8b9180]">
+                     <Users className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                     <h4 className="text-sm sm:text-base font-mono font-black text-zinc-300 uppercase tracking-wider flex items-center gap-2 leading-none mb-1">
+                        SQUAD SIZE PROTOCOL
+                        <span className="bg-amber-400 text-black text-[9px] px-1.5 py-0.5 font-mono font-black rounded-lg leading-none">
+                           {squadSize} {squadSize === 1 ? 'OPERATOR' : 'OPERATORS'} PER SIDE
+                        </span>
+                     </h4>
+                     <p className="text-xs text-[#8b9180] mt-1.5 uppercase leading-relaxed max-w-sm sm:max-w-md">
+                        Configure the total active combat representatives deployed per squadron. Roster setup and tactical insertion phases of both teams auto-adjust dynamically.
+                     </p>
+                  </div>
+               </div>
+
+               {/* Slider Input Control */}
+               <div className="w-full md:w-64 flex flex-col gap-2 shrink-0 bg-black/30 border border-zinc-800 border-opacity-50/70 p-3 rounded-lg">
+                 <div className="flex justify-between items-center text-[8.5px] font-mono text-zinc-400">
+                   <span>MIN: 1 UNIT</span>
+                   <span className="text-amber-400 font-bold">CURRENT: {squadSize}</span>
+                   <span>MAX: 8 UNITS</span>
+                 </div>
+                 <input 
+                   type="range" 
+                   min="1" 
+                   max="8" 
+                   value={squadSize}
+                   onChange={(e) => {
+                     const value = parseInt(e.target.value);
+                     setSquadSize(value);
+                     playSound('click');
+                   }}
+                   className="w-full h-1.5 bg-zinc-800 rounded-2xl appearance-none cursor-pointer accent-amber-500 hover:accent-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                 />
+                 <div className="flex justify-between px-1 text-[7px] font-mono text-zinc-500">
+                   <span>1</span>
+                   <span>2</span>
+                   <span>3</span>
+                   <span>4</span>
+                   <span>5</span>
+                   <span>6</span>
+                   <span>7</span>
+                   <span>8</span>
+                 </div>
+               </div>
+            </div>
+         </div>
+
          {/* Modes Selection */}
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <button 
+              onClick={() => setGameMode('campaign')}
+              className="p-5 bg-emerald-950/20 hover:bg-emerald-900/40 border border-emerald-900/50 hover:border-emerald-500/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+            >
+               <Globe className="w-8 h-8 text-emerald-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
+               <div>
+                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">GLOBAL CAMPAIGN</h3>
+                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Command your squad across international battle sectors.</p>
+               </div>
+               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+            </button>
             <button 
               onClick={() => setGameMode('local_ai')}
-              className="p-5 bg-[#141810]/80 hover:bg-[#1a2014]/90 border border-[#2d3422]/60 hover:border-amber-400/50 rounded-lg text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="p-5 bg-zinc-900 bg-opacity-80/80 hover:bg-zinc-800 bg-opacity-80/90 border border-zinc-800 border-opacity-50/60 hover:border-amber-400/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
             >
-               <Monitor className="w-7 h-7 text-[#fbbf24] group-hover:scale-110 transition-transform duration-300" />
+               <Monitor className="w-8 h-8 text-[#fbbf24] group-hover:scale-110 transition-transform duration-300" />
                <div>
-                  <h3 className="font-extrabold text-[#dae3ce] text-sm font-mono tracking-wider uppercase">OFFLINE SIMULATOR</h3>
-                  <p className="text-[10px] text-[#8b9180] mt-1 leading-normal uppercase">Deploy a 4-man customized tactical squad and play against the smart combat AI.</p>
+                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">OFFLINE SIMULATOR</h3>
+                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Deploy a 4-man customized tactical squad and play against the smart combat AI.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[7.5px] font-mono text-amber-500/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-amber-500/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
             </button>
             <button 
               onClick={() => setGameMode('local_p2p')}
-              className="p-5 bg-[#141810]/80 hover:bg-[#1a2014]/90 border border-[#2d3422]/60 hover:border-emerald-500/50 rounded-lg text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="p-5 bg-zinc-900 bg-opacity-80/80 hover:bg-zinc-800 bg-opacity-80/90 border border-zinc-800 border-opacity-50/60 hover:border-emerald-500/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
             >
-               <Users className="w-7 h-7 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
+               <Users className="w-8 h-8 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
                <div>
-                  <h3 className="font-extrabold text-[#dae3ce] text-sm font-mono tracking-wider uppercase">SQUAD PASS & PLAY</h3>
-                  <p className="text-[10px] text-[#8b9180] mt-1 leading-normal uppercase">Play hotseat 2-player mode locally. Formulate tactics, then hand off command.</p>
+                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">SQUAD PASS & PLAY</h3>
+                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Play hotseat 2-player mode locally. Formulate tactics, then hand off command.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[7.5px] font-mono text-emerald-400/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-emerald-400/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
             </button>
             <button 
               onClick={() => setGameMode('tutorial')}
-              className="p-5 bg-[#141810]/85 hover:bg-[#202716]/95 border border-[#2d3422]/60 hover:border-[#fbbf24]/60 rounded-lg text-left transition-all duration-300 group shadow-[0_0_15px_rgba(251,191,36,0.05)] flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="p-5 bg-zinc-900 bg-opacity-80/85 hover:bg-[#202716]/95 border border-zinc-800 border-opacity-50/60 hover:border-[#fbbf24]/60 rounded-2xl text-left transition-all duration-300 group shadow-[0_0_15px_rgba(251,191,36,0.05)] flex flex-col gap-2 cursor-pointer relative overflow-hidden"
             >
-               <BookOpen className="w-7 h-7 text-amber-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
+               <BookOpen className="w-8 h-8 text-amber-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
                <div>
-                  <h3 className="font-extrabold text-[#dae3ce] text-sm font-mono tracking-wider uppercase flex items-center gap-1.5">BATTLE ACADEMY <span className="bg-amber-400 text-black text-[7px] px-1 font-black py-0.5 rounded leading-none">NEW</span></h3>
-                  <p className="text-[10px] text-[#8b9180] mt-1 leading-normal uppercase">Interactive tactical manual. Learn movement, analyze core abilities, try other characters.</p>
+                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase flex items-center gap-1.5">BATTLE ACADEMY <span className="bg-amber-400 text-black text-[9px] px-1.5 font-black py-0.5 rounded-lg leading-none">NEW</span></h3>
+                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Interactive tactical manual. Learn movement, analyze core abilities, try other characters.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[7.5px] font-mono text-amber-500/55 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-amber-500/55 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
             </button>
          </div>
 
          {/* Online Section */}
-         <div className="bg-[#141810]/80 border border-[#2d3422]/60 rounded-lg p-5 shadow-md">
-            <div className="flex items-center gap-2.5 mb-4 border-b border-[#2d3422]/30 pb-2">
-              <Globe className="w-5 h-5 text-rose-400" />
-              <h3 className="font-bold text-[#dae3ce] text-sm font-mono uppercase tracking-wider">MULTIPLAYER NET-COMM CENTERS</h3>
+         <div className="bg-zinc-900 bg-opacity-80/80 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 shadow-md">
+            <div className="flex items-center gap-2.5 mb-4 border-b border-zinc-800 border-opacity-50/30 pb-2">
+              <Globe className="w-5 h-5 text-purple-400" />
+              <h3 className="font-bold text-zinc-300 text-sm font-mono uppercase tracking-wider">MULTIPLAYER NET-COMM CENTERS</h3>
             </div>
 
             {loading || profileLoading ? (
@@ -563,16 +945,16 @@ export default function App() {
             ) : !user ? (
                <div className="text-center py-2 font-mono">
                  <p className="text-[10px] text-[#8b9180] mb-4 uppercase">Establish user credentials to synchronize cloud statistics and access cross-device matchmaking graphs.</p>
-                 <button onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-[#0e100c] hover:bg-amber-300 font-extrabold rounded text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
+                 <button onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
                    <LogIn className="w-4 h-4" /> LINK GOOGLE TACTICAL PROFILE
                  </button>
                </div>
             ) : (
                <div className="space-y-4 font-mono">
                   {/* Profile Section */}
-                  <div className="flex items-center justify-between border-b border-[#2d3422]/30 pb-3">
+                  <div className="flex items-center justify-between border-b border-zinc-800 border-opacity-50/30 pb-3">
                      <div className="flex items-center gap-3">
-                        <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="avatar" className="w-10 h-10 rounded-sm border border-[#2d3422] p-0.5 bg-[#0e100c]" />
+                        <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} alt="avatar" className="w-10 h-10 rounded-md border border-zinc-800 border-opacity-50 p-0.5 bg-zinc-950" />
                         <div className="text-left leading-none">
                            {(!profile || editingProfile) ? (
                               <div className="flex items-center gap-2">
@@ -580,40 +962,50 @@ export default function App() {
                                   autoFocus
                                   value={displayNameInput} 
                                   onChange={e => setDisplayNameInput(e.target.value)} 
-                                  className="bg-black border border-[#2d3422] rounded px-2 py-1 text-xs text-white w-32 outline-none focus:border-amber-400 font-mono"
+                                  className="bg-black border border-zinc-800 border-opacity-50 rounded-lg px-2 py-1 text-xs text-white w-32 outline-none focus:border-amber-400 font-mono"
                                   placeholder="CO Name"
                                 />
-                                <button onClick={saveProfile} className="text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded">SAVE</button>
+                                <button onClick={saveProfile} className="text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded-lg">SAVE</button>
                               </div>
                            ) : (
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-[#fbbf24] text-xs uppercase">{profile.displayName}</span>
-                                <button onClick={() => setEditingProfile(true)} className="text-[7.5px] text-amber-400 hover:text-amber-300 uppercase tracking-widest font-extrabold px-1.5 py-0.5 bg-amber-400/10 rounded border border-amber-400/20">RE-ID</button>
+                                <button onClick={() => setEditingProfile(true)} className="text-[7.5px] text-amber-400 hover:text-amber-300 uppercase tracking-widest font-extrabold px-1.5 py-0.5 bg-amber-400/10 rounded-lg border border-amber-400/20">RE-ID</button>
                               </div>
                            )}
                            <div className="text-[8.5px] text-[#8b9180] mt-1 uppercase">GRID_KEY: {user.email?.split('@')[0]}</div>
                         </div>
                      </div>
-                     <button onClick={() => signOut(auth)} className="p-2 hover:bg-[#202716] rounded border border-transparent hover:border-[#2d3422] text-[#8b9180] hover:text-[#dae3ce] transition-colors" title="De-Authorize Profile">
+                     <button onClick={() => signOut(auth)} className="p-2 hover:bg-[#202716] rounded-lg border border-transparent hover:border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 transition-colors" title="De-Authorize Profile">
                         <LogOut className="w-4 h-4" />
                      </button>
                   </div>
 
                   {/* Room Actions */}
                   {user && !editingProfile && (
-                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                        <button onClick={createRoom} className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/35 text-[#fbbf24] font-bold border border-amber-500/50 rounded text-xs uppercase tracking-wider transition-all cursor-pointer">
-                          ESTABLISH ROOM
-                        </button>
-                        <form onSubmit={joinRoom} className="flex gap-2">
+                     <div className="flex flex-col gap-4 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           <button onClick={() => createRoom(false)} className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/35 text-[#fbbf24] font-bold border border-amber-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer">
+                             ESTABLISH PRIVATE ROOM
+                           </button>
+                           <button onClick={() => createRoom(false, true)} className="w-full py-3 bg-sky-500/20 hover:bg-sky-500/35 text-sky-400 font-bold border border-sky-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2">
+                             ESTABLISH CO-OP ROOM
+                           </button>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                           <button onClick={quickMatch} className="w-full py-3 bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-bold border border-emerald-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2">
+                             <Zap className="w-5 h-5" /> QUICK MATCH
+                           </button>
+                        </div>
+                        <form onSubmit={joinRoom} className="flex gap-2 w-full h-11">
                            <input 
                              value={joinCode} 
                              onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                             placeholder="CODE_KEY"
+                             placeholder="JOIN CODE_KEY"
                              maxLength={6}
-                             className="w-full bg-black/60 border border-[#2d3422] focus:border-amber-400 rounded px-3 text-xs text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
+                             className="w-full h-full bg-black/60 border border-zinc-800 border-opacity-50 focus:border-amber-400 rounded-lg px-3 text-sm sm:text-base text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
                            />
-                           <button type="submit" disabled={joinCode.length < 5} className="px-5 bg-[#202716] hover:bg-[#2d3a20] border border-[#2d3422] text-[#dae3ce] text-xs font-bold rounded uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
+                           <button type="submit" disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm sm:text-base font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
                                CONNECT
                            </button>
                         </form>
@@ -624,16 +1016,16 @@ export default function App() {
          </div>
 
          {/* Interactive Tactical Dossier Database */}
-         <div className="bg-[#141810]/80 border border-[#2d3422]/60 rounded-lg p-5 shadow-md flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-[#2d3422]/30 pb-2">
+         <div className="bg-zinc-900 bg-opacity-80/80 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 shadow-md flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-zinc-800 border-opacity-50/30 pb-2">
               <div className="flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-amber-400" />
-                <h3 className="font-mono text-xs font-extrabold text-[#dae3ce] tracking-widest uppercase">TACTICAL DATABASE // INTEL DOSSIER</h3>
+                <BookOpen className="w-5 h-5 text-amber-400" />
+                <h3 className="font-mono text-sm sm:text-base font-extrabold text-zinc-300 tracking-widest uppercase">TACTICAL DATABASE // INTEL DOSSIER</h3>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-2">
                 <button 
                   onClick={() => setDbTab('tutorial')}
-                  className={`px-3 py-1 text-[8.5px] font-mono uppercase rounded transition-all font-black border ${
+                  className={`px-3 py-1.5 text-[10px] sm:text-xs font-mono uppercase rounded-lg transition-all font-black border ${
                     dbTab === 'tutorial' 
                       ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
@@ -643,7 +1035,7 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => setDbTab('classes')}
-                  className={`px-3 py-1 text-[8.5px] font-mono uppercase rounded transition-all font-black border ${
+                  className={`px-3 py-1.5 text-[10px] sm:text-xs font-mono uppercase rounded-lg transition-all font-black border ${
                     dbTab === 'classes' 
                       ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
@@ -653,7 +1045,7 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => setDbTab('chemistries')}
-                  className={`px-3 py-1 text-[8.5px] font-mono uppercase rounded transition-all font-black border ${
+                  className={`px-3 py-1.5 text-[10px] sm:text-xs font-mono uppercase rounded-lg transition-all font-black border ${
                     dbTab === 'chemistries' 
                       ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
@@ -666,48 +1058,48 @@ export default function App() {
 
             {/* TAB CONTENT: TUTORIAL */}
             {dbTab === 'tutorial' && (
-              <div className="space-y-3.5 text-left font-mono text-[9px] text-[#8b9180] leading-relaxed">
-                <div className="border border-[#2d3422]/40 bg-black/25 p-3 rounded space-y-1.5">
-                  <h4 className="font-bold text-[#dae3ce] uppercase text-[10px] tracking-wide flex items-center gap-1.5">
-                    <CheckSquare className="w-3.5 h-3.5 text-[#fbbf24]" /> 01. OBJECTIVE CONFIGURATION
+              <div className="space-y-4 text-left font-mono text-xs sm:text-sm text-[#8b9180] leading-relaxed">
+                <div className="border border-zinc-800 border-opacity-50/40 bg-black/25 p-4 rounded-lg space-y-2">
+                  <h4 className="font-bold text-zinc-300 uppercase text-xs sm:text-sm tracking-wide flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-[#fbbf24]" /> 01. OBJECTIVE CONFIGURATION
                   </h4>
                   <p className="uppercase">
                     Your direct mandate is simple: utilize superior cover positioning, smart lines of sight flanking vectors, and specific class actions to completely neutralize all 4 enemy squad units on the grid battlefield.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="border border-[#2d3422]/30 bg-black/10 p-2.5 rounded space-y-1">
-                    <h5 className="font-black text-[#dae3ce] uppercase text-[8.5px]">SQUAD DEPLOYMENT</h5>
-                    <p className="uppercase text-[8px]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="border border-zinc-800 border-opacity-50/30 bg-black/10 p-4 rounded-lg space-y-2">
+                    <h5 className="font-black text-zinc-300 uppercase text-[10px] sm:text-xs">SQUAD DEPLOYMENT</h5>
+                    <p className="uppercase text-[10px] sm:text-xs">
                       Before engagement begins, you must recruit, select and deploy 4 team members on highlighted quadrant cells in rows 8 to 14. Once locked, tap "Launch" to synchronize terminal frequencies.
                     </p>
                   </div>
-                  <div className="border border-[#2d3422]/30 bg-black/10 p-2.5 rounded space-y-1">
-                    <h5 className="font-black text-[#dae3ce] uppercase text-[8.5px]">ACTION SYSTEM (AP)</h5>
-                    <p className="uppercase text-[8px]">
+                  <div className="border border-zinc-800 border-opacity-50/30 bg-black/10 p-4 rounded-lg space-y-2">
+                    <h5 className="font-black text-zinc-300 uppercase text-[10px] sm:text-xs">ACTION SYSTEM (AP)</h5>
+                    <p className="uppercase text-[10px] sm:text-xs">
                       Every active squad unit receives exactly 2 Action Points (AP) per turn. Standard movement costs 1 AP (mobility metric scales cell ranges). Initiating a coordinate weapon attack costs 1 AP.
                     </p>
                   </div>
                 </div>
 
-                <div className="border border-[#2d3422]/40 bg-black/25 p-3 rounded space-y-1.5">
-                  <h4 className="font-bold text-[#dae3ce] uppercase text-[10px] tracking-wide flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-emerald-400" /> 02. COVER & LINE-OF-SIGHT (LOS)
+                <div className="border border-zinc-800 border-opacity-50/40 bg-black/25 p-4 rounded-lg space-y-2">
+                  <h4 className="font-bold text-zinc-300 uppercase text-xs sm:text-sm tracking-wide flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-400" /> 02. COVER & LINE-OF-SIGHT (LOS)
                   </h4>
                   <p className="uppercase">
                     Solid walls and cargo crates absorb primary dynamic ordnance. If a direct tracing vector from shooting coordinate to hostile coordinate hits an obstacle, firing is blocked! Snipers bypass direct range rules but are still blockable by walls. Technicians can build crates anywhere on adjacent floor grids.
                   </p>
                 </div>
 
-                <div className="text-center text-[#fbbf24] font-black uppercase text-[8.5px] border border-dashed border-[#2d3422] p-1.5 rounded animate-pulse">
+                <div className="text-center text-[#fbbf24] font-black uppercase text-[10px] sm:text-xs border border-dashed border-zinc-800 border-opacity-50 p-2 rounded-lg animate-pulse">
                   ⚡ PRO TIP: ALWAYS INJECT WEAK SQUADMATES WITH SPECIAL MEDIC NANITES TO RESTORE HEALTH DURING AI FLANK ACTIONS!
                 </div>
 
-                <div className="border border-amber-500/15 p-2 bg-amber-400/5 rounded text-center">
+                <div className="border border-amber-500/15 p-3 bg-amber-400/5 rounded-lg text-center">
                   <button 
                     onClick={() => setGameMode('tutorial')}
-                    className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[9.5px] tracking-wider rounded uppercase cursor-pointer"
+                    className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm tracking-wider rounded-lg uppercase cursor-pointer"
                   >
                     🚀 LAUNCH INTERACTIVE BATTLE ACADEMY SIMULATOR
                   </button>
@@ -719,21 +1111,32 @@ export default function App() {
             {dbTab === 'classes' && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 text-left font-mono">
                 {/* Class selector list */}
-                <div className="md:col-span-5 flex flex-col gap-1 max-h-[220px] overflow-y-auto border border-[#2d3422]/30 p-1.5 rounded bg-black/25">
+                <div className="md:col-span-5 flex flex-col gap-1 max-h-[300px] overflow-y-auto border border-zinc-800 border-opacity-50/30 p-1.5 rounded-lg bg-black/25">
                   {CLASSES.map((c) => {
                     const isActive = activeClassDesc === c.className;
                     return (
                       <button
                         key={c.className}
                         onClick={() => setActiveClassDesc(c.className)}
-                        className={`w-full py-1.5 px-2.5 text-left rounded text-[9.5px] font-bold tracking-tight uppercase border transition-all flex items-center gap-2 cursor-pointer ${
+                        className={`w-full py-2 px-3 text-left rounded-lg text-xs sm:text-sm font-bold tracking-tight uppercase border transition-all flex items-center justify-between gap-1.5 cursor-pointer ${
                           isActive 
                             ? 'bg-amber-500/15 border-amber-500/70 text-[#fbbf24]' 
-                            : 'bg-transparent border-transparent text-[#8b9180] hover:bg-black/35 hover:text-[#dae3ce]'
+                            : 'bg-transparent border-transparent text-[#8b9180] hover:bg-black/35 hover:text-zinc-300'
                         }`}
                       >
-                        <UnitHelmetAvatar classNameVal={c.className} className="w-5 h-5 shrink-0" />
-                        <span>{c.className}</span>
+                        <div className="flex items-center gap-2">
+                          <UnitHelmetAvatar classNameVal={c.className} className="w-5 h-5 shrink-0" />
+                          <span>{c.className}</span>
+                        </div>
+                        {c.ability && (
+                          <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                            <AbilityTooltip ability={c.ability} classNameVal={c.className}>
+                              <span className="px-1.5 py-0.5 rounded-lg bg-amber-500/8 border border-amber-500/30 hover:border-[#fbbf24] text-[#fbbf24] hover:text-white hover:bg-amber-400/20 text-[9px] sm:text-[10px] font-mono tracking-normal leading-none shrink-0 inline-block align-middle transition-all lowercase italic">
+                                {c.ability.name}
+                              </span>
+                            </AbilityTooltip>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -754,36 +1157,38 @@ export default function App() {
                   const speedPerc = Math.min(100, Math.round((boostedStats.mobility / 7) * 100));
 
                   return (
-                    <div className="md:col-span-7 border border-[#2d3422]/40 bg-black/40 p-3 rounded flex flex-col justify-between min-h-[300px] relative">
+                    <div className="md:col-span-7 border border-zinc-800 border-opacity-50/40 bg-black/40 p-4 rounded-lg flex flex-col justify-between min-h-[300px] relative">
                       <div>
                         {/* Helmet + name block */}
-                        <div className="flex gap-2.5 items-center mb-2 pb-1.5 border-b border-[#2d3422]/20">
-                          <UnitHelmetAvatar classNameVal={c.className} className="w-11 h-11 shrink-0 border-[#2d3422]" />
+                        <div className="flex gap-3 items-center mb-3 pb-2 border-b border-zinc-800 border-opacity-50/20">
+                          <UnitHelmetAvatar classNameVal={c.className} className="w-12 h-12 shrink-0 border-zinc-800 border-opacity-50" />
                           <div className="leading-tight">
-                            <h4 className="text-xs font-black text-white uppercase">{c.className}</h4>
-                            <span className="text-[8.5px] text-[#fbbf24] font-bold uppercase tracking-widest">{c.archetype} TYPE</span>
+                            <h4 className="text-sm sm:text-base font-black text-white uppercase">{c.className}</h4>
+                            <span className="text-[10px] sm:text-xs text-[#fbbf24] font-bold uppercase tracking-widest">{c.archetype} TYPE</span>
                           </div>
-                          <span className="text-[7.5px] font-bold text-[#8b9180] bg-black/50 border border-[#2d3422]/40 rounded px-1.5 py-0.5 ml-auto uppercase shrink-0">
+                          <span className="text-[9px] sm:text-[10px] font-bold text-[#8b9180] bg-black/50 border border-zinc-800 border-opacity-50/40 rounded-lg px-1.5 py-0.5 ml-auto uppercase shrink-0">
                             TRAIT: {c.personality}
                           </span>
                         </div>
 
                         {/* Description */}
-                        <p className="text-[8.5px] text-[#8b9180] leading-normal uppercase mb-2">
+                        <p className="text-[10px] sm:text-xs text-[#8b9180] leading-relaxed uppercase mb-3">
                           {c.description}
                         </p>
 
                         {/* Active Ability Info */}
                         {c.ability && (
-                          <div className="bg-amber-400/5 border border-[#2d3422]/30 p-1.5 rounded mb-2 font-mono text-[7.5px] uppercase">
-                            <div className="flex justify-between font-black text-[#fbbf24] mb-0.5">
-                              <span>SPEC_ABIL: {c.ability.name}</span>
-                              <span>COST: {c.ability.apCost} AP</span>
+                          <AbilityTooltip ability={c.ability} classNameVal={c.className}>
+                            <div className="bg-amber-400/5 border border-zinc-800 border-opacity-50/30 hover:border-amber-500/60 p-3 rounded-lg mb-3 font-mono text-[9px] sm:text-[10px] uppercase transition-all cursor-help">
+                              <div className="flex justify-between font-black text-[#fbbf24] mb-1">
+                                <span className="flex items-center gap-1">SPEC_ABIL: {c.ability.name} <span className="text-[8px] text-zinc-500 font-normal tracking-wide lowercase italic">(hover for full specs)</span></span>
+                                <span>COST: {c.ability.apCost} AP</span>
+                              </div>
+                              <p className="text-[#8b9180] lowercase italic leading-relaxed first-letter:uppercase">
+                                {c.ability.description}
+                              </p>
                             </div>
-                            <p className="text-[#8b9180] lowercase italic leading-tight first-letter:uppercase">
-                              {c.ability.description}
-                            </p>
-                          </div>
+                          </AbilityTooltip>
                         )}
 
                         {/* Level Up & Stat boost panels */}
@@ -792,13 +1197,13 @@ export default function App() {
                           const availablePoints = levelInfo.maxUpgrades - boosts.length;
 
                           return (
-                            <div className="mt-2 pt-2 border-t border-[#2d3422]/20">
+                            <div className="mt-3 pt-3 border-t border-zinc-800 border-opacity-50/20">
                               {/* Level display bar */}
-                              <div className="flex gap-2.5 items-center mb-2.5 text-[8px] bg-sky-950/20 border border-sky-500/20 rounded p-1.5 font-mono">
+                              <div className="flex gap-2.5 items-center mb-3 text-[10px] sm:text-[11px] bg-sky-950/20 border border-sky-500/20 rounded-lg p-2 font-mono">
                                 <div className="font-extrabold text-[#38bdf8] shrink-0 uppercase tracking-widest">
                                   LEVEL {levelInfo.level}
                                 </div>
-                                <div className="flex-1 bg-black/50 h-2 rounded-sm border border-sky-900/30 overflow-hidden relative">
+                                <div className="flex-1 bg-black/50 h-2.5 rounded-md border border-sky-900/30 overflow-hidden relative">
                                   <div className="bg-sky-400 h-full transition-all duration-500" style={{ width: `${levelInfo.percentage}%` }} />
                                 </div>
                                 <div className="text-zinc-400 font-bold shrink-0">
@@ -807,8 +1212,8 @@ export default function App() {
                               </div>
 
                               {/* Upgrade modules */}
-                              <div className="bg-black/25 border border-[#2d3422]/30 p-2 rounded">
-                                <div className="flex justify-between items-center mb-1 pb-1 border-b border-[#2d3422]/15">
+                              <div className="bg-black/25 border border-zinc-800 border-opacity-50/30 p-2 rounded-lg">
+                                <div className="flex justify-between items-center mb-1 pb-1 border-b border-zinc-800 border-opacity-50/15">
                                   <span className="text-[7.5px] font-black text-[#fbbf24] uppercase flex items-center gap-1.5">
                                     <Cpu className="w-3 h-3 text-[#fbbf24] animate-pulse" /> TACTICAL UPGRADE CHIPSETS
                                   </span>
@@ -829,12 +1234,12 @@ export default function App() {
                                         key={m.id}
                                         disabled={unlocked || availablePoints <= 0}
                                         onClick={() => handleUnlockBoost(c.className, m.id)}
-                                        className={`p-1.5 rounded transition-all flex flex-col text-left border ${
+                                        className={`p-1.5 rounded-lg transition-all flex flex-col text-left border ${
                                           unlocked
                                             ? 'bg-emerald-500/10 border-emerald-500/60 text-emerald-400 cursor-not-allowed'
                                             : availablePoints > 0
                                               ? 'bg-sky-500/5 border-sky-500/40 text-sky-400 hover:bg-sky-500/15 cursor-pointer'
-                                              : 'bg-transparent border-[#2d3422]/30 text-[#8b9180] cursor-not-allowed'
+                                              : 'bg-transparent border-zinc-800 border-opacity-50/30 text-[#8b9180] cursor-not-allowed'
                                         }`}
                                       >
                                         <div className="flex justify-between w-full font-black leading-tight">
@@ -851,7 +1256,7 @@ export default function App() {
                                 {boosts.length > 0 && (
                                   <button
                                     onClick={() => handleResetBoosts(c.className)}
-                                    className="w-full mt-2.5 py-1 text-center bg-red-950/15 border border-red-500/30 text-red-400 rounded text-[7px] font-bold hover:bg-red-950/30 transition-all cursor-pointer uppercase flex items-center justify-center gap-1"
+                                    className="w-full mt-2.5 py-1 text-center bg-purple-950/15 border border-purple-500/30 text-purple-400 rounded-lg text-[7px] font-bold hover:bg-purple-950/30 transition-all cursor-pointer uppercase flex items-center justify-center gap-1"
                                   >
                                     <RefreshCw className="w-2.5 h-2.5" /> RESET CHIPSET ALLOCATIONS
                                   </button>
@@ -860,72 +1265,72 @@ export default function App() {
                             </div>
                           );
                         })() : (
-                          <div className="mt-2 p-2.5 border border-[#2d3422]/20 bg-black/10 rounded text-center text-[7.5px] text-[#8b9180] uppercase tracking-wider">
+                          <div className="mt-2 p-3 border border-zinc-800 border-opacity-50/20 bg-black/10 rounded-lg text-center text-[10px] sm:text-xs text-[#8b9180] uppercase tracking-wider">
                             🔑 Sign in to enable persistent squad levelling & upgrade modules
                           </div>
                         )}
                       </div>
 
                       {/* Stat Bars Grid */}
-                      <div className="space-y-1 pt-1.5 border-t border-[#2d3422]/20 text-[7.5px] font-bold text-[#8b9180] mt-3">
+                      <div className="space-y-2 pt-2 border-t border-zinc-800 border-opacity-50/20 text-[9px] sm:text-[10px] font-bold text-[#8b9180] mt-3">
                         <div>
-                          <div className="flex justify-between mb-0.5">
+                          <div className="flex justify-between mb-1">
                             <span>HEALTH MAX (HP)</span>
                             {boosts.includes('HP_BOOST') ? (
-                              <span className="text-emerald-400 font-black">{boostedStats.maxHP} pts <span className="text-emerald-500 font-bold text-[6.5px] ml-0.5">(+15 HP BOOST ACTIVE)</span></span>
+                              <span className="text-emerald-400 font-black">{boostedStats.maxHP} pts <span className="text-emerald-500 font-bold text-[8px] sm:text-[9px] ml-1">(+15 HP BOOST ACTIVE)</span></span>
                             ) : (
                               <span className="text-white">{c.stats.maxHP} pts</span>
                             )}
                           </div>
-                          <div className="w-full bg-black/40 h-1.5 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                            <div className={`h-full rounded-sm ${boosts.includes('HP_BOOST') ? 'bg-emerald-400' : 'bg-emerald-600'}`} style={{ width: `${hpPerc}%` }} />
+                          <div className="w-full bg-black/40 h-2 rounded-md border border-zinc-800 border-opacity-50 overflow-hidden p-[0.5px]">
+                            <div className={`h-full rounded-md ${boosts.includes('HP_BOOST') ? 'bg-emerald-400' : 'bg-emerald-600'}`} style={{ width: `${hpPerc}%` }} />
                           </div>
                         </div>
 
                         <div>
-                          <div className="flex justify-between mb-0.5">
+                          <div className="flex justify-between mb-1">
                             <span>ATTACK EXERT (DMG)</span>
                             {boosts.includes('DMG_BOOST') ? (
-                              <span className="text-emerald-400 font-black">{boostedStats.damage} pts <span className="text-emerald-500 font-bold text-[6.5px] ml-0.5">(+4 ATK BOOST ACTIVE)</span></span>
+                              <span className="text-emerald-400 font-black">{boostedStats.damage} pts <span className="text-emerald-500 font-bold text-[8px] sm:text-[9px] ml-1">(+4 ATK BOOST ACTIVE)</span></span>
                             ) : (
                               <span className="text-white">{c.stats.damage} pts</span>
                             )}
                           </div>
-                          <div className="w-full bg-black/40 h-1.5 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                            <div className={`h-full rounded-sm ${boosts.includes('DMG_BOOST') ? 'bg-emerald-400' : 'bg-orange-500'}`} style={{ width: `${dmgPerc}%` }} />
+                          <div className="w-full bg-black/40 h-2 rounded-md border border-zinc-800 border-opacity-50 overflow-hidden p-[0.5px]">
+                            <div className={`h-full rounded-md ${boosts.includes('DMG_BOOST') ? 'bg-emerald-400' : 'bg-orange-500'}`} style={{ width: `${dmgPerc}%` }} />
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <div className="flex justify-between mb-0.5">
+                            <div className="flex justify-between mb-1">
                               <span>WEAPON RANGE</span>
                               {boosts.includes('RANGE_BOOST') ? (
-                                <span className="text-emerald-400 font-black">{boostedStats.range} <span className="text-emerald-500 font-bold text-[6px] ml-0.5">(+1 RG ACTIVE)</span></span>
+                                <span className="text-emerald-400 font-black">{boostedStats.range} <span className="text-emerald-500 font-bold text-[8px] sm:text-[9px] ml-1">(+1 RG ACTIVE)</span></span>
                               ) : (
                                 <span className="text-white">{c.stats.range}</span>
                               )}
                             </div>
-                            <div className="w-full bg-black/40 h-1 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                              <div className={`h-full rounded-sm ${boosts.includes('RANGE_BOOST') ? 'bg-emerald-450' : 'bg-sky-400'}`} style={{ width: `${rangePerc}%` }} />
+                            <div className="w-full bg-black/40 h-1.5 rounded-md border border-zinc-800 border-opacity-50 overflow-hidden p-[0.5px]">
+                              <div className={`h-full rounded-md ${boosts.includes('RANGE_BOOST') ? 'bg-emerald-450' : 'bg-sky-400'}`} style={{ width: `${rangePerc}%` }} />
                             </div>
                           </div>
                           <div>
-                            <div className="flex justify-between mb-0.5">
+                            <div className="flex justify-between mb-1">
                               <span>MOBILITY RANGE</span>
                               <span className="text-white">{c.stats.mobility}</span>
                             </div>
-                            <div className="w-full bg-[#0e100c] h-1 rounded-sm border border-[#2d3324] overflow-hidden p-[0.5px]">
-                              <div className="bg-yellow-400 h-full rounded-sm" style={{ width: `${speedPerc}%` }} />
+                            <div className="w-full bg-zinc-950 h-1.5 rounded-md border border-zinc-800 border-opacity-50 overflow-hidden p-[0.5px]">
+                              <div className="bg-yellow-400 h-full rounded-md" style={{ width: `${speedPerc}%` }} />
                             </div>
                           </div>
                         </div>
 
                         {/* Show extra Sensor/Tac tactical stats adjustments if boosted */}
                         {boosts.includes('ACC_BOOST') && (
-                          <div className="bg-emerald-500/5 border border-emerald-500/20 p-1.5 rounded mt-2.5 flex items-center justify-between text-[7px] text-[#8b9180] tracking-wider uppercase font-bold">
+                          <div className="bg-emerald-500/5 border border-emerald-500/20 p-2 rounded-lg mt-3 flex items-center justify-between text-[8px] sm:text-[9px] text-[#8b9180] tracking-wider uppercase font-bold">
                             <span className="text-emerald-400">⚡ SENSOR OPTIMIZATION (TACTICAL IMPLANT ACTIVE)</span>
-                            <span className="text-emerald-300 font-extrabold">+10% TAC ACCURACY OUTLET</span>
+                            <span className="text-emerald-300 font-extrabold">+10% TAC ACCURACY</span>
                           </div>
                         )}
                       </div>
@@ -937,7 +1342,7 @@ export default function App() {
 
             {/* TAB CONTENT: SQUAD CHEMISTRIES */}
             {dbTab === 'chemistries' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-left font-mono">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left font-mono">
                 {CHEMISTRIES.map((c) => {
                   const classA = c.classes[0];
                   const classB = c.classes[1];
@@ -947,51 +1352,51 @@ export default function App() {
                   const progB = (profile as any)?.characterProgress?.[classB] || { xp: 0, level: 1 };
                   
                   return (
-                    <div key={c.id} className="border border-[#2d3422]/45 bg-black/45 p-3.5 rounded-lg flex flex-col justify-between hover:border-amber-500/35 transition-all duration-300 relative group">
-                      <div className="absolute top-2.5 right-2.5 bg-amber-500/5 border border-amber-500/20 text-[#fbbf24] text-[6.5px] font-bold px-1.5 py-0.5 rounded uppercase tracking-widest">
+                    <div key={c.id} className="border border-zinc-800 border-opacity-50/45 bg-black/45 p-4 rounded-2xl flex flex-col justify-between hover:border-amber-500/35 transition-all duration-300 relative group">
+                      <div className="absolute top-3 right-3 bg-amber-500/5 border border-amber-500/20 text-[#fbbf24] text-[8px] sm:text-[9px] font-bold px-2 py-1 rounded-lg uppercase tracking-widest">
                         SYNERGY DUO
                       </div>
                       
                       <div>
-                        <h4 className="font-extrabold text-[#fbbf24] uppercase text-[10px] tracking-wide flex items-center gap-1.5 mb-1 animate-pulse">
-                          <Zap className="w-3 h-3 text-[#fbbf24]" /> {c.name}
+                        <h4 className="font-extrabold text-[#fbbf24] uppercase text-xs sm:text-sm tracking-wide flex items-center gap-1.5 mb-2 animate-pulse">
+                          <Zap className="w-4 h-4 text-[#fbbf24]" /> {c.name}
                         </h4>
-                        <p className="text-[7.5px] text-[#8b9180] uppercase mb-3 leading-relaxed">
+                        <p className="text-[10px] sm:text-xs text-[#8b9180] uppercase mb-4 leading-relaxed">
                           {c.description}
                         </p>
                         
                         {/* Chemistry visual linking */}
-                        <div className="flex items-center gap-2 bg-black/20 border border-[#2d3422]/20 p-2 rounded mb-3 justify-center">
-                          <div className="flex flex-col items-center gap-1">
-                            <UnitHelmetAvatar classNameVal={classA} className="w-7 h-7 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
-                            <span className="text-[7.5px] font-extrabold text-[#dae3ce] uppercase">{classA}</span>
+                        <div className="flex items-center gap-3 bg-black/20 border border-zinc-800 border-opacity-50/20 p-3 rounded-lg mb-4 justify-center">
+                          <div className="flex flex-col items-center gap-1.5">
+                            <UnitHelmetAvatar classNameVal={classA} className="w-9 h-9 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
+                            <span className="text-[9px] sm:text-[10px] font-extrabold text-zinc-300 uppercase">{classA}</span>
                             {user && profile && (
-                              <span className="text-[6px] text-zinc-500 font-bold uppercase">LV {progA.level || 1}</span>
+                              <span className="text-[8px] text-zinc-500 font-bold uppercase">LV {progA.level || 1}</span>
                             )}
                           </div>
                           
-                          <div className="h-[1px] flex-1 bg-gradient-to-r from-amber-500/10 via-amber-500/60 to-amber-500/10 flex items-center justify-center relative mx-1">
-                            <span className="absolute bg-zinc-950 border border-[#2d3422] text-[#fbbf24] text-[6px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none">
+                          <div className="h-[2px] flex-1 bg-gradient-to-r from-amber-500/10 via-amber-500/60 to-amber-500/10 flex items-center justify-center relative mx-2">
+                            <span className="absolute bg-zinc-950 border border-zinc-800 border-opacity-50 text-[#fbbf24] text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center leading-none">
                               +
                             </span>
                           </div>
                           
-                          <div className="flex flex-col items-center gap-1">
-                            <UnitHelmetAvatar classNameVal={classB} className="w-7 h-7 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
-                            <span className="text-[7.5px] font-extrabold text-[#dae3ce] uppercase">{classB}</span>
+                          <div className="flex flex-col items-center gap-1.5">
+                            <UnitHelmetAvatar classNameVal={classB} className="w-9 h-9 filter drop-shadow-[0_0_4px_rgba(251,191,36,0.2)]" />
+                            <span className="text-[9px] sm:text-[10px] font-extrabold text-zinc-300 uppercase">{classB}</span>
                             {user && profile && (
-                              <span className="text-[6px] text-zinc-500 font-bold uppercase">LV {progB.level || 1}</span>
+                              <span className="text-[8px] text-zinc-500 font-bold uppercase">LV {progB.level || 1}</span>
                             )}
                           </div>
                         </div>
                       </div>
 
                       {/* Buff Override Info */}
-                      <div className="bg-sky-950/10 border border-sky-500/20 p-2 rounded text-[7.5px] text-[#8b9180] relative overflow-hidden mt-1">
-                        <span className="text-sky-400 font-black tracking-wider uppercase block text-[7px] mb-0.5">
+                      <div className="bg-sky-950/10 border border-sky-500/20 p-3 rounded-lg text-[10px] sm:text-xs text-[#8b9180] relative overflow-hidden mt-2">
+                        <span className="text-sky-400 font-black tracking-wider uppercase block text-[8px] sm:text-[9px] mb-1">
                           ⚡ TACTICAL SYNERGY PASSIVE:
                         </span>
-                        <div className="text-zinc-300 font-bold tracking-tight leading-normal uppercase">
+                        <div className="text-zinc-300 font-bold tracking-tight leading-relaxed uppercase">
                           {c.buffText}
                         </div>
                       </div>
@@ -1004,6 +1409,7 @@ export default function App() {
 
          {/* Commander Leaderboard */}
          <CommanderLeaderboard />
+         <MatchHistory />
       </div>
     </div>
   );

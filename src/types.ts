@@ -37,6 +37,13 @@ export interface Unit {
   team: 'player' | 'enemy';
   facing?: 'up' | 'down' | 'left' | 'right';
   pose?: 'idle' | 'aim' | 'firing';
+  name?: string;
+  ownerId?: string;
+  kills?: number;
+  damageDealt?: number;
+  damageTaken?: number;
+  healingDone?: number;
+  abilitiesUsed?: number;
 }
 
 export interface GridCell {
@@ -46,5 +53,13 @@ export interface GridCell {
 }
 
 export type GridMap = GridCell[][];
+
+export interface TurnSnapshot {
+  turn: number;
+  activeTeam: 'player' | 'enemy';
+  units: Unit[];
+  logs: any[];
+}
+
 
 

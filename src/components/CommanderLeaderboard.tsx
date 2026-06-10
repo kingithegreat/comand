@@ -6,13 +6,16 @@ import { db } from '../firebase';
 export interface CommanderStat {
   userId: string;
   displayName: string;
-  victories: number;
+  victories?: number;
+  campaignSectors?: number;
+  totalSquadLevel?: number;
 }
 
 export default function CommanderLeaderboard() {
   const [leaders, setLeaders] = useState<CommanderStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'pvp' | 'campaign' | 'squads'>('pvp');
 
   useEffect(() => {
     let active = true;
@@ -24,12 +27,18 @@ export default function CommanderLeaderboard() {
           collection(db, 'stats')
         );
         const querySnapshot = await getDocs(q);
-        const fetchedLeaders: CommanderStat[] = [];
+        let fetchedLeaders: CommanderStat[] = [];
         querySnapshot.forEach((doc) => {
           fetchedLeaders.push(doc.data() as CommanderStat);
         });
         
-        fetchedLeaders.sort((a, b) => b.victories - a.victories);
+        if (activeTab === 'pvp') {
+          fetchedLeaders = fetchedLeaders.filter(l => (l.victories || 0) > 0).sort((a, b) => (b.victories || 0) - (a.victories || 0));
+        } else if (activeTab === 'campaign') {
+          fetchedLeaders = fetchedLeaders.filter(l => (l.campaignSectors || 0) > 0).sort((a, b) => (b.campaignSectors || 0) - (a.campaignSectors || 0));
+        } else {
+          fetchedLeaders = fetchedLeaders.filter(l => (l.totalSquadLevel || 0) > 0).sort((a, b) => (b.totalSquadLevel || 0) - (a.totalSquadLevel || 0));
+        }
         
         if (active) {
           setLeaders(fetchedLeaders.slice(0, 10));
@@ -49,13 +58,35 @@ export default function CommanderLeaderboard() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeTab]);
 
   return (
     <div className="bg-[#141810]/80 border border-[#2d3422]/60 rounded-lg p-5 shadow-md flex flex-col gap-4 font-mono">
-      <div className="flex items-center gap-2 border-b border-[#2d3422]/30 pb-2">
-        <Trophy className="w-4 h-4 text-amber-500" />
-        <h3 className="text-xs font-extrabold text-[#dae3ce] tracking-widest uppercase">COMMANDER LEADERBOARD</h3>
+      <div className="flex items-center justify-between border-b border-[#2d3422]/30 pb-2">
+        <div className="flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-amber-500" />
+          <h3 className="text-xs font-extrabold text-[#dae3ce] tracking-widest uppercase">LEADERBOARD</h3>
+        </div>
+        <div className="flex bg-black p-0.5 rounded border border-[#2d3422]">
+           <button 
+             onClick={() => setActiveTab('pvp')}
+             className={`px-3 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors rounded ${activeTab === 'pvp' ? 'bg-[#2d3422] text-[#dae3ce]' : 'text-[#8b9180] hover:text-[#dae3ce]'}`}
+           >
+             PVP
+           </button>
+           <button 
+             onClick={() => setActiveTab('campaign')}
+             className={`px-3 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors rounded ${activeTab === 'campaign' ? 'bg-[#2d3422] text-[#dae3ce]' : 'text-[#8b9180] hover:text-[#dae3ce]'}`}
+           >
+             CAMPAIGN
+           </button>
+           <button 
+             onClick={() => setActiveTab('squads')}
+             className={`px-3 py-1 text-[9px] font-bold tracking-widest uppercase transition-colors rounded ${activeTab === 'squads' ? 'bg-[#2d3422] text-[#dae3ce]' : 'text-[#8b9180] hover:text-[#dae3ce]'}`}
+           >
+             SQUADS
+           </button>
+        </div>
       </div>
       
       {loading ? (
@@ -94,8 +125,8 @@ export default function CommanderLeaderboard() {
                 </span>
               </div>
               <div className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5">
-                <span className="opacity-70">WINS:</span>
-                <span className="text-sm">{leader.victories}</span>
+                <span className="opacity-70">{activeTab === 'pvp' ? 'WINS:' : activeTab === 'campaign' ? 'SECTORS:' : 'TOTAL LV:'}</span>
+                <span className="text-sm">{activeTab === 'pvp' ? leader.victories || 0 : activeTab === 'campaign' ? leader.campaignSectors || 0 : leader.totalSquadLevel || 0}</span>
               </div>
             </div>
           ))}

@@ -36,6 +36,7 @@ export default function TurnCounter({
   }
 
   const isMyTurn = isOnline && activeTeam === myTeam;
+  const isSpectator = isOnline && myTeam === undefined;
   const showTimer = isOnline && mode === 'play' && typeof timeLeft === 'number';
 
   // Format time left to mm:ss or ss
@@ -47,11 +48,23 @@ export default function TurnCounter({
 
   const isLowTime = timeLeft !== undefined && timeLeft <= 15;
 
-  const activeUnits = units?.filter(u => u.team === activeTeam) || [];
+  const activeUnits = units?.filter(u => u.team === activeTeam && u.hp > 0) || [];
   const outOfAP = activeUnits.length > 0 && activeUnits.every(u => u.ap <= 0);
 
+  // Automatically end turn when out of AP
+  React.useEffect(() => {
+    if (mode === 'play' && outOfAP && !isSpectator) {
+      if (!isOnline || activeTeam === myTeam) {
+        const timer = setTimeout(() => {
+          onEndTurn();
+        }, 1000); // 1 second delay so player sees their last move complete
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [outOfAP, mode, isOnline, activeTeam, myTeam, isSpectator, onEndTurn]);
+
   return (
-    <div className="flex flex-col gap-2 mb-3 w-full">
+    <div className="flex flex-col gap-2 w-full">
       <div className="flex justify-between items-center w-full">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
           <span className="text-[10px] font-semibold text-amber-100/70 uppercase tracking-widest bg-black/40 border border-[#8b7355] px-2 py-1 rounded">
@@ -66,11 +79,15 @@ export default function TurnCounter({
                {TurnLabel}
              </span>
           )}
-          {isOnline && mode === 'play' && !isMyTurn && (
+          {isOnline && mode === 'play' && !isMyTurn && !isSpectator && (
                <span className="text-[10px] text-amber-500 animate-pulse font-medium ml-2">Waiting for opponent...</span>
+          )}
+          {isSpectator && mode === 'play' && (
+               <span className="text-[10px] text-fuchsia-400 animate-pulse font-medium ml-2 uppercase">Spectating Match...</span>
           )}
         </div>
 
+        {!isSpectator && (
         <button 
           onClick={onEndTurn}
           disabled={mode !== 'play' || (isOnline && !isMyTurn)}
@@ -83,6 +100,7 @@ export default function TurnCounter({
           {outOfAP ? "OUT OF AP - END TURN" : "End Turn"}
           <ChevronRight className="w-3.5 h-3.5 -mr-1" />
         </button>
+        )}
       </div>
 
       {/* Visual Turn Timer Banner */}
@@ -97,7 +115,7 @@ export default function TurnCounter({
           <div className="flex items-center gap-1.5 leading-none">
             <Clock className={`w-3.5 h-3.5 shrink-0 ${isLowTime ? 'text-red-400 animate-pulse' : isMyTurn ? 'text-emerald-450' : 'text-amber-500'}`} />
             <span>
-              {isMyTurn ? "Your Action Cycle:" : "Opponent Cycle Active:"}
+              {isMyTurn ? "Your Action Cycle:" : isSpectator ? "Current Action Cycle:" : "Opponent Cycle Active:"}
             </span>
             <span className="font-mono text-xs sm:text-sm tracking-wider font-extrabold bg-black/50 px-2 py-0.5 rounded border border-[#3e4835]/40 ml-1">
               {formatTime(timeLeft!)}
@@ -112,7 +130,7 @@ export default function TurnCounter({
           </div>
 
           <div className="flex items-center gap-2">
-            {timeLeft === 0 && !isMyTurn ? (
+            {timeLeft === 0 && !isMyTurn && !isSpectator ? (
               <button 
                 onClick={onForceEndTurn}
                 className="flex items-center gap-1 px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-extrabold text-[9px] uppercase tracking-wider rounded transition-all animate-bounce border border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.4)]"
@@ -121,7 +139,7 @@ export default function TurnCounter({
               </button>
             ) : (
               <span className={`text-[8.5px] lowercase italic font-normal tracking-wide leading-none ${isLowTime ? 'text-red-400' : 'text-zinc-500'}`}>
-                {isMyTurn ? "make moves before timer expires" : "synchronizing match timeline..."}
+                {isSpectator ? "observing real-time combat feed" : (isMyTurn ? "make moves before timer expires" : "synchronizing match timeline...")}
               </span>
             )}
           </div>

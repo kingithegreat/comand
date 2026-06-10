@@ -46,7 +46,7 @@ export const CLASSES: CharacterClass[] = [
   {
     className: "Heavy",
     archetype: "Assault",
-    description: "Thickly armored squad juggernaut with massive protective plate casing and defense shield relays.",
+    description: "Thickly armored squad juggernaut with massive protective plate casing. Passive: Takes reduced damage from Assassin strikes (requires 2 hits to kill).",
     stats: { maxHP: 155, damage: 35, range: 4, mobility: 3, accuracy: 80 },
     personality: 'Aggressive',
     ability: {
@@ -73,7 +73,7 @@ export const CLASSES: CharacterClass[] = [
   {
     className: "Scout",
     archetype: "Short Range",
-    description: "Sleek reconnaissance agent with glowing cyan visors. Excels at high-speed scouting and flanking.",
+    description: "Sleek reconnaissance agent with glowing cyan visors. Excels at high-speed scouting and flanking. Passive: Visor detects Assassins in Smog up to 4 tiles away.",
     stats: { maxHP: 75, damage: 20, range: 5, mobility: 7, accuracy: 90 },
     personality: 'Aggressive',
     ability: {
@@ -135,6 +135,20 @@ export const CLASSES: CharacterClass[] = [
       description: "Unleashes a rolling torrent of napalm fire at close range, dealing 85 damage (1 AP).",
       apCost: 1,
       range: 2,
+      type: "offensive"
+    }
+  },
+  {
+    className: "Assassin",
+    archetype: "Short Range",
+    description: "Ghost operative. Specializes in 1-shot melee takedowns. Passive: Remains invisible in Smog beyond 1 tile range (except to Scouts).",
+    stats: { maxHP: 60, damage: 200, range: 1, mobility: 6, accuracy: 100 },
+    personality: 'Aggressive',
+    ability: {
+      name: "Shadow Strike",
+      description: "Lethal 1-shot melee stab. Deals 250 damage (reduced against Heavys). (1 AP).",
+      apCost: 1,
+      range: 1,
       type: "offensive"
     }
   },

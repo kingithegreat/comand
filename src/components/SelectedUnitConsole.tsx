@@ -18,6 +18,7 @@ interface SelectedUnitConsoleProps {
   myTeam?: 'player' | 'enemy';
   onPassUnit: () => void; // Reduce chosen unit's AP to 0 so they pass turn
   mode?: 'deploy' | 'play';
+  onRenameUnit?: (unitId: string, newName: string) => void;
 }
 
 export default function SelectedUnitConsole({
@@ -33,8 +34,19 @@ export default function SelectedUnitConsole({
   isOnline,
   myTeam,
   onPassUnit,
-  mode
+  mode,
+  onRenameUnit
 }: SelectedUnitConsoleProps) {
+  const [isEditingName, setIsEditingName] = React.useState(false);
+  const [tempName, setTempName] = React.useState('');
+
+  React.useEffect(() => {
+    if (selectedUnit) {
+      setTempName(selectedUnit.name || selectedUnit.class.className);
+    }
+    setIsEditingName(false);
+  }, [selectedUnit?.id, selectedUnit?.name]);
+
   if (!selectedUnit) {
     return (
       <div className="bg-[#12150e] border border-[#2d3324] rounded-lg p-5 flex flex-col items-center justify-center text-center select-none min-h-[180px] shadow-inner font-mono text-xs">
@@ -69,12 +81,12 @@ export default function SelectedUnitConsole({
       statusBadge = "DEPLOY STANDBY // BLUE TEAM";
       statusColor = "text-sky-400 border-sky-450/40 bg-sky-955/25";
     } else {
-      statusBadge = "DEPLOY STANDBY // RED TEAM";
-      statusColor = "text-rose-400 border-rose-500/50 bg-rose-955/25 animate-pulse";
+      statusBadge = "DEPLOY STANDBY // PURPLE TEAM";
+      statusColor = "text-purple-400 border-purple-500/50 bg-purple-950/25 animate-pulse";
     }
   } else if (selectedUnit.hp <= 0) {
     statusBadge = "DECEASED / K.I.A.";
-    statusColor = "text-rose-400 border-rose-500/50 bg-rose-500/10";
+    statusColor = "text-purple-400 border-purple-500/50 bg-purple-500/10";
   } else if (selectedUnit.ap === 0) {
     statusBadge = "DEPLETED / WAIT";
     statusColor = "text-zinc-300 border-zinc-700 bg-zinc-800/20";
@@ -154,7 +166,7 @@ export default function SelectedUnitConsole({
       {/* Console Title Bar */}
       <div className="bg-[#191e14] border-b border-[#2d3324] px-3 py-1.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Crosshair className={`w-3.5 h-3.5 ${isPlayerTeam ? 'text-sky-400' : 'text-red-400'}`} />
+          <Crosshair className={`w-3.5 h-3.5 ${isPlayerTeam ? 'text-sky-400' : 'text-purple-400'}`} />
           <span className="text-[9.5px] font-bold uppercase tracking-widest text-zinc-300">
             METRICS_CONSOLE / UNIT_DEV
           </span>
@@ -163,7 +175,7 @@ export default function SelectedUnitConsole({
           <span className={`text-[8.5px] font-bold px-1.5 py-[2px] rounded-sm uppercase tracking-tighter select-none border ${statusColor}`}>
             {statusBadge}
           </span>
-          <span className="text-[10px] text-zinc-500 font-bold bg-[#1a2014]/50 hover:text-rose-500 border border-[#2d3324]/30 rounded px-1.5 cursor-pointer" onClick={onCancelSelection}>
+          <span className="text-[10px] text-zinc-500 font-bold bg-[#1a2014]/50 hover:text-purple-500 border border-[#2d3324]/30 rounded px-1.5 cursor-pointer" onClick={onCancelSelection}>
             ✕
           </span>
         </div>
@@ -195,20 +207,60 @@ export default function SelectedUnitConsole({
                 
                 {/* Blinking Live indicator */}
                 <div className="absolute top-1 left-1 flex items-center gap-0.5">
-                  <span className={`w-1.5 h-1.5 rounded-full animate-ping ${selectedUnit.team === 'player' ? 'bg-sky-450' : 'bg-rose-500'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full animate-ping ${selectedUnit.team === 'player' ? 'bg-sky-450' : 'bg-purple-500'}`} />
                   <span className="text-[5.5px] font-black tracking-tighter text-zinc-450">FEED_SEC</span>
                 </div>
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-1.5 mb-0.5">
                   <span className="text-zinc-400 text-[9px] uppercase font-bold">ARC ID:</span>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${isPlayerTeam ? 'text-sky-300' : 'text-rose-350'}`}>
+                  <span className={`text-[9px] font-bold uppercase tracking-wider ${isPlayerTeam ? 'text-sky-300' : 'text-purple-300'}`}>
                     {selectedUnit.class.archetype}
                   </span>
                 </div>
-                <h3 className="text-sm font-black text-white leading-tight uppercase">
-                  {selectedUnit.class.className}
-                </h3>
+                {isEditingName ? (
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    if (tempName.trim() && onRenameUnit) {
+                      onRenameUnit(selectedUnit.id, tempName.trim());
+                    }
+                    setIsEditingName(false);
+                  }} className="flex items-center gap-1.5 mt-1">
+                    <input
+                      type="text"
+                      className="bg-black/80 border border-emerald-500/50 text-emerald-400 font-mono text-xs px-2 py-0.5 rounded w-full uppercase focus:outline-none focus:border-emerald-400 h-6"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      maxLength={15}
+                      autoFocus
+                    />
+                    <button type="submit" className="text-[8px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-1.5 py-0.5 h-6 rounded uppercase cursor-pointer">SET</button>
+                    <button type="button" onClick={() => setIsEditingName(false)} className="text-[8px] bg-zinc-800 hover:bg-zinc-700 text-zinc-350 font-extrabold px-1.5 py-0.5 h-6 rounded uppercase cursor-pointer">X</button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-black text-white leading-tight uppercase truncate max-w-[120px]">
+                      {selectedUnit.name || selectedUnit.class.className}
+                    </h3>
+                    {isMyUnitControl && onRenameUnit && !selectedUnit.id.startsWith('preview-') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTempName(selectedUnit.name || selectedUnit.class.className);
+                          setIsEditingName(true);
+                        }}
+                        className="text-[7.5px] text-amber-400 hover:text-amber-300 font-extrabold uppercase bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/15 px-1 py-0.5 rounded cursor-pointer transition-all active:scale-95 shrink-0"
+                      >
+                        RENAME
+                      </button>
+                    )}
+                  </div>
+                )}
+                {selectedUnit.name && (
+                  <span className="text-[8.5px] text-[#8b9180] uppercase font-bold leading-none mt-1 block">
+                    {selectedUnit.class.className} OPERATOR
+                  </span>
+                )}
                 <span className="inline-block mt-1 text-[8.5px] font-mono bg-black/60 border border-[#3b4632] rounded text-[#fbbf24] font-bold px-1.5 py-0.5 select-none shrink-0">
                   LOC: {unitCoord}
                 </span>
@@ -273,7 +325,7 @@ export default function SelectedUnitConsole({
 
             <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
               <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">BASE ACCURACY</span>
-              <span className="text-sm font-black text-rose-400 font-mono leading-none">
+              <span className="text-sm font-black text-purple-400 font-mono leading-none">
                 {selectedUnit.class.stats.damage} <span className="text-[8px] text-[#b6caa2] font-black">DMG</span>
               </span>
               <span className="text-[7px] text-zinc-400 font-black truncate tracking-tight mt-1.5 uppercase">
@@ -328,8 +380,8 @@ export default function SelectedUnitConsole({
               <>
                 {/* Live feedback warnings in selection console */}
                 {liveWarning ? (
-                  <div className="text-[8.5px] font-bold font-mono text-red-400 bg-red-950/25 px-2 py-1 rounded border border-red-500/35 flex items-center gap-1.5 animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400" />
+                  <div className="text-[8.5px] font-bold font-mono text-purple-400 bg-purple-950/25 px-2 py-1 rounded border border-purple-500/35 flex items-center gap-1.5 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-purple-400" />
                     <span className="uppercase truncate">{liveWarning}</span>
                   </div>
                 ) : hoveredUnit && isMyUnitControl ? (
@@ -373,7 +425,7 @@ export default function SelectedUnitConsole({
                     {/* Force unit to pass (reduce ap to 0 so next behaves) */}
                     <button
                       onClick={onPassUnit}
-                      className="bg-[#202518] hover:bg-stone-800 text-[#dae3ce] font-black border border-[#2d3a20] px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-red-400 active:scale-95 shrink-0"
+                      className="bg-[#202518] hover:bg-stone-800 text-[#dae3ce] font-black border border-[#2d3a20] px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-purple-400 active:scale-95 shrink-0"
                       title="Spends all remaining AP of this unit to terminate its selection activity"
                     >
                       Pass Unit
@@ -387,7 +439,7 @@ export default function SelectedUnitConsole({
                     </button>
                   </div>
                 ) : isOpponentUnit ? (
-                  <div className="text-[8px] text-red-400 font-extrabold uppercase italic p-1 border border-dashed border-red-500/20 bg-red-950/5 text-center rounded">
+                  <div className="text-[8px] text-purple-400 font-extrabold uppercase italic p-1 border border-dashed border-purple-500/20 bg-purple-950/5 text-center rounded">
                     ⚡ SECURITY PROTOCOLS IN PROGRESS: HOSTILE COMMAND CONSOLE LOCKED
                   </div>
                 ) : null}

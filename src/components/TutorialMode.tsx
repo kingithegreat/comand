@@ -15,11 +15,13 @@ interface MockCell {
   type: 'floor' | 'wall' | 'crate';
 }
 
+import { safeGetItem, safeSetItem } from '../lib/storage';
+
 const MODULE_CLASSES = ['Assault', 'Sniper', 'Medic', 'Technician'];
 
 export default function TutorialMode({ onBack }: { onBack: () => void }) {
   const { playSound } = useAudio();
-  const [step, setStep] = useState<'class_select' | 'movement' | 'ability' | 'completed'>('class_select');
+  const [step, setStep] = useState<'class_select' | 'movement' | 'ability' | 'smog_tutorial' | 'completed'>('class_select');
   const [selectedClassName, setSelectedClassName] = useState<string>('Assault');
   const [unitX, setUnitX] = useState<number>(1);
   const [unitY, setUnitY] = useState<number>(4);
@@ -137,6 +139,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
       // Allow placing cover on any floor tile except current position
       const isSelf = unitX === x && unitY === y;
       return getCellType(x, y) === 'floor' && !isSelf;
+    } else if (selectedClassName === 'Assassin') {
+      return x === 4 && y === 1;
     }
     return false;
   };
@@ -207,6 +211,21 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
       } else {
         addLog(`[CONSTRUCT] Deployed localized cover shielding at sector (${x}, ${y}).`);
       }
+    } else if (selectedClassName === 'Assassin') {
+      setFireLine({ fromX: unitX, fromY: unitY, toX: x, toY: y, color: '#a855f7' });
+      setActiveDamageText({ x: x, y: y, text: '-250 FATAL STRIKE!', color: '#a855f7' });
+      setIsShaking(true);
+
+      setTimeout(() => {
+        setTargetDummyHP(0);
+        playSound('damage');
+      }, 200);
+
+      if (dist > 1) {
+        addLog(`[RANGE BYPASS] Real Assassin range <= 1. Sim override shadow stepped at ${dist} tiles!`);
+      } else {
+        addLog(`[ASSASSINATE] Executed ghost strike for 250 fatal damage.`);
+      }
     }
 
     // Clear effects timers
@@ -220,18 +239,18 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
     }, 1200);
 
     setTimeout(() => {
-      setStep('completed');
+      setStep('smog_tutorial');
       playSound('win');
     }, 1800);
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 sm:p-6 bg-[#0c0e0a]/95 border border-[#2d3422] rounded-xl shadow-2xl relative font-mono text-[#dae3ce] select-none text-left">
+    <div className="w-full max-w-4xl mx-auto p-4 sm:p-6 bg-[#0c0e0a]/95 border border-zinc-800 border-opacity-50 rounded-xl shadow-2xl relative font-mono text-zinc-300 select-none text-left">
       {/* Scanlines visual helper */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none rounded-xl z-10" />
 
       {/* Header Panel */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#2d3422] pb-4 mb-5 gap-3">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-zinc-800 border-opacity-50 pb-4 mb-5 gap-3">
         <div>
           <span className="text-[10px] text-amber-500 font-bold tracking-widest uppercase flex items-center gap-1">
             <Zap className="w-3 h-3 text-amber-400 animate-pulse" /> TACTICAL ACADEMY MODULE
@@ -242,7 +261,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
         </div>
         <button
           onClick={onBack}
-          className="px-3.5 py-1.5 border border-[#2d3422] hover:border-amber-400 text-xs text-[#8b9180] hover:text-[#fbbf24] transition-all cursor-pointer rounded flex items-center gap-1 active:scale-95 bg-[#141810]"
+          className="px-3.5 py-1.5 border border-zinc-800 border-opacity-50 hover:border-amber-400 text-xs text-[#8b9180] hover:text-[#fbbf24] transition-all cursor-pointer rounded flex items-center gap-1 active:scale-95 bg-zinc-900 bg-opacity-80"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Return to HQ
         </button>
@@ -258,7 +277,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             exit={{ opacity: 0, y: -10 }}
             className="flex flex-col gap-5"
           >
-            <div className="bg-[#141810]/50 border border-[#2d3422]/60 p-4 rounded-lg">
+            <div className="bg-zinc-900 bg-opacity-80/50 border border-zinc-800 border-opacity-50/60 p-4 rounded-lg">
               <p className="text-xs uppercase leading-relaxed text-zinc-300">
                 Welcome to the Tactical Command Academy, Commander. In this simulation, you will master basic movement, the action point system, and explore unique class specializations. Each team in physical operations is constructed from an array of 4 specialized operators.
               </p>
@@ -268,18 +287,21 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {MODULE_CLASSES.map(clsName => {
+              {(() => {
+                const unlocked = safeGetItem('assassinUnlocked') === 'true';
+                return unlocked ? [...MODULE_CLASSES, 'Assassin'] : MODULE_CLASSES;
+              })().map(clsName => {
                 const specClass = CLASSES.find(c => c.className === clsName)!;
                 return (
                   <div
                     key={clsName}
                     onClick={() => initializeSimulation(clsName)}
-                    className="p-4 bg-[#141810] hover:bg-[#1f2618]/90 border border-[#2d3422] hover:border-[#fbbf24]/60 rounded-xl cursor-pointer transition-all flex flex-col gap-3 group relative overflow-hidden"
+                    className="p-4 bg-zinc-900 bg-opacity-80 hover:bg-[#1f2618]/90 border border-zinc-800 border-opacity-50 hover:border-[#fbbf24]/60 rounded-xl cursor-pointer transition-all flex flex-col gap-3 group relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-500/5 to-transparent pointer-events-none group-hover:scale-125 transition-transform" />
                     
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 border border-[#2d3422] rounded flex items-center justify-center bg-black/40">
+                      <div className="w-10 h-10 border border-zinc-800 border-opacity-50 rounded flex items-center justify-center bg-black/40">
                         <UnitHelmetAvatar classNameVal={clsName} className="w-7 h-7" />
                       </div>
                       <div className="leading-tight">
@@ -296,9 +318,9 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                       {specClass.description}
                     </p>
 
-                    <div className="border-t border-[#2d3422]/50 pt-2 flex items-center justify-between text-[8px] font-bold uppercase text-[#fbbf24]/80">
+                    <div className="border-t border-zinc-800 border-opacity-50/50 pt-2 flex items-center justify-between text-[8px] font-bold uppercase text-[#fbbf24]/80">
                       <span>Abil: {specClass.ability?.name}</span>
-                      <span className="flex items-center text-[#dae3ce]">
+                      <span className="flex items-center text-zinc-300">
                         Simulate Archetype <ArrowRight className="w-3 h-3 ml-1 text-amber-500 group-hover:translate-x-1 transition-transform" />
                       </span>
                     </div>
@@ -307,7 +329,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               })}
             </div>
 
-            <div className="border border-dashed border-[#2d3422] p-3 rounded text-[10px] text-zinc-500 uppercase leading-relaxed">
+            <div className="border border-dashed border-zinc-800 border-opacity-50 p-3 rounded text-[10px] text-zinc-500 uppercase leading-relaxed">
               <span className="text-zinc-300 font-bold">Note on extra characters:</span> Inside the main databases, you'll encounter 6 additional elite custom operators: <span className="text-amber-500/80">Heavy Juggernauts</span>, fast Recon <span className="text-amber-500/80">Scouts</span>, Lane-blocking <span className="text-amber-500/80">Supports</span>, lethal close-breaching <span className="text-amber-500/80">Shotgunners</span>, splashing area <span className="text-amber-500/80">Demomen</span>, and high-temperature area-controlling <span className="text-amber-500/80">Flamethrowers</span>. Each brings radically modified ranges and action styles!
             </div>
           </motion.div>
@@ -323,12 +345,12 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
           >
             {/* Guide Instructions panel (Left side) */}
             <div className="md:col-span-5 flex flex-col gap-4">
-              <div className="bg-[#141810] border border-[#2d3422] p-4 rounded-xl flex flex-col gap-3 relative">
-                <div className="absolute top-0 right-0 border-b border-l border-[#2d3422] bg-black/40 px-2 py-0.5 text-[7px] text-zinc-500 font-bold rounded-bl uppercase">
+              <div className="bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 p-4 rounded-xl flex flex-col gap-3 relative">
+                <div className="absolute top-0 right-0 border-b border-l border-zinc-800 border-opacity-50 bg-black/40 px-2 py-0.5 text-[7px] text-zinc-500 font-bold rounded-bl uppercase">
                   ACTIVE PHASE
                 </div>
                 
-                <h3 className="text-xs font-black text-[#fbbf24] uppercase tracking-wider flex items-center gap-1.5 border-b border-[#2d3422]/30 pb-2">
+                <h3 className="text-xs font-black text-[#fbbf24] uppercase tracking-wider flex items-center gap-1.5 border-b border-zinc-800 border-opacity-50/30 pb-2">
                   {step === 'movement' ? (
                     <>
                       <MapPin className="w-4 h-4 text-emerald-400 animate-pulse" />
@@ -362,12 +384,12 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                       </p>
                       {selectedClassName === 'Sniper' && (
                         <p>
-                          Your Sniper can bypass short ranges using the sniper rifle, but has poor close armor. Click the RED hostile dummy at <span className="text-red-400">(4, 1)</span> to unleash <span className="text-white font-bold">Piercing Round</span>!
+                          Your Sniper can bypass short ranges using the sniper rifle, but has poor close armor. Click the PURPLE hostile dummy at <span className="text-purple-400">(4, 1)</span> to unleash <span className="text-white font-bold">Piercing Round</span>!
                         </p>
                       )}
                       {selectedClassName === 'Assault' && (
                         <p>
-                          Your Assault can secure lanes. Click the RED hostile dummy at <span className="text-red-400">(4, 1)</span> to unleash <span className="text-white font-bold">Tactical Flush</span>! This will deplete 1 of their own action points in real matches.
+                          Your Assault can secure lanes. Click the PURPLE hostile dummy at <span className="text-purple-400">(4, 1)</span> to unleash <span className="text-white font-bold">Tactical Flush</span>! This will deplete 1 of their own action points in real matches.
                         </p>
                       )}
                       {selectedClassName === 'Medic' && (
@@ -380,6 +402,11 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                           Your Technicians shape terrain dynamically on flat tiles, constructing solid crates to block linear visibility. Click an adjacent highlighted blue coordinate to build a <span className="text-[#fbbf24] font-bold">Cargo Cover Box</span>.
                         </p>
                       )}
+                      {selectedClassName === 'Assassin' && (
+                        <p>
+                          Your Assassin has extreme stealth capabilities! Once inside Smog, they are completely invisible. Click the PURPLE hostile dummy at <span className="text-purple-400">(4, 1)</span> to unleash the <span className="text-white font-bold">Shadow Strike</span>!
+                        </p>
+                      )}
                       <p className="text-amber-500 font-bold">
                         👉 Click the highlighted special blueprint cell to execute your ability.
                       </p>
@@ -389,8 +416,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
 
               {/* Character Specs mini panel */}
-              <div className="bg-[#141810]/40 border border-[#2d3422]/70 p-3 rounded-lg flex gap-3 text-left">
-                <div className="w-11 h-11 bg-black/55 border border-[#2d3422] rounded shrink-0 flex items-center justify-center p-0.5">
+              <div className="bg-zinc-900 bg-opacity-80/40 border border-zinc-800 border-opacity-50/70 p-3 rounded-lg flex gap-3 text-left">
+                <div className="w-11 h-11 bg-black/55 border border-zinc-800 border-opacity-50 rounded shrink-0 flex items-center justify-center p-0.5">
                   <UnitHelmetAvatar classNameVal={selectedClassName} className="w-8 h-8" />
                 </div>
                 <div className="flex-1 font-mono text-[8.5px] uppercase">
@@ -405,8 +432,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
 
               {/* Tactician Log Feed */}
-              <div className="bg-black/85 border border-[#2d3422] rounded-lg p-2.5 h-[100px] overflow-hidden flex flex-col gap-1 text-[8.5px] uppercase">
-                <span className="text-[7.5px] text-[#2d3422] font-black tracking-widest block border-b border-[#2d3422] pb-0.5">TELEMETRY UPLINKFEED</span>
+              <div className="bg-black/85 border border-zinc-800 border-opacity-50 rounded-lg p-2.5 h-[100px] overflow-hidden flex flex-col gap-1 text-[8.5px] uppercase">
+                <span className="text-[7.5px] text-[#2d3422] font-black tracking-widest block border-b border-zinc-800 border-opacity-50 pb-0.5">TELEMETRY UPLINKFEED</span>
                 <div className="flex-1 overflow-y-auto space-y-1 text-zinc-500 font-mono">
                   {log.map((lg, i) => (
                     <div key={i} className={i === 0 ? "text-[#fbbf24]" : "text-zinc-500"}>
@@ -440,7 +467,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                   y: [0, 5, -5, 3, -3, 2, -2, 0]
                 } : {}}
                 transition={{ duration: 0.5, ease: "easeInOut" }}
-                className="bg-black/60 border border-[#2d3422] rounded-xl p-3.5 relative overflow-hidden shadow-xl w-full max-w-[380px]"
+                className="bg-black/60 border border-zinc-800 border-opacity-50 rounded-xl p-3.5 relative overflow-hidden shadow-xl w-full max-w-[380px]"
               >
                 {/* Coordinates labeling helper */}
                 <div className="grid grid-cols-6 gap-1 w-full text-center text-[7px] text-[#475231] font-mono font-black mb-1 select-none">
@@ -580,7 +607,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                               <div className="w-[85%] h-[85%] bg-rose-500/20 border-2 border-rose-500 rounded flex flex-col items-center justify-center p-0.5 relative shadow-[0_0_12px_rgba(239,68,68,0.4)]">
                                 <Target className="w-5 h-5 text-rose-500 animate-pulse" />
                                 <div className="w-full bg-zinc-950 h-1 rounded overflow-hidden mt-0.5 p-[0.3px] border border-zinc-900 absolute -bottom-1">
-                                  <div className="bg-red-500 h-full animate-pulse" style={{ width: `${(targetDummyHP / 80) * 100}%` }} />
+                                  <div className="bg-purple-500 h-full animate-pulse" style={{ width: `${(targetDummyHP / 80) * 100}%` }} />
                                 </div>
                               </div>
                             )}
@@ -611,10 +638,58 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               {/* Reset button inside grid loop */}
               <button
                 onClick={() => initializeSimulation(selectedClassName)}
-                className="mt-3.5 px-3 py-1 bg-[#141810] border border-[#2d3422] hover:border-amber-400 text-[9px] uppercase font-bold text-[#8b9180] hover:text-[#fbbf24] transition-all rounded flex items-center gap-1 cursor-pointer"
+                className="mt-3.5 px-3 py-1 bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 hover:border-amber-400 text-[9px] uppercase font-bold text-[#8b9180] hover:text-[#fbbf24] transition-all rounded flex items-center gap-1 cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" /> Re-initialize Sim
               </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STEP 3.5: SMOG AND DUOS TUTORIAL */}
+        {step === 'smog_tutorial' && (
+          <motion.div
+            key="smog_tutorial"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col gap-6 text-left py-6 max-w-2xl mx-auto"
+          >
+            <div className="bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 p-5 rounded-xl">
+               <h3 className="text-lg font-black text-[#fbbf24] uppercase tracking-widest border-b border-zinc-800 border-opacity-50 pb-2 mb-4 flex items-center gap-2">
+                 <Shield className="w-5 h-5 text-amber-500" /> Advanced Command: Fog & Duos
+               </h3>
+               <div className="space-y-4 text-xs text-zinc-300 leading-relaxed uppercase">
+                 <p>
+                   Before claiming full command, be aware of two vital lobby settings you can configure:
+                 </p>
+                 <div className="bg-black/40 border border-zinc-800 border-opacity-50/60 p-3 rounded">
+                    <h4 className="text-amber-500 font-bold mb-1 flex items-center gap-1.5">
+                       <Zap className="w-3 h-3 text-amber-400" /> SMOG PROTOCOL (FOG OF WAR)
+                    </h4>
+                    <p className="text-zinc-400 text-[10px]">
+                       When active, enemy combatants become entirely invisible on the tactical grid unless they are within the direct line of sight (visual range) of one of your friendly active operators. Assassins have extreme stealth properties inside Smog!
+                    </p>
+                 </div>
+                 <div className="bg-black/40 border border-zinc-800 border-opacity-50/60 p-3 rounded">
+                    <h4 className="text-sky-400 font-bold mb-1 flex items-center gap-1.5">
+                       <UserPlus className="w-3 h-3 text-sky-400" /> SQUAD SIZES & DUOS
+                    </h4>
+                    <p className="text-zinc-400 text-[10px]">
+                       The default loadout is 4-unit squadrons. However, you can configure tactical encounters to run from anywhere down to a 1 vs 1 duel, or 2 vs 2 Duos. Ensure your drafted roster composition matches the combat size constraints.
+                    </p>
+                 </div>
+               </div>
+               
+               <button
+                 onClick={() => {
+                   setStep('completed');
+                   safeSetItem('assassinUnlocked', 'true');
+                   playSound('win');
+                 }}
+                 className="mt-6 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider rounded border border-amber-400 cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.2)] transition-all flex items-center justify-center gap-1.5"
+               >
+                 I Understand, Proceed to Uplink <ArrowRight className="w-4 h-4 ml-1" />
+               </button>
             </div>
           </motion.div>
         )}
@@ -641,11 +716,11 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </p>
             </div>
 
-            <div className="border border-emerald-500/25 bg-[#141810] max-w-xl mx-auto p-4 rounded-xl text-left font-mono text-[9px] text-[#8b9180] leading-relaxed relative overflow-hidden">
+            <div className="border border-emerald-500/25 bg-zinc-900 bg-opacity-80 max-w-xl mx-auto p-4 rounded-xl text-left font-mono text-[9px] text-[#8b9180] leading-relaxed relative overflow-hidden">
               <div className="absolute -right-3 -bottom-3 text-emerald-500/5 rotate-12 pointer-events-none">
                 <Award className="w-24 h-24" />
               </div>
-              <h4 className="font-bold text-white uppercase text-[10px] tracking-wide mb-2 flex items-center gap-1.5 border-b border-[#2d3422] pb-1.5">
+              <h4 className="font-bold text-white uppercase text-[10px] tracking-wide mb-2 flex items-center gap-1.5 border-b border-zinc-800 border-opacity-50 pb-1.5">
                 <Info className="w-4 h-4 text-emerald-400" /> WHAT ABOUT OTHER OPERATORS?
               </h4>
               <p className="mb-2">
@@ -655,9 +730,9 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                 <li><span className="text-[#fbbf24] font-semibold">HEAVY JUGGERNAUT</span> can invoke shielding fields to repair self for 50 HP.</li>
                 <li><span className="text-[#fbbf24] font-semibold">DEMOMAN EXPLOSIVES</span> fires rocket payloads damaging entire 3x3 grids.</li>
                 <li><span className="text-[#fbbf24] font-semibold">ADRENALINE SCOUT</span> has 7 tiles mobility and can acquire bonus action points dynamically.</li>
-                <li><span className="text-[#fbbf24] font-semibold">FLAMETHROWER</span> discharges close-range fire loops, inflicting 70 target damage.</li>
+                <li><span className="text-[#a855f7] font-semibold">GHOST ASSASSIN (UNLOCKED!)</span> You have earned access to the Assassin ghost operative. They possess extreme stealth inside Smog, and a 1-shot lethal melee strike.</li>
               </ul>
-              <div className="text-[8px] text-[#fbbf24]/90 font-bold border-t border-[#2d3422] mt-3 pt-2 uppercase">
+              <div className="text-[8px] text-[#fbbf24]/90 font-bold border-t border-zinc-800 border-opacity-50 mt-3 pt-2 uppercase">
                 🚀 Feel free to select another class underneath to try their specific mechanical simulation! Repeating the tutorial explores each unit’s movement and targets.
               </div>
             </div>
@@ -665,7 +740,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md mx-auto w-full pt-1">
               <button
                 onClick={() => setStep('class_select')}
-                className="py-3 bg-[#141810] border border-[#2d3422] hover:border-[#fbbf24] text-[#dae3ce] hover:text-[#fbbf24] text-xs font-black uppercase rounded cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                className="py-3 bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 hover:border-[#fbbf24] text-zinc-300 hover:text-[#fbbf24] text-xs font-black uppercase rounded cursor-pointer transition-all flex items-center justify-center gap-1.5"
               >
                 <Plus className="w-4 h-4" /> Simulate Another Operator
               </button>

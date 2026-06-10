@@ -14,9 +14,8 @@ service cloud.firestore {
     }
 
     function isValidUserProfile(data) {
-      return data.keys().hasAll(['userId', 'displayName'])
-        && data.userId is string && data.userId.size() <= 128
-        && data.displayName is string && data.displayName.size() <= 100
+      return (!data.keys().hasAny(['userId']) || (data.userId is string && data.userId.size() <= 128))
+        && (!data.keys().hasAny(['displayName']) || (data.displayName is string && data.displayName.size() <= 100))
         && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200))
         && (!data.keys().hasAny(['characterProgress']) || data.characterProgress is map);
     }
@@ -25,14 +24,16 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() 
                     && isValidId(userId)
+                    && incoming().keys().hasAll(['userId', 'displayName'])
                     && isValidUserProfile(incoming()) 
                     && incoming().userId == request.auth.uid 
                     && userId == request.auth.uid;
       allow update: if isSignedIn() 
+                    && userId == request.auth.uid
                     && isValidUserProfile(incoming())
-                    && existing().userId == request.auth.uid
-                    && incoming().userId == existing().userId
-                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'characterProgress']);
+                    && (!existing().keys().hasAny(['userId']) || existing().userId == request.auth.uid)
+                    && (!incoming().keys().hasAny(['userId']) || incoming().userId == request.auth.uid)
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'characterProgress', 'userId']);
     }
 
     function isValidMatch(data) {
@@ -50,29 +51,23 @@ service cloud.firestore {
         && (!data.keys().hasAny(['votes']) || data.votes is map)
         && (!data.keys().hasAny(['voteResolved']) || data.voteResolved is bool)
         && (!data.keys().hasAny(['votedMapId']) || (data.votedMapId is string && data.votedMapId.size() <= 128))
-        && (!data.keys().hasAny(['aiDecisionText']) || (data.aiDecisionText is string && data.aiDecisionText.size() <= 5000));
+        && (!data.keys().hasAny(['aiDecisionText']) || (data.aiDecisionText is string && data.aiDecisionText.size() <= 5000))
+        && (!data.keys().hasAny(['squadSize']) || data.squadSize is number)
+        && (!data.keys().hasAny(['smogEnabled']) || data.smogEnabled is bool)
+        && (!data.keys().hasAny(['isPublic']) || data.isPublic is bool);
     }
 
     function isValidCommanderStat(data) {
-      return data.keys().hasAll(['userId', 'displayName', 'victories'])
-        && data.userId is string && data.userId.size() <= 128
-        && data.displayName is string && data.displayName.size() <= 100
-        && data.victories is number;
+      return (!data.keys().hasAny(['userId']) || (data.userId is string && data.userId.size() <= 128))
+        && (!data.keys().hasAny(['displayName']) || (data.displayName is string && data.displayName.size() <= 100))
+        && (!data.keys().hasAny(['victories']) || data.victories is number)
+        && (!data.keys().hasAny(['campaignSectors']) || data.campaignSectors is number)
+        && (!data.keys().hasAny(['totalSquadLevel']) || data.totalSquadLevel is number);
     }
 
     match /stats/{userId} {
       allow read: if true;
-      allow create: if isSignedIn() 
-                    && isValidId(userId)
-                    && isValidCommanderStat(incoming()) 
-                    && incoming().userId == request.auth.uid 
-                    && userId == request.auth.uid;
-      allow update: if isSignedIn() 
-                    && isValidCommanderStat(incoming())
-                    && existing().userId == request.auth.uid
-                    && incoming().userId == existing().userId
-                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'victories'])
-                    && incoming().victories >= existing().victories; // Optional constraint to only allow increments
+      allow write: if isSignedIn() && userId == request.auth.uid;
     }
 
     match /matches/{matchId} {
@@ -95,11 +90,21 @@ service cloud.firestore {
                     && (
                       (incoming().diff(existing()).affectedKeys().hasOnly([
                         'guestId', 'status', 'activeTeam', 'turn', 'units', 'gridEnv', 'winner',
-                        'mapId', 'suggestedMaps', 'votes', 'voteResolved', 'votedMapId', 'aiDecisionText'
+                        'mapId', 'suggestedMaps', 'votes', 'voteResolved', 'votedMapId', 'aiDecisionText',
+                        'squadSize', 'smogEnabled'
                       ]))
                     );
                     
       allow delete: if isSignedIn() && existing().hostId == request.auth.uid;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn()
+                      && incoming().keys().hasAll(['text', 'senderId', 'senderName', 'timestamp'])
+                      && incoming().senderId == request.auth.uid
+                      && incoming().text is string && incoming().text.size() <= 400;
+        allow update, delete: if false;
+      }
     }
   }
 }
