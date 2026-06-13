@@ -600,6 +600,9 @@ export default function Game({
   useEffect(() => { activeTeamRef.current = activeTeam; }, [activeTeam]);
   const pendingTurnWriteRef = React.useRef<{ turn: number, activeTeam: 'player' | 'enemy' } | null>(null);
   const lastProcessedTurnKeyRef = React.useRef<string>("");
+  const unitsRef = React.useRef(units);
+  useEffect(() => { unitsRef.current = units; }, [units]);
+  const deployWriteInFlightRef = React.useRef(false);
 
   useEffect(() => {
      isSyncInitializedRef.current = false;
@@ -668,8 +671,6 @@ export default function Game({
     }
   }, [isOnline, isHost, onlineMatch, mode]);
 
-  const unitsString = JSON.stringify(units);
-
   enum OperationType {
     CREATE = 'create',
     UPDATE = 'update',
@@ -717,37 +718,37 @@ export default function Game({
     throw new Error(JSON.stringify(errInfo));
   }
 
-  // Sync state from onlineMatch
+  // Sync state from onlineMatch — only reacts to remote changes, not local state
   useEffect(() => {
     if (isOnline && onlineMatch) {
        const remoteUnits = JSON.parse(onlineMatch.units || "[]");
-       
+
        if (!isSyncInitializedRef.current) {
           setUnits(recalculateSquadStats(remoteUnits));
           isSyncInitializedRef.current = true;
        } else {
           if (mode === 'deploy') {
+             if (deployWriteInFlightRef.current) return;
              if (isSpectator) {
-                if (JSON.stringify(remoteUnits) !== JSON.stringify(units)) {
-                   setUnits(recalculateSquadStats(remoteUnits));
-                }
+                setUnits(recalculateSquadStats(remoteUnits));
              } else {
                 const myTeamName = myTeam || 'player';
-                const myLocalUnits = units.filter(u => u.team === myTeamName);
-                const opponentRemoteUnits = remoteUnits.filter(u => u.team !== myTeamName);
-                
+                const myLocalUnits = unitsRef.current.filter(u => u.team === myTeamName);
+                const opponentRemoteUnits = remoteUnits.filter((u: any) => u.team !== myTeamName);
+
                 const merged = [...opponentRemoteUnits, ...myLocalUnits];
-                
-                // Sort arrays by ID to make comparison order-independent, preventing desync and infinite loops
                 const mergedWithStats = recalculateSquadStats(merged);
+
                 const sortedMerged = [...mergedWithStats].sort((a, b) => a.id.localeCompare(b.id));
-                const sortedLocal = [...units].sort((a, b) => a.id.localeCompare(b.id));
-                
-                if (JSON.stringify(sortedMerged) !== JSON.stringify(sortedLocal)) {
+                const sortedLocal = [...unitsRef.current].sort((a, b) => a.id.localeCompare(b.id));
+
+                if (JSON.stringify(sortedMerged.map(u => u.id)) !== JSON.stringify(sortedLocal.map(u => u.id))) {
                    setUnits(mergedWithStats);
                 }
              }
           } else if (mode === 'play') {
+             const localUnits = unitsRef.current;
+             const localUnitsString = JSON.stringify(localUnits);
              const dbActiveTeam = onlineMatch.activeTeam;
              const dbTurn = onlineMatch.turn || 1;
              const dbTurnKey = `${dbActiveTeam}:${dbTurn}`;
@@ -762,13 +763,12 @@ export default function Game({
              }
 
              if (dbActiveTeam !== myTeam) {
-                if (JSON.stringify(remoteUnits) !== unitsString) {
-                   // Compare remoteUnits with units (local) to show damage text and play sounds for enemy actions
+                if (JSON.stringify(remoteUnits) !== localUnitsString) {
                    remoteUnits.forEach((ru: any) => {
-                      const lu = units.find(u => u.id === ru.id);
+                      const lu = localUnits.find(u => u.id === ru.id);
                       if (lu) {
                          if (lu.hp > ru.hp) {
-                           const dmg = lu.hp - ru.hp; // Positive amount means damage
+                           const dmg = lu.hp - ru.hp;
                            const effectId = crypto.randomUUID();
                            setDamageTexts(prev => [...prev, { id: effectId, x: ru.x, y: ru.y, amount: dmg }]);
                            setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
@@ -777,7 +777,7 @@ export default function Game({
                          } else if (lu.hp < ru.hp) {
                            const increase = ru.hp - lu.hp;
                            const effectId = crypto.randomUUID();
-                           setDamageTexts(prev => [...prev, { id: effectId, x: ru.x, y: ru.y, amount: -increase }]); // Negative amount means healing
+                           setDamageTexts(prev => [...prev, { id: effectId, x: ru.x, y: ru.y, amount: -increase }]);
                            setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
                            playSound('select');
                            addLog(`[HEAL] ${ru.team === 'player' ? 'Blue' : 'Purple'} ${ru.class.className} healed for ${increase} HP.`, 'ability');
@@ -786,12 +786,10 @@ export default function Game({
                             playSound('move');
                             addLog(`[MOVE] ${ru.team === 'player' ? 'Blue' : 'Purple'} ${ru.class.className} repositioned.`, 'info');
                          }
-                      } else if (ru.team !== myTeam) { // Deployed remotely? Shouldn't happen in play mode.
                       }
                    });
-                   
-                   // Check for deaths
-                   const missingUnits = units.filter(u => u.team !== myTeam && !remoteUnits.some((ru: any) => ru.id === u.id));
+
+                   const missingUnits = localUnits.filter(u => u.team !== myTeam && !remoteUnits.some((ru: any) => ru.id === u.id));
                    missingUnits.forEach(u => {
                       addLog(`[FATALITY] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} neutralized under hostile fire.`, 'death');
                    });
@@ -809,7 +807,7 @@ export default function Game({
                 }
              } else {
                 if (lastProcessedTurnKeyRef.current !== dbTurnKey) {
-                   if (JSON.stringify(remoteUnits) !== unitsString) {
+                   if (JSON.stringify(remoteUnits) !== localUnitsString) {
                       setUnits(recalculateSquadStats(remoteUnits));
                    }
                    lastProcessedTurnKeyRef.current = dbTurnKey;
@@ -843,7 +841,7 @@ export default function Game({
           setCoinSpinning(true);
           const syncedWinner = onlineMatch.activeTeam || 'player';
           setCoinWinner(syncedWinner);
-          
+
           setTimeout(() => {
              setCoinSpinning(false);
           }, 1700);
@@ -854,7 +852,6 @@ export default function Game({
              addLog(`[COIN TOSS] Satellite positioning telemetry initialized. ${syncedWinner === 'player' ? 'Blue' : 'Purple'} Squad won initiative and receives the first move!`, 'system');
           }, 2500);
        } else if (onlineMatch.status === 'play' && mode === 'play' && !pendingTurnWriteRef.current && onlineMatch.activeTeam !== myTeam) {
-          // If already in play, keep syncing activeTeam
           if (onlineMatch.activeTeam) {
              setActiveTeam(onlineMatch.activeTeam);
           }
@@ -867,7 +864,7 @@ export default function Game({
           setActiveTeam(onlineMatch.activeTeam);
        }
     }
-  }, [onlineMatch, isOnline, unitsString, mode, coinFlipping, addLog, selectedMapId, mapEnvironment, myTeam, activeTeam, units]);
+  }, [onlineMatch, isOnline, mode, coinFlipping, addLog, selectedMapId, mapEnvironment, myTeam, activeTeam]);
 
   const updateOnlineState = async (newUnits: any[], newTurn: number, newActiveTeam: string, newStatus: string = mode, winTeam?: string) => {
      if (isOnline && onlineMatch?.id) {
@@ -882,18 +879,19 @@ export default function Game({
      }
   };
 
-  const updateOnlineUnitsDeploy = async (myNewTeamUnits: any[], teamSel: string) => {
+  const updateOnlineUnitsDeploy = async (myNewTeamUnits: any[], teamSel: string, previousUnits?: Unit[]) => {
      if (!isOnline || !onlineMatch?.id) return;
+     deployWriteInFlightRef.current = true;
      try {
         await runTransaction(db, async (transaction) => {
            const matchRef = doc(db, 'matches', onlineMatch.id);
            const matchDoc = await transaction.get(matchRef);
            if (!matchDoc.exists()) return;
-           
+
            const data = matchDoc.data();
            const latestUnits = JSON.parse(data.units || "[]");
            const opponentUnits = latestUnits.filter((u: any) => u.team !== teamSel);
-           
+
            let finalTeamUnits = myNewTeamUnits;
            if (gameMode === 'online_coop') {
               const remoteTeamUnits = latestUnits.filter((u: any) => u.team === teamSel && u.ownerId !== userId);
@@ -901,17 +899,22 @@ export default function Game({
               finalTeamUnits = [...remoteTeamUnits, ...myUnitsOnly];
            }
 
-           // Filter finalTeamUnits to make sure none of them overlap with opponent's coordinates!
-           const nonOverlappingMyUnits = finalTeamUnits.filter((myUnit: any) => 
+           const nonOverlappingMyUnits = finalTeamUnits.filter((myUnit: any) =>
               !opponentUnits.some((oppUnit: any) => oppUnit.x === myUnit.x && oppUnit.y === myUnit.y)
            );
-           
+
            const merged = recalculateSquadStats([...opponentUnits, ...nonOverlappingMyUnits]);
-           
+
            transaction.update(matchRef, { units: JSON.stringify(merged) });
         });
      } catch (e) {
         console.error("Deploy transaction failed: ", e);
+        if (previousUnits) {
+           setUnits(previousUnits);
+        }
+        addLog(`[SYNC ERROR] Deploy failed to sync. Try again.`, 'system');
+     } finally {
+        deployWriteInFlightRef.current = false;
      }
   };
 
@@ -1280,7 +1283,7 @@ export default function Game({
     const finalLocalUnits = [...units.filter(u => u.team !== team), ...myNewTeamUnits];
     setUnits(finalLocalUnits);
     if (isOnline) {
-       updateOnlineUnitsDeploy(myNewTeamUnits, team);
+       updateOnlineUnitsDeploy(myNewTeamUnits, team, units);
     }
   };
 
@@ -2040,7 +2043,7 @@ export default function Game({
          setUnits(newUnits);
            
          if (isOnline) {
-            updateOnlineUnitsDeploy(myNewTeamUnits, teamSelection);
+            updateOnlineUnitsDeploy(myNewTeamUnits, teamSelection, units);
          }
 
          addLog(`[RECALL] ${existingUnit.team === 'player' ? 'Blue' : 'Purple'} ${existingUnit.class.className} withdrawn from grid.`, 'system');
@@ -2088,7 +2091,7 @@ export default function Game({
         setUnits(newUnitsArray);
 
         if (isOnline) {
-           updateOnlineUnitsDeploy(myNewTeamUnits, teamSelection);
+           updateOnlineUnitsDeploy(myNewTeamUnits, teamSelection, units);
         } else {
            if (gameMode === 'local_p2p' && teamSelection === 'player' && newUnitsArray.filter(u => u.team === 'player').length === matchSquadSize) {
               setTeamSelection('enemy');
@@ -3384,7 +3387,7 @@ export default function Game({
   return (
     <div className="h-[100dvh] w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none">
       {/* Subtle CRT Overlay */}
-      <div className="pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] mix-blend-overlay"></div>
+      <div className="pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_3px,4px_100%] mix-blend-overlay opacity-60"></div>
 
       {levelUpQueue.length > 0 && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
@@ -3409,72 +3412,72 @@ export default function Game({
 
       {turnBannerTeam && mode === 'play' && (
          <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none overflow-hidden">
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-fade-in fade-out duration-1000"></div>
-            <div className={`w-full py-8 flex flex-col items-center justify-center backdrop-blur-md shadow-[0_0_50px_rgba(0,0,0,0.8)] border-y border-opacity-50 transform-gpu animate-sweep-banner ${turnBannerTeam === 'player' ? 'bg-sky-950/80 border-sky-500/50' : 'bg-fuchsia-950/80 border-fuchsia-500/50'}`}>
-                <div className={`text-5xl sm:text-7xl font-black font-mono tracking-[0.25em] italic leading-none ${turnBannerTeam === 'player' ? 'text-sky-400 drop-shadow-[0_0_20px_rgba(56,189,248,0.8)]' : 'text-fuchsia-400 drop-shadow-[0_0_20px_rgba(217,70,239,0.8)]'}`}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"></div>
+            <div className={`w-full py-10 flex flex-col items-center justify-center backdrop-blur-md border-y transform-gpu animate-sweep-banner relative overflow-hidden ${turnBannerTeam === 'player' ? 'bg-gradient-to-r from-sky-950/90 via-sky-900/70 to-sky-950/90 border-sky-400/30 shadow-[0_0_80px_rgba(56,189,248,0.15)]' : 'bg-gradient-to-r from-fuchsia-950/90 via-fuchsia-900/70 to-fuchsia-950/90 border-fuchsia-400/30 shadow-[0_0_80px_rgba(217,70,239,0.15)]'}`}>
+                <div className={`absolute inset-0 ${turnBannerTeam === 'player' ? 'bg-[radial-gradient(ellipse_at_center,rgba(56,189,248,0.1)_0%,transparent_70%)]' : 'bg-[radial-gradient(ellipse_at_center,rgba(217,70,239,0.1)_0%,transparent_70%)]'}`} />
+                <div className={`text-5xl sm:text-7xl font-black tracking-[0.3em] leading-none relative z-10 ${turnBannerTeam === 'player' ? 'text-sky-300 drop-shadow-[0_0_30px_rgba(56,189,248,0.6)]' : 'text-fuchsia-300 drop-shadow-[0_0_30px_rgba(217,70,239,0.6)]'}`} style={{fontFamily: 'Orbitron, monospace'}}>
                    {turnBannerTeam === 'player' ? 'BLUE TEAM' : 'PURPLE TEAM'}
                 </div>
-                <div className="text-zinc-300 font-bold tracking-[0.3em] font-mono mt-3 uppercase text-xs sm:text-sm drop-shadow-md">
-                   PHASE INITIALIZED // ENGAGE TACTICAL COMMAND
+                <div className="text-zinc-400 font-bold tracking-[0.4em] font-mono mt-4 uppercase text-[10px] sm:text-xs relative z-10">
+                   ENGAGE TACTICAL COMMAND
                 </div>
+                <div className={`absolute bottom-0 left-0 right-0 h-[2px] ${turnBannerTeam === 'player' ? 'bg-gradient-to-r from-transparent via-sky-400/60 to-transparent' : 'bg-gradient-to-r from-transparent via-fuchsia-400/60 to-transparent'}`} />
             </div>
          </div>
       )}
 
       {showHandoff && pendingTurnData && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm">
-           <div className="bg-zinc-900 bg-opacity-80 border-2 border-[#424f35] p-10 flex flex-col items-center min-w-[320px] shadow-2xl rounded-2xl max-w-sm text-center">
-              <h1 className={`text-4xl font-black uppercase tracking-[0.2em] mb-4 text-center ${handoffTarget === 'player' ? 'text-[#38bdf8] drop-shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'text-[#c026d3] drop-shadow-[0_0_15px_rgba(192,38,211,0.4)]'}`}>
-                {handoffTarget === 'player' ? 'BLUE SQUAD' : 'PURPLE SQUAD'} TURN
-              </h1>
-              <p className="text-sm font-mono text-amber-500/80 tracking-widest uppercase mb-8 leading-relaxed">
-                PASS THE DEVICE TO {handoffTarget === 'player' ? 'PLAYER 1 (BLUE)' : 'PLAYER 2 (PURPLE)'}
-              </p>
-              <button 
-                onClick={handleConfirmHandoff} 
-                className="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-mono font-black uppercase tracking-widest transition-colors border border-amber-400 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.2)]"
-              >
-                I AM READY
-              </button>
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/92 backdrop-blur-md">
+           <div className="glass-dark rounded-2xl p-10 flex flex-col items-center min-w-[320px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+              <div className={`absolute inset-0 ${handoffTarget === 'player' ? 'bg-gradient-to-b from-sky-500/[0.04] to-transparent' : 'bg-gradient-to-b from-fuchsia-500/[0.04] to-transparent'}`} />
+              <div className="relative z-10 flex flex-col items-center">
+                <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-[0.25em] mb-3">Pass device to</p>
+                <h1 className={`text-4xl font-black uppercase tracking-[0.2em] mb-2 ${handoffTarget === 'player' ? 'text-sky-300 drop-shadow-[0_0_20px_rgba(56,189,248,0.5)]' : 'text-fuchsia-300 drop-shadow-[0_0_20px_rgba(217,70,239,0.5)]'}`} style={{fontFamily: 'Orbitron, monospace'}}>
+                  {handoffTarget === 'player' ? 'BLUE' : 'PURPLE'}
+                </h1>
+                <div className="h-[1px] w-2/3 bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent my-6"></div>
+                <button
+                  onClick={handleConfirmHandoff}
+                  className={`px-8 py-3 rounded-xl font-mono font-bold uppercase tracking-widest text-sm transition-all cursor-pointer ${handoffTarget === 'player' ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 hover:border-sky-400/50 shadow-[0_0_20px_rgba(56,189,248,0.15)]' : 'bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 hover:border-fuchsia-400/50 shadow-[0_0_20px_rgba(217,70,239,0.15)]'}`}
+                >
+                  I'M READY
+                </button>
+              </div>
            </div>
         </div>
       )}
 
       {showForfeitConfirm && (
-        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/92 backdrop-blur-sm">
-           <div className="bg-zinc-900 bg-opacity-80/95 border-2 border-purple-500/40 p-8 flex flex-col items-center min-w-[320px] shadow-[0_0_50px_rgba(168,85,247,0.25)] rounded-xl max-w-sm text-center relative overflow-hidden">
-              {/* Caution tech borders */}
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-purple-500"></div>
-              <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-purple-500"></div>
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-purple-500"></div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-purple-500"></div>
-              
-              <div className="w-16 h-16 mb-4 relative flex items-center justify-center text-purple-500">
-                 <div className="absolute inset-0 border border-purple-500/15 rounded-full animate-ping [animation-duration:1.4s]"></div>
-                 <Flag className="w-8 h-8 animate-pulse text-purple-500 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/92 backdrop-blur-md">
+           <div className="glass-dark rounded-2xl p-8 flex flex-col items-center min-w-[320px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+              <div className="absolute inset-0 bg-gradient-to-b from-red-500/[0.04] to-transparent" />
+
+              <div className="w-14 h-14 mb-5 relative flex items-center justify-center text-red-400 z-10">
+                 <div className="absolute inset-0 border border-red-500/20 rounded-full animate-ping [animation-duration:1.6s]"></div>
+                 <Flag className="w-7 h-7 drop-shadow-[0_0_12px_rgba(239,68,68,0.4)]" />
               </div>
-              
-              <h1 className="text-xl font-mono font-black uppercase tracking-widest text-purple-400 mb-2 leading-tight">
-                CONCEDE ENGAGEMENT?
+
+              <h1 className="text-lg font-bold uppercase tracking-[0.15em] text-red-300 mb-2 relative z-10" style={{fontFamily: 'Orbitron, monospace'}}>
+                Forfeit Match?
               </h1>
-              <p className="text-[10px] font-mono text-zinc-400 uppercase leading-relaxed max-w-xs mb-6 px-1">
-                Surrendering will transmit a secure withdraw command. Allied forces will evacuate this sector immediately and count as defeated.
+              <p className="text-[11px] font-mono text-zinc-500 leading-relaxed max-w-xs mb-6 relative z-10">
+                This will count as a defeat. Your opponent wins.
               </p>
-              
-              <div className="flex gap-3 w-full justify-center">
-                <button 
+
+              <div className="flex gap-3 w-full justify-center relative z-10">
+                <button
                   type="button"
-                  onClick={() => { playSound('click'); setShowForfeitConfirm(false); }} 
-                  className="flex-1 py-2 sm:py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-350 hover:text-white font-mono text-[10px] font-black uppercase tracking-widest transition-colors border border-zinc-700/60 rounded-lg cursor-pointer"
+                  onClick={() => { playSound('click'); setShowForfeitConfirm(false); }}
+                  className="flex-1 py-2.5 bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-zinc-700/40 rounded-xl cursor-pointer"
                 >
-                  CANCEL
+                  Cancel
                 </button>
-                <button 
+                <button
                   type="button"
-                  onClick={handleForfeit} 
-                  className="flex-1 py-2 sm:py-2.5 bg-purple-950/40 hover:bg-[#7f1d1d] text-purple-200 hover:text-white font-mono text-[10px] font-black uppercase tracking-widest transition-colors border border-purple-800/80 rounded-lg cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.15)]"
+                  onClick={handleForfeit}
+                  className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-red-500/25 hover:border-red-400/40 rounded-xl cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.1)]"
                 >
-                  FORFEIT
+                  Forfeit
                 </button>
               </div>
            </div>
@@ -3482,52 +3485,38 @@ export default function Game({
       )}
 
       {coinFlipping && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm">
-           <div className="bg-zinc-900 bg-opacity-80/95 border-2 border-amber-500/45 p-10 flex flex-col items-center min-w-[340px] shadow-[0_0_50px_rgba(245,158,11,0.2)] rounded-xl max-w-sm text-center relative overflow-hidden">
-              {/* Retro digital circuit scanning borders */}
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-amber-400"></div>
-              <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-amber-400"></div>
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-amber-400"></div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-amber-400"></div>
-              
-              <div className="w-24 h-24 mb-6 relative flex items-center justify-center">
-                 <div className="absolute inset-0 border border-amber-500/20 rounded-full animate-ping [animation-duration:1.6s]"></div>
-                 <div className="absolute inset-2 border border-dashed border-amber-500/35 rounded-full animate-[spin_8s_linear_infinite]"></div>
-                 <div className="absolute inset-4 border border-amber-550/15 rounded-full"></div>
-                 
-                 {/* The holographic spinning "coin" */}
-                 <div className={`w-14 h-14 rounded-full border-4 flex items-center justify-center font-mono font-black text-xs sm:text-sm tracking-wide transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] ${coinSpinning ? 'animate-[spin_0.2s_linear_infinite] border-amber-550 text-amber-400 bg-amber-500/5' : (coinWinner === 'player' ? 'border-sky-500 text-sky-450 bg-sky-950/20 shadow-[0_0_25px_rgba(56,189,248,0.5)] scale-110' : 'border-purple-500 text-purple-500 bg-purple-950/20 shadow-[0_0_25px_rgba(168,85,247,0.5)] scale-110')}`}>
-                   {coinSpinning ? 'INIT' : (coinWinner === 'player' ? 'BLUE' : 'PURPLE')}
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/92 backdrop-blur-md">
+           <div className="glass-dark rounded-2xl p-10 flex flex-col items-center min-w-[340px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+              <div className="absolute inset-0 bg-gradient-to-b from-amber-500/[0.03] to-transparent" />
+
+              <div className="w-28 h-28 mb-8 relative flex items-center justify-center">
+                 <div className="absolute inset-0 border border-amber-500/15 rounded-full animate-ping [animation-duration:1.8s]"></div>
+                 <div className="absolute inset-3 border border-dashed border-amber-500/25 rounded-full animate-[spin_8s_linear_infinite]"></div>
+
+                 <div className={`w-16 h-16 rounded-full border-[3px] flex items-center justify-center font-mono font-black text-sm tracking-wide transition-all duration-500 ${coinSpinning ? 'animate-[spin_0.15s_linear_infinite] border-amber-400/60 text-amber-400 bg-amber-500/5 shadow-[0_0_25px_rgba(245,158,11,0.3)]' : (coinWinner === 'player' ? 'border-sky-400 text-sky-300 bg-sky-950/30 shadow-[0_0_35px_rgba(56,189,248,0.4)] scale-110' : 'border-fuchsia-400 text-fuchsia-300 bg-fuchsia-950/30 shadow-[0_0_35px_rgba(217,70,239,0.4)] scale-110')}`}>
+                   {coinSpinning ? '?' : (coinWinner === 'player' ? 'BLUE' : 'PRPL')}
                  </div>
               </div>
-              
-              <h2 className="text-xs font-mono text-amber-400 font-extrabold tracking-widest uppercase mb-1 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse"></span>
-                INITIATIVE SEQUENCING ENGINE
+
+              <h2 className="text-[10px] font-mono text-amber-400/80 font-bold tracking-[0.25em] uppercase mb-1 relative z-10">
+                INITIATIVE ROLL
               </h2>
-              <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#2d3422] to-transparent my-4"></div>
-              
+              <div className="h-[1px] w-3/4 bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent my-4"></div>
+
               {coinSpinning ? (
-                <div className="space-y-1.5 animate-pulse">
-                   <p className="text-[#8c9c7c] text-[9px] font-mono uppercase tracking-widest leading-normal">
-                     PULSED INITIATIVE SCAN IN PROGRESS...
-                   </p>
-                   <p className="text-[10px] text-zinc-500 font-mono uppercase font-bold">
-                     DECODING COMBAT NET SYNCHRONIZER
+                <div className="space-y-2 animate-pulse relative z-10">
+                   <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-[0.2em]">
+                     Determining first move...
                    </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                   <p className="text-zinc-400 text-[10px] font-mono uppercase tracking-widest leading-normal mb-1">
-                     TACTICAL ADVANTAGE DETECTED
+                <div className="space-y-4 relative z-10">
+                   <p className="text-zinc-500 text-[10px] font-mono uppercase tracking-[0.2em]">
+                     First move goes to
                    </p>
-                   <h1 className={`text-3xl font-black uppercase tracking-[0.15em] ${coinWinner === 'player' ? 'text-sky-400 drop-shadow-[0_0_12px_rgba(56,189,248,0.45)]' : 'text-fuchsia-500 drop-shadow-[0_0_12px_rgba(217,70,239,0.45)]'}`}>
-                     {coinWinner === 'player' ? 'BLUE LEADER' : 'PURPLE OPPONENT'}
+                   <h1 className={`text-3xl font-black uppercase tracking-[0.2em] ${coinWinner === 'player' ? 'text-sky-300 drop-shadow-[0_0_20px_rgba(56,189,248,0.5)]' : 'text-fuchsia-300 drop-shadow-[0_0_20px_rgba(217,70,239,0.5)]'}`} style={{fontFamily: 'Orbitron, monospace'}}>
+                     {coinWinner === 'player' ? 'BLUE' : 'PURPLE'}
                    </h1>
-                   <div className="h-2"></div>
-                   <p className={`text-[9.5px] font-mono uppercase tracking-wider px-2.5 py-1.5 rounded-xl border text-center font-bold relative overflow-hidden shrink-0 ${coinWinner === 'player' ? 'bg-sky-500/10 text-sky-350 border-sky-500/25' : 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/25'}`}>
-                     {coinWinner === 'player' ? 'BLUE SQUAD OPENS TARGET CHANNELS' : 'PURPLE SQUAD COMMANDS INITIATION'}
-                   </p>
                 </div>
               )}
            </div>
@@ -3610,27 +3599,24 @@ export default function Game({
       <div className="w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in flex-1 overflow-hidden h-full">
         
         {/* TOP COMMAND HUD */}
-        <div className="w-full bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 px-3.5 py-2 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3 shadow-xl shrink-0">
+        <div className="w-full glass rounded-xl px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg shrink-0">
           <div className="flex items-center gap-3">
-            <div className="bg-[#21271b] p-2 rounded-lg border border-[#3c4630] shrink-0">
-              <Radar className="w-5 h-5 text-[#f59e0b] animate-spin" style={{ animationDuration: '6s' }} />
+            <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 shrink-0">
+              <Radar className="w-5 h-5 text-amber-400 animate-spin [animation-duration:6s]" />
             </div>
             <div>
-              <h1 className="text-md font-black tracking-widest text-[#fbbf24] uppercase font-mono flex items-center gap-2">
-                TACTICAL COMMAND // SECURE PORTAL
-                <span className="text-[10px] bg-[#fbbf24]/10 border border-[#fbbf24]/40 px-1.5 py-[1px] font-mono text-[#fbbf24] rounded-lg">v4.2.1-SEC</span>
+              <h1 className="text-sm font-bold tracking-[0.15em] text-zinc-100 uppercase flex items-center gap-2" style={{fontFamily: 'Orbitron, monospace'}}>
+                TACTICAL COMMAND
               </h1>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5 text-[10px] font-mono text-zinc-400">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>COMM SECTOR: ESTABLISHED</span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5 text-[10px] font-mono text-zinc-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{isOnline ? 'Online' : 'Local'}</span>
                 </span>
-                <span className="text-[#3c4630] hidden sm:inline">|</span>
-                <span>NET SEGMENT: <span className="text-zinc-200">{isOnline ? 'MULTIPLAYER SYNC' : 'LOCAL SIMULATOR'}</span></span>
                 {isOnline && (
                   <>
-                    <span className="text-[#3c4630] hidden sm:inline">|</span>
-                    <span className="text-sky-400">ROLE: {myTeam === 'player' ? 'BLUE COMMANDER' : 'PURPLE OPPONENT'}</span>
+                    <span className="text-zinc-700">·</span>
+                    <span className={myTeam === 'player' ? 'text-sky-400' : 'text-fuchsia-400'}>{myTeam === 'player' ? 'Blue Commander' : 'Purple Commander'}</span>
                   </>
                 )}
               </div>
@@ -3639,27 +3625,28 @@ export default function Game({
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
             {mode === 'play' && (
-              <div className="flex gap-1 p-0.5 bg-black/40 rounded-lg border border-zinc-800 border-opacity-50/80 font-mono text-xs text-[#afd19c] font-black items-center px-3 py-1.5 uppercase shrink-0">
-                <Crosshair className="w-3.5 h-3.5 text-purple-500 animate-pulse" /> BATTLE LIVE
+              <div className="flex gap-1.5 items-center px-3 py-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20 font-mono text-[11px] text-emerald-400 font-semibold uppercase shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
               </div>
             )}
 
             {mode === 'play' && !winner && (
-              <button 
+              <button
                 type="button"
                 id="forfeit-match-btn"
                 onClick={() => { playSound('click'); setShowForfeitConfirm(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-950/20 hover:bg-[#7f1d1d]/30 text-purple-400 border border-rose-900/65 hover:border-purple-500 hover:text-rose-200 rounded-lg text-xs font-mono font-bold uppercase transition-colors shadow-sm w-full sm:w-auto justify-center cursor-pointer transition-all hover:-translate-y-0.5"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/5 hover:bg-red-500/10 text-zinc-500 hover:text-red-300 border border-zinc-800 hover:border-red-500/30 rounded-lg text-[11px] font-mono font-semibold uppercase transition-all w-full sm:w-auto justify-center cursor-pointer"
               >
-                <Flag className="w-3.5 h-3.5" /> Forfeit Match
+                <Flag className="w-3.5 h-3.5" /> Forfeit
               </button>
             )}
 
-            <button 
+            <button
+              type="button"
               onClick={onBack}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4c1d1d]/30 border border-[#991b1b]/50 hover:bg-[#991b1b]/20 text-purple-200 rounded-lg text-xs font-mono font-bold uppercase transition-colors shadow-sm w-full sm:w-auto justify-center cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 rounded-lg text-[11px] font-mono font-semibold uppercase transition-all w-full sm:w-auto justify-center cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5" /> Disconnect
+              <RotateCcw className="w-3.5 h-3.5" /> Exit
             </button>
           </div>
         </div>
@@ -3669,13 +3656,13 @@ export default function Game({
           
           {/* LEFT COLUMN AUX PANEL */}
           {activeLeftTab && (
-            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar">
               <div className="w-full max-w-2xl flex flex-col gap-3">
               {/* Close Button */}
               <div className="flex justify-end">
-                 <button onClick={() => setActiveLeftTab(null)} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+                 <button type="button" onClick={() => setActiveLeftTab(null)} className="text-zinc-500 hover:text-zinc-200 p-2 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
               </div>
-              <div className="bg-[#12160d]/95 border border-[#303a24] p-4 rounded-2xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,1)] select-none">
+              <div className="glass-dark p-4 rounded-xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.8)] select-none">
                 {activeLeftTab === 'map' && (
                   <div className="flex flex-col gap-2">
                     <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24] flex items-center gap-1.5">
@@ -3745,7 +3732,7 @@ export default function Game({
           <div className="flex-1 w-full flex flex-col gap-3 items-center justify-start shrink-0 order-1 overflow-y-auto custom-scrollbar h-full min-h-0 relative z-10 px-0 sm:px-2">
           
           {/* 0. SYSTEM STATUS INTEGRATED HEADER */}
-          <div className="bg-[#12160d]/95 border border-[#303a24] p-2 rounded-2xl flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0 w-full">
+          <div className="glass rounded-xl p-2 flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0 w-full">
             {/* HOVER FEEDBACK IN HEADER */}
             <div className="flex-1 min-w-0 h-[80px] md:h-[60px] xl:h-[44px] overflow-hidden">
               {renderHoverHUD()}
@@ -3768,15 +3755,15 @@ export default function Game({
           </div>
 
           {/* MASTER COMMAND BAR (PANEL TOGGLES) */}
-          <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between bg-zinc-800 bg-opacity-80 border border-[#445236] p-2 rounded-2xl gap-2 shrink-0 font-mono text-[9px] sm:text-[10px] select-none text-left shadow-[0_4px_15px_rgba(0,0,0,0.5)] mt-1">
+          <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between glass rounded-xl p-2 gap-2 shrink-0 font-mono text-[9px] sm:text-[10px] select-none text-left shadow-lg mt-1">
             <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-[#8b9180] font-black tracking-widest px-1 mr-1">OVERLAYS:</span>
+              <span className="text-zinc-500 font-bold tracking-wider px-1 mr-1 text-[9px]">Panels</span>
               {!campaignMissionId && (
                 <button
                   type="button"
                   onClick={() => setActiveLeftTab(activeLeftTab === 'map' ? null : 'map')}
                   className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                    activeLeftTab === 'map' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                    activeLeftTab === 'map' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                   }`}
                 >
                   <Radar className="w-3.5 h-3.5" /> Sector Map
@@ -3786,7 +3773,7 @@ export default function Game({
                 type="button"
                 onClick={() => setActiveLeftTab(activeLeftTab === 'logs' ? null : 'logs')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                  activeLeftTab === 'logs' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                  activeLeftTab === 'logs' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" /> Sensors
@@ -3795,7 +3782,7 @@ export default function Game({
                 type="button"
                 onClick={() => setActiveLeftTab(activeLeftTab === 'leaderboard' ? null : 'leaderboard')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                  activeLeftTab === 'leaderboard' ? 'bg-purple-950/40 border-purple-800/50 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                  activeLeftTab === 'leaderboard' ? 'bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
               >
                 <Target className="w-3.5 h-3.5" /> Rankings
@@ -3805,7 +3792,7 @@ export default function Game({
                   type="button"
                   onClick={() => setActiveLeftTab(activeLeftTab === 'chat' ? null : 'chat')}
                   className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                    activeLeftTab === 'chat' ? 'bg-sky-950/40 border-sky-800/50 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                    activeLeftTab === 'chat' ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                   }`}
                 >
                   <MessageSquare className="w-3.5 h-3.5" /> Comms
@@ -3818,7 +3805,7 @@ export default function Game({
                 type="button"
                 onClick={() => setActiveRightTab(activeRightTab === 'roster' ? null : 'roster')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                  activeRightTab === 'roster' ? 'bg-sky-500/20 border-sky-500/50 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                  activeRightTab === 'roster' ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
               >
                 <Users className="w-3.5 h-3.5" /> Squads
@@ -3827,7 +3814,7 @@ export default function Game({
                 type="button"
                 onClick={() => setActiveRightTab(activeRightTab === 'unit_console' ? null : 'unit_console')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
-                  activeRightTab === 'unit_console' ? 'bg-[#fbbf24]/20 border-[#fbbf24]/50 text-[#fbbf24] shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'bg-black/30 border-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white'
+                  activeRightTab === 'unit_console' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
               >
                 <Crosshair className="w-3.5 h-3.5" /> Targeting
@@ -3837,15 +3824,17 @@ export default function Game({
 
           {/* TACTICAL REGION CALIBRATION (MAP SELECTION) */}
           {mode === 'deploy' && (
-            <div className="w-full max-w-3xl flex border border-[#303a24] p-3 md:p-4 rounded-2xl flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none bg-zinc-900 bg-opacity-80 shadow-[0_10px_25px_rgba(0,0,0,0.5)] shrink-0">
+            <div className="w-full max-w-3xl flex glass rounded-xl p-3 md:p-4 flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none shadow-lg shrink-0">
               <div className="flex items-start gap-3">
-                <Radar className="w-6 h-6 text-amber-500 animate-spin shrink-0 mt-0.5" />
+                <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 shrink-0">
+                  <Radar className="w-5 h-5 text-amber-400 animate-spin [animation-duration:6s]" />
+                </div>
                 <div className="flex flex-col">
-                  <span className="text-[11px] sm:text-xs font-black font-mono uppercase tracking-widest text-zinc-300">
-                    TOPOGRAPHY SECTOR CALIBRATION
+                  <span className="text-[11px] sm:text-xs font-bold font-mono uppercase tracking-wider text-zinc-200">
+                    Map Selection
                   </span>
-                  <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 uppercase leading-relaxed max-w-md border-t border-[#303a24] pt-1.5 mt-1.5">
-                    Current sector layout determines grid constraints. <br className="hidden sm:block" /> {isOnline && !isHost ? 'Waiting for host to configure...' : 'Open map settings to adjust.'}
+                  <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 leading-relaxed max-w-md pt-1 mt-1">
+                    {isOnline && !isHost ? 'Waiting for host to configure...' : 'Choose a battlefield layout before deploying.'}
                   </span>
                 </div>
               </div>
@@ -3871,29 +3860,30 @@ export default function Game({
 
           {/* RECRUITMENT TIPS */}
           {mode === 'deploy' && selectedClass && (
-            <div className="bg-[#1f1b0a]/90 border border-amber-500/30 p-2.5 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-y-2 select-none shadow animate-pulse font-mono w-full shrink-0">
+            <div className="bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-y-2 select-none font-mono w-full shrink-0">
               <div className="flex items-center gap-2">
-                <span className="text-[7.5px] bg-[#fbbf24] text-black px-1.5 py-0.5 rounded-lg font-black uppercase">PRE-DEPLOY</span>
-                <span className="text-[9.5px] font-mono text-zinc-100 uppercase font-black">
-                  ARMING SQUAD COMPONENT: <span className="text-[#fbbf24]">{selectedClass.className}</span> ({selectedClass.archetype})
+                <span className="text-[8px] bg-amber-400 text-black px-1.5 py-0.5 rounded-md font-bold uppercase">Deploy</span>
+                <span className="text-[10px] font-mono text-zinc-200 font-semibold">
+                  <span className="text-amber-400">{selectedClass.className}</span> <span className="text-zinc-500">({selectedClass.archetype})</span>
                 </span>
               </div>
               <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                <span className="text-[8.5px] font-mono text-[#afd19c] uppercase truncate flex-1 block">
-                  Click highlighted cells on {teamSelection === 'player' ? 'bottom rows 09-15' : 'top rows 01-07'} to deploy
+                <span className="text-[9px] font-mono text-zinc-500 truncate flex-1 block">
+                  Click {teamSelection === 'player' ? 'bottom' : 'top'} zone to place
                 </span>
-                <button 
+                <button
+                  type="button"
                   onClick={() => setSelectedClass(null)}
-                  className="bg-[#3b1111] hover:bg-rose-900 border border-purple-500/30 text-rose-300 font-mono text-[9px] uppercase rounded-lg px-2.5 py-0.5 font-bold cursor-pointer transition-colors"
+                  className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-300 font-mono text-[9px] uppercase rounded-lg px-2.5 py-0.5 font-semibold cursor-pointer transition-all"
                 >
-                  Cancel Selection
+                  Cancel
                 </button>
               </div>
             </div>
           )}
 
           {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
-          <div className="bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 rounded-2xl p-2 sm:p-3 shrink-0 flex flex-col items-center justify-center shadow-xl w-full relative">
+          <div className="glass rounded-xl p-2 sm:p-3 shrink-0 flex flex-col items-center justify-center shadow-lg w-full relative">
             <div className="w-full flex flex-col items-center justify-center gap-2">
 
               {/* ENEMY DEPLOYMENT ROSTER (TOP OF BOARD) */}
@@ -3919,74 +3909,67 @@ export default function Game({
                 </div>
               )}
 
-              {/* HIGH-TECH COMBAT TIMER COUNTDOWN HUD (For Online Active Play) */}
+              {/* ONLINE TURN TIMER */}
               {isOnline && mode === 'play' && !winner && (
-                <div className={`w-full max-w-3xl mb-3.5 p-3 rounded-2xl border font-mono text-[10px] sm:text-xs flex flex-col gap-2 select-none uppercase tracking-wider backdrop-blur-md transition-all duration-300 ${
+                <div className={`w-full max-w-3xl mb-3 p-3 rounded-xl border font-mono text-[10px] sm:text-[11px] flex flex-col gap-2 select-none tracking-wider transition-all duration-300 ${
                   timeLeft <= 15
-                    ? 'bg-purple-950/35 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.25)] animate-pulse'
+                    ? 'bg-red-500/5 border-red-500/25 text-red-300 animate-pulse'
                     : activeTeam === myTeam
-                      ? 'bg-emerald-950/25 border-emerald-500/50 text-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.15)]'
-                      : 'bg-[#1a1f13] border-zinc-800 border-opacity-50 text-[#8b9180]'
+                      ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400'
+                      : 'glass text-zinc-500'
                 }`}>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 font-bold">
+                    <div className="flex items-center gap-1.5 font-semibold">
                       {timeLeft <= 15 ? (
                         <>
-                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-ping shrink-0" />
-                          <span className="text-purple-400 font-extrabold tracking-widest animate-pulse">WARNING // INITIATE DECISION</span>
+                          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+                          <span className="text-red-300 uppercase">Low time</span>
                         </>
                       ) : activeTeam === myTeam ? (
                         <>
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                          <span className="text-[#34d399] tracking-widest font-extrabold filter drop-shadow-[0_0_4px_rgba(52,211,153,0.4)]">ALLIED ACTION TURN active</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                          <span className="text-emerald-400 uppercase">Your turn</span>
                         </>
                       ) : (
                         <>
-                          <span className="w-2 h-2 rounded-full bg-[#8b9180] shrink-0" />
-                          <span className="tracking-widest">HOSTILE TARGET INTERFACE ACTIVE</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
+                          <span className="uppercase">Opponent's turn</span>
                         </>
                       )}
                     </div>
-                    
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[9px] text-[#8b9180]">OP_LIMIT:</span>
-                      <span className={`font-mono text-xs sm:text-sm font-black px-2 py-0.5 rounded-lg border leading-none ${
-                        timeLeft <= 15 
-                          ? 'bg-purple-950/60 text-purple-400 border-purple-500/60' 
-                          : activeTeam === myTeam 
-                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/35' 
-                            : 'bg-black/40 text-[#8b9180] border-zinc-800 border-opacity-50'
-                      }`}>
-                        {timeLeft.toString().padStart(2, '0')}s
-                      </span>
-                    </div>
+
+                    <span className={`font-mono text-sm font-bold px-2.5 py-0.5 rounded-lg border leading-none ${
+                      timeLeft <= 15
+                        ? 'bg-red-500/10 text-red-300 border-red-500/20'
+                        : activeTeam === myTeam
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-zinc-800/30 text-zinc-400 border-zinc-700/25'
+                    }`}>
+                      {timeLeft}s
+                    </span>
                   </div>
 
-                  {/* Scientific visual depleting progress bar */}
-                  <div className="w-full h-2 bg-black/50 rounded-lg border border-zinc-800 border-opacity-50/60 overflow-hidden relative p-[0.5px]">
-                    <div 
-                      className={`h-full rounded-md transition-all duration-1000 ease-linear ${
-                        timeLeft <= 15 
-                          ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.7)] animate-pulse' 
-                          : activeTeam === myTeam 
-                            ? 'bg-emerald-450 shadow-[0_0_8px_rgba(16,185,129,0.6)]' 
-                            : 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]'
+                  <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-1000 ease-linear ${
+                        timeLeft <= 15 ? 'bg-red-500' : activeTeam === myTeam ? 'bg-emerald-400' : 'bg-zinc-600'
                       }`}
                       style={{ width: `${(timeLeft / 60) * 100}%` }}
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[8px] sm:text-[9.5px] font-bold text-[#8b9180] leading-none">
-                    <span>SECTOR_SYNC: ONLINE</span>
+                  <div className="flex items-center justify-between text-[8px] text-zinc-500 leading-none">
+                    <span className="font-mono">Online</span>
                     {timeLeft === 0 && activeTeam !== myTeam ? (
-                      <button 
+                      <button
+                        type="button"
                         onClick={handleEndTurn}
-                        className="bg-purple-600 hover:bg-purple-500 border border-purple-400 text-white font-extrabold px-2 py-1 rounded-lg text-[8.5px] transition-all cursor-pointer animate-bounce shadow-md"
+                        className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-300 font-semibold px-2 py-1 rounded-lg text-[8px] transition-all cursor-pointer uppercase"
                       >
-                        CLAIM OVERTIME TURN »
+                        Claim Turn
                       </button>
                     ) : (
-                      <span>{activeTeam === myTeam ? "SELECT DEPLOYED UNIT AND TARGET ACTIONS" : "OPPOSING COMMANDER IS SOLVING CALCULUS..."}</span>
+                      <span>{activeTeam === myTeam ? "Make your moves" : "Waiting for opponent..."}</span>
                     )}
                   </div>
                 </div>
@@ -4001,9 +3984,9 @@ export default function Game({
                 style={{ containerType: 'inline-size' }}
               >
                 {/* Floating Zoom HUD Indicator Badge */}
-                <div className="absolute top-3 right-3 z-30 bg-[#0e1208]/90 border border-[#445236]/80 px-2.5 py-1 text-[8.5px] font-mono rounded-lg select-none pointer-events-none uppercase tracking-wider backdrop-blur-sm shadow flex items-center gap-1.5 font-bold">
-                  <span className={`w-1.5 h-1.5 rounded-full ${zoomLevel === 140 ? 'bg-emerald-400 animate-ping' : 'bg-zinc-500 animate-pulse'}`} />
-                  {zoomLevel}% zoom <span className="text-zinc-500 text-[7px] font-normal">(double-tap map)</span>
+                <div className="absolute top-3 right-3 z-30 glass-dark px-2.5 py-1 text-[8.5px] font-mono rounded-lg select-none pointer-events-none uppercase tracking-wider shadow flex items-center gap-1.5 font-semibold text-zinc-500">
+                  <span className={`w-1.5 h-1.5 rounded-full ${zoomLevel === 140 ? 'bg-emerald-400 animate-ping' : 'bg-zinc-600'}`} />
+                  {zoomLevel}%
                 </div>
 
                 <div 
@@ -4025,7 +4008,7 @@ export default function Game({
                     }}
                   >
                     {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                      <div key={i} className="text-center text-[8px] sm:text-xs font-mono text-[#afd19c] font-black py-0.5 select-none uppercase tracking-wider bg-black/60 border border-[#445236] rounded-lg-[1px]">
+                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-0.5 select-none uppercase tracking-wider">
                         {String.fromCharCode(65 + i)}
                       </div>
                     ))}
@@ -4035,7 +4018,7 @@ export default function Game({
                     {/* Row labels vertical column (01-15) */}
                     <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                        <div key={i} className="flex-1 flex items-center justify-center text-[8px] sm:text-xs font-mono text-[#afd19c] font-black bg-zinc-900 bg-opacity-80/80 border border-[#445236] rounded-lg-[1px] py-1 select-none">
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
                         </div>
                       ))}
@@ -4044,7 +4027,7 @@ export default function Game({
                     {/* Actual battlefield grid */}
                     <div className="flex-1 relative">
                       <div 
-                        className={`grid gap-[1px] w-full transition-all border-2 border-[#546843] bg-zinc-900 bg-opacity-80 shadow-inner rounded-lg overflow-hidden @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-purple-600/85' : ''}`}
+                        className={`grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg overflow-hidden @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''}`}
                         style={{ 
                           gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                           backgroundColor: '#1b2015'
@@ -4057,7 +4040,7 @@ export default function Game({
                     {/* Right Row labels vertical column (01-15) */}
                     <div className="flex flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0">
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                        <div key={i} className="flex-1 flex items-center justify-center text-[8px] sm:text-xs font-mono text-[#afd19c]/65 font-semibold bg-zinc-900 bg-opacity-80/50 border border-[#445236]/35 rounded-lg-[1px] py-1 select-none">
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
                         </div>
                       ))}
@@ -4074,7 +4057,7 @@ export default function Game({
                     }}
                   >
                     {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                      <div key={i} className="text-center text-[8px] sm:text-xs font-mono text-[#afd19c]/65 font-semibold py-0.5 select-none uppercase tracking-wider bg-black/45 border border-[#445236]/35 rounded-lg-[1px]">
+                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-0.5 select-none uppercase tracking-wider">
                         {String.fromCharCode(65 + i)}
                       </div>
                     ))}
@@ -4096,13 +4079,13 @@ export default function Game({
                       }
                     }}
                     disabled={!canStartBattleHook || (isOnline && !isHost)}
-                    className={`pointer-events-auto px-6 py-2.5 sm:py-3 rounded-2xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-md transition-all duration-300 flex flex-col items-center justify-center gap-1 w-full ${
+                    className={`pointer-events-auto px-6 py-3 rounded-xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-lg transition-all duration-300 flex flex-col items-center justify-center gap-1 w-full ${
                       canStartBattleHook
-                        ? (isOnline && !isHost 
-                            ? 'bg-zinc-800 bg-opacity-80/90 border-[#303a24] text-zinc-500 cursor-not-allowed shadow-none'
-                            : 'bg-emerald-950/95 border-emerald-500 text-emerald-400 hover:bg-emerald-900 border hover:scale-[1.02] cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse'
+                        ? (isOnline && !isHost
+                            ? 'glass text-zinc-500 cursor-not-allowed'
+                            : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-400/60 cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.15)]'
                           )
-                        : 'bg-zinc-900 bg-opacity-80/95 border-[#475231]/70 text-amber-500 shadow-[0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-sm'
+                        : 'glass text-zinc-400'
                     }`}
                   >
                     {(() => {

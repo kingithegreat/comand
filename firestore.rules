@@ -17,7 +17,8 @@ service cloud.firestore {
       return (!data.keys().hasAny(['userId']) || (data.userId is string && data.userId.size() <= 128))
         && (!data.keys().hasAny(['displayName']) || (data.displayName is string && data.displayName.size() <= 100))
         && (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 200))
-        && (!data.keys().hasAny(['characterProgress']) || data.characterProgress is map);
+        && (!data.keys().hasAny(['characterProgress']) || data.characterProgress is map)
+        && (!data.keys().hasAny(['matchHistory']) || data.matchHistory is list);
     }
 
     match /users/{userId} {
@@ -33,7 +34,7 @@ service cloud.firestore {
                     && isValidUserProfile(incoming())
                     && (!existing().keys().hasAny(['userId']) || existing().userId == request.auth.uid)
                     && (!incoming().keys().hasAny(['userId']) || incoming().userId == request.auth.uid)
-                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'characterProgress', 'userId']);
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'characterProgress', 'userId', 'matchHistory']);
     }
 
     function isValidMatch(data) {
@@ -54,7 +55,9 @@ service cloud.firestore {
         && (!data.keys().hasAny(['aiDecisionText']) || (data.aiDecisionText is string && data.aiDecisionText.size() <= 5000))
         && (!data.keys().hasAny(['squadSize']) || data.squadSize is number)
         && (!data.keys().hasAny(['smogEnabled']) || data.smogEnabled is bool)
-        && (!data.keys().hasAny(['isPublic']) || data.isPublic is bool);
+        && (!data.keys().hasAny(['isPublic']) || data.isPublic is bool)
+        && (!data.keys().hasAny(['isCoop']) || data.isCoop is bool)
+        && (!data.keys().hasAny(['spectators']) || data.spectators is list);
     }
 
     function isValidCommanderStat(data) {
@@ -91,7 +94,7 @@ service cloud.firestore {
                       (incoming().diff(existing()).affectedKeys().hasOnly([
                         'guestId', 'status', 'activeTeam', 'turn', 'units', 'gridEnv', 'winner',
                         'mapId', 'suggestedMaps', 'votes', 'voteResolved', 'votedMapId', 'aiDecisionText',
-                        'squadSize', 'smogEnabled'
+                        'squadSize', 'smogEnabled', 'isCoop', 'spectators'
                       ]))
                     );
                     

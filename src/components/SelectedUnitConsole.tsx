@@ -16,7 +16,7 @@ interface SelectedUnitConsoleProps {
   activeHoveredTile: { x: number; y: number } | null;
   isOnline: boolean | undefined;
   myTeam?: 'player' | 'enemy';
-  onPassUnit: () => void; // Reduce chosen unit's AP to 0 so they pass turn
+  onPassUnit: () => void;
   mode?: 'deploy' | 'play';
   onRenameUnit?: (unitId: string, newName: string) => void;
 }
@@ -49,13 +49,13 @@ export default function SelectedUnitConsole({
 
   if (!selectedUnit) {
     return (
-      <div className="bg-[#12150e] border border-[#2d3324] rounded-lg p-5 flex flex-col items-center justify-center text-center select-none min-h-[180px] shadow-inner font-mono text-xs">
-        <Activity className="w-8 h-8 text-[#bfcfb5]/50 mb-2 animate-pulse" />
-        <span className="text-[#fbbf24] tracking-widest text-[9.5px] uppercase font-black">
-          CONSOLE_OFFLINE
+      <div className="glass-dark rounded-xl p-5 flex flex-col items-center justify-center text-center select-none min-h-[180px] font-mono text-xs">
+        <Activity className="w-6 h-6 text-zinc-600 mb-2" />
+        <span className="text-zinc-500 tracking-wider text-[10px] uppercase font-semibold">
+          No Unit Selected
         </span>
-        <p className="text-[8.5px] text-[#bfcfb5] max-w-[240px] mt-1.5 leading-normal uppercase">
-          Select any active battlefield squad unit on the network graph grid or choose a tactical class to initialize visual metrics.
+        <p className="text-[9px] text-zinc-600 max-w-[220px] mt-1.5 leading-normal">
+          Click a unit on the grid to view stats and actions.
         </p>
       </div>
     );
@@ -64,62 +64,57 @@ export default function SelectedUnitConsole({
   const isPlayerTeam = selectedUnit.team === 'player';
   const isMyUnitControl = activeTeam === selectedUnit.team && (!isOnline || myTeam === selectedUnit.team);
   const isOpponentUnit = selectedUnit.team !== myTeam && isOnline;
-  
-  // Coords conversion
+
   const getCoord = (x: number, y: number) => {
     return `${String.fromCharCode(65 + x)}${(y + 1).toString().padStart(2, '0')}`;
   };
 
-  const unitCoord = selectedUnit.x >= 0 ? getCoord(selectedUnit.x, selectedUnit.y) : "UNASSIGNED";
+  const unitCoord = selectedUnit.x >= 0 ? getCoord(selectedUnit.x, selectedUnit.y) : "—";
 
-  // Status computation for unit
-  let statusBadge = "OPERATIONAL";
-  let statusColor = "text-emerald-400 border-emerald-400/50 bg-emerald-500/10";
+  let statusBadge = "Active";
+  let statusColor = "text-emerald-400 border-emerald-500/20 bg-emerald-500/5";
 
   if (mode === 'deploy') {
     if (selectedUnit.team === 'player') {
-      statusBadge = "DEPLOY STANDBY // BLUE TEAM";
-      statusColor = "text-sky-400 border-sky-450/40 bg-sky-955/25";
+      statusBadge = "Deploying (Blue)";
+      statusColor = "text-sky-400 border-sky-500/20 bg-sky-500/5";
     } else {
-      statusBadge = "DEPLOY STANDBY // PURPLE TEAM";
-      statusColor = "text-purple-400 border-purple-500/50 bg-purple-950/25 animate-pulse";
+      statusBadge = "Deploying (Purple)";
+      statusColor = "text-fuchsia-400 border-fuchsia-500/20 bg-fuchsia-500/5";
     }
   } else if (selectedUnit.hp <= 0) {
-    statusBadge = "DECEASED / K.I.A.";
-    statusColor = "text-purple-400 border-purple-500/50 bg-purple-500/10";
+    statusBadge = "KIA";
+    statusColor = "text-red-400 border-red-500/20 bg-red-500/5";
   } else if (selectedUnit.ap === 0) {
-    statusBadge = "DEPLETED / WAIT";
-    statusColor = "text-zinc-300 border-zinc-700 bg-zinc-800/20";
+    statusBadge = "No AP";
+    statusColor = "text-zinc-400 border-zinc-700/30 bg-zinc-800/30";
   } else if (isAbilityActive) {
-    statusBadge = "CASTING / ABILITY_TARGETING";
-    statusColor = "text-indigo-400 border-indigo-400/50 bg-indigo-500/15 animate-pulse";
+    statusBadge = "Targeting Ability";
+    statusColor = "text-fuchsia-400 border-fuchsia-500/20 bg-fuchsia-500/5 animate-pulse";
   } else if (!isMyUnitControl) {
-    statusBadge = "SECURED_STANDBY";
-    statusColor = "text-sky-300 border-sky-400/40 bg-sky-950/30";
+    statusBadge = "Standby";
+    statusColor = "text-zinc-400 border-zinc-700/30 bg-zinc-800/30";
   }
 
-  // Find target under hovered tile for live guidance
   const hoveredUnit = activeHoveredTile
     ? units.find(u => u.x === activeHoveredTile.x && u.y === activeHoveredTile.y && u.hp > 0)
     : null;
 
   let liveWarning: string | null = null;
-  let actionCostIndicator: string = "SELECT CELL TO INITIATE";
+  let actionHint = "Select a tile to act";
 
-  // Compute live warnings based on hovered tiles
   if (selectedUnit && activeHoveredTile && isMyUnitControl) {
     const tileX = activeHoveredTile.x;
     const tileY = activeHoveredTile.y;
     const cell = mapEnvironment[tileY]?.[tileX];
-    
+
     if (cell) {
       if (cell.type === 'wall') {
-        liveWarning = "OBSTACLE DETECTED: IMPACT / COVER ZONE SEGMENT BLOCKED";
+        liveWarning = "Blocked — wall obstacle";
       } else if (hoveredUnit) {
         if (hoveredUnit.id === selectedUnit.id) {
-          liveWarning = "SELF UNIT CENTERED: CLICK CELL TO FOCUS ATOMIC VIEWPORTS";
+          liveWarning = null;
         } else if (hoveredUnit.team !== selectedUnit.team) {
-          // Analyze dynamic firing range and line of sight
           const dx = Math.abs(selectedUnit.x - hoveredUnit.x);
           const dy = Math.abs(selectedUnit.y - hoveredUnit.y);
           const dist = dx + dy;
@@ -127,94 +122,69 @@ export default function SelectedUnitConsole({
           const inRange = dist <= selectedUnit.class.stats.range;
 
           if (selectedUnit.ap < 1) {
-            liveWarning = "WEAPON CRITICAL LOCK PREVENTS FIRING: NOT ENOUGH AP (MIN 1 AP)";
+            liveWarning = "No AP — cannot fire";
           } else if (!inRange) {
-            liveWarning = `FIRE SYSTEM OUT OF RANGE (TARGET IS ${dist} BLOCKS, WEAPON RANGE IS ${selectedUnit.class.stats.range})`;
+            liveWarning = `Out of range (${dist} tiles, max ${selectedUnit.class.stats.range})`;
           } else if (!hasLos) {
-            liveWarning = "BLOCKED DIRECT TRACE LINE: STRUCTURAL OBSTACLE OBSCURES LINE-OF-SIGHT";
+            liveWarning = "No line of sight — obstacle blocking";
           } else {
             const { chance, isCovered } = calculateHitChance(selectedUnit, hoveredUnit, mapEnvironment);
-            const baseAcc = selectedUnit.class.stats.accuracy || 85;
-            const halfRange = Math.max(1, Math.floor(selectedUnit.class.stats.range / 2));
-            const distPenalty = dist > halfRange ? (dist - halfRange) * 3 : 0;
-            const coverPenalty = isCovered ? 20 : 0;
-            actionCostIndicator = `READY FOR HOSTILE STRIKE: HIT CHANCE ${chance}% (BASE: ${baseAcc}% | DISTANCE PENALTY: -${distPenalty}% | COVER: -${coverPenalty}%) // CLICK TO FIRE`;
+            actionHint = `Hit chance: ${chance}% — click to fire`;
           }
         } else if (hoveredUnit.team === selectedUnit.team) {
-          liveWarning = "TACTICAL CO-UNIT DETECTED: ENGAGE TARGET DENIED (ACCIDENTAL FRIENDLY PROTOCOLS SHIELED)";
+          liveWarning = "Friendly unit — cannot attack";
         }
       } else {
-        // Movement validation helper
         const dx = Math.abs(selectedUnit.x - tileX);
         const dy = Math.abs(selectedUnit.y - tileY);
         const dist = dx + dy;
-        const reached = dist <= selectedUnit.class.stats.mobility && selectedUnit.ap >= 1; // Movement helper cost checking
-        
+        const reached = dist <= selectedUnit.class.stats.mobility && selectedUnit.ap >= 1;
+
         if (selectedUnit.ap < 1) {
-          liveWarning = "TACTICAL ENGINES DISENGAGED (0 AP REMAINING: ROTATE TEAM TURNS FOR RECHARGE)";
+          liveWarning = "No AP remaining";
         } else if (dist > selectedUnit.class.stats.mobility) {
-          liveWarning = `ENERGY BARRIER REACHED: ATTEMPTING CELL RANGE (${dist}) BEYOND MOBILITY STAT (${selectedUnit.class.stats.mobility})`;
+          liveWarning = `Too far (${dist} tiles, mobility ${selectedUnit.class.stats.mobility})`;
         } else if (reached) {
-          actionCostIndicator = `MOVE PLANNED: ${getCoord(tileX, tileY)} (COST: ${dist > 2 ? 2 : 1} AP)`;
+          actionHint = `Move to ${getCoord(tileX, tileY)} (${dist > 2 ? 2 : 1} AP)`;
         }
       }
     }
   }
 
   return (
-    <div className="bg-[#12150e] border border-[#2d3324] rounded-lg overflow-hidden flex flex-col shadow-md text-left font-mono">
-      {/* Console Title Bar */}
-      <div className="bg-[#191e14] border-b border-[#2d3324] px-3 py-1.5 flex items-center justify-between">
+    <div className="glass-dark rounded-xl overflow-hidden flex flex-col text-left font-mono">
+      {/* Title Bar */}
+      <div className="border-b border-zinc-800/50 px-3 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Crosshair className={`w-3.5 h-3.5 ${isPlayerTeam ? 'text-sky-400' : 'text-purple-400'}`} />
-          <span className="text-[9.5px] font-bold uppercase tracking-widest text-zinc-300">
-            METRICS_CONSOLE / UNIT_DEV
+          <Crosshair className={`w-3.5 h-3.5 ${isPlayerTeam ? 'text-sky-400' : 'text-fuchsia-400'}`} />
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+            Unit Console
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`text-[8.5px] font-bold px-1.5 py-[2px] rounded-sm uppercase tracking-tighter select-none border ${statusColor}`}>
+          <span className={`text-[8px] font-semibold px-1.5 py-[2px] rounded-md uppercase tracking-wider select-none border ${statusColor}`}>
             {statusBadge}
           </span>
-          <span className="text-[10px] text-zinc-500 font-bold bg-[#1a2014]/50 hover:text-purple-500 border border-[#2d3324]/30 rounded px-1.5 cursor-pointer" onClick={onCancelSelection}>
-            ✕
-          </span>
+          <button type="button" title="Deselect unit" className="text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer p-0.5" onClick={onCancelSelection}>
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
-      {/* Main Stats Area */}
+      {/* Stats */}
       <div className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
-        {/* Unit Identity Column */}
-        <div className="md:col-span-5 flex flex-col justify-between border-b md:border-b-0 md:border-r border-[#2d3a20] pb-3 md:pb-0 md:pr-3">
+        {/* Identity */}
+        <div className="md:col-span-5 flex flex-col justify-between border-b md:border-b-0 md:border-r border-zinc-800/30 pb-3 md:pb-0 md:pr-3">
           <div>
             <div className="flex gap-3 items-center mb-2">
-              {/* Tactical Holographic Video Feed Box */}
-              <div className="w-14 h-14 relative bg-black border border-[#4d5c32]/80 rounded overflow-hidden shrink-0 group shadow-md text-emerald-500">
-                {/* Seeded Operator Satellite Image Styled to Cyberpunk Nightvision */}
-                <img 
-                  src={`https://picsum.photos/seed/cyber-operator-${selectedUnit.class.className.toLowerCase()}-${selectedUnit.team}/120/120`}
-                  alt={`${selectedUnit.class.className} Diagnostic Link`}
-                  referrerPolicy="no-referrer"
-                  className={`w-full h-full object-cover opacity-60 mix-blend-color-dodge transition-all duration-300 filter contrast-135 brightness-110 grayscale saturate-[150%] ${selectedUnit.team === 'player' ? 'hue-rotate-[140deg] sepia-[20%]' : 'hue-rotate-[-30deg] sepia-[10%] brightness-95 animate-pulse'}`}
-                />
-                
-                {/* Dynamic Helmet Overlay centered on top of the cyber texture */}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                  <UnitHelmetAvatar classNameVal={selectedUnit.class.className} team={selectedUnit.team} className="w-10 h-10 border-transparent bg-transparent shrink-0 opacity-85 shadow-none" />
-                </div>
-
-                {/* CRT Screen Scan lines effect overlay */}
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none opacity-40"></div>
-                
-                {/* Blinking Live indicator */}
-                <div className="absolute top-1 left-1 flex items-center gap-0.5">
-                  <span className={`w-1.5 h-1.5 rounded-full animate-ping ${selectedUnit.team === 'player' ? 'bg-sky-450' : 'bg-purple-500'}`} />
-                  <span className="text-[5.5px] font-black tracking-tighter text-zinc-450">FEED_SEC</span>
+              <div className="w-12 h-12 relative bg-zinc-900 border border-zinc-700/30 rounded-lg overflow-hidden shrink-0">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <UnitHelmetAvatar classNameVal={selectedUnit.class.className} team={selectedUnit.team} className="w-9 h-9 border-transparent bg-transparent shrink-0" />
                 </div>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-start gap-1.5 mb-0.5">
-                  <span className="text-zinc-400 text-[9px] uppercase font-bold">ARC ID:</span>
-                  <span className={`text-[9px] font-bold uppercase tracking-wider ${isPlayerTeam ? 'text-sky-300' : 'text-purple-300'}`}>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className={`text-[8px] font-semibold uppercase tracking-wider ${isPlayerTeam ? 'text-sky-400' : 'text-fuchsia-400'}`}>
                     {selectedUnit.class.archetype}
                   </span>
                 </div>
@@ -228,18 +198,19 @@ export default function SelectedUnitConsole({
                   }} className="flex items-center gap-1.5 mt-1">
                     <input
                       type="text"
-                      className="bg-black/80 border border-emerald-500/50 text-emerald-400 font-mono text-xs px-2 py-0.5 rounded w-full uppercase focus:outline-none focus:border-emerald-400 h-6"
+                      placeholder="Unit name"
+                      className="bg-black/50 border border-zinc-700/50 text-zinc-200 font-mono text-xs px-2 py-0.5 rounded-md w-full focus:outline-none focus:border-zinc-500 h-6"
                       value={tempName}
                       onChange={(e) => setTempName(e.target.value)}
                       maxLength={15}
                       autoFocus
                     />
-                    <button type="submit" className="text-[8px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-1.5 py-0.5 h-6 rounded uppercase cursor-pointer">SET</button>
-                    <button type="button" onClick={() => setIsEditingName(false)} className="text-[8px] bg-zinc-800 hover:bg-zinc-700 text-zinc-350 font-extrabold px-1.5 py-0.5 h-6 rounded uppercase cursor-pointer">X</button>
+                    <button type="submit" className="text-[8px] bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-semibold px-1.5 py-0.5 h-6 rounded-md border border-emerald-500/20 cursor-pointer">OK</button>
+                    <button type="button" onClick={() => setIsEditingName(false)} className="text-[8px] bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-400 font-semibold px-1.5 py-0.5 h-6 rounded-md border border-zinc-700/30 cursor-pointer">X</button>
                   </form>
                 ) : (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-sm font-black text-white leading-tight uppercase truncate max-w-[120px]">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-zinc-100 leading-tight uppercase truncate max-w-[120px]">
                       {selectedUnit.name || selectedUnit.class.className}
                     </h3>
                     {isMyUnitControl && onRenameUnit && !selectedUnit.id.startsWith('preview-') && (
@@ -249,198 +220,185 @@ export default function SelectedUnitConsole({
                           setTempName(selectedUnit.name || selectedUnit.class.className);
                           setIsEditingName(true);
                         }}
-                        className="text-[7.5px] text-amber-400 hover:text-amber-300 font-extrabold uppercase bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/15 px-1 py-0.5 rounded cursor-pointer transition-all active:scale-95 shrink-0"
+                        className="text-[7px] text-zinc-500 hover:text-zinc-300 font-semibold uppercase bg-zinc-800/40 hover:bg-zinc-700/40 border border-zinc-700/30 px-1 py-0.5 rounded-md cursor-pointer transition-all shrink-0"
                       >
-                        RENAME
+                        Rename
                       </button>
                     )}
                   </div>
                 )}
                 {selectedUnit.name && (
-                  <span className="text-[8.5px] text-[#8b9180] uppercase font-bold leading-none mt-1 block">
-                    {selectedUnit.class.className} OPERATOR
+                  <span className="text-[8px] text-zinc-500 uppercase block mt-0.5">
+                    {selectedUnit.class.className}
                   </span>
                 )}
-                <span className="inline-block mt-1 text-[8.5px] font-mono bg-black/60 border border-[#3b4632] rounded text-[#fbbf24] font-bold px-1.5 py-0.5 select-none shrink-0">
-                  LOC: {unitCoord}
+                <span className="inline-block mt-1 text-[8px] font-mono bg-zinc-800/50 border border-zinc-700/30 rounded-md text-zinc-400 font-semibold px-1.5 py-0.5 select-none">
+                  {unitCoord}
                 </span>
               </div>
             </div>
-            <p className="text-[9.5px] text-zinc-350 mt-1.5 leading-relaxed uppercase">
+            <p className="text-[9px] text-zinc-500 mt-1 leading-relaxed">
               {selectedUnit.class.description}
             </p>
           </div>
-
-          <div className="flex gap-2 mt-3 flex-wrap">
-            <span className="text-[8px] bg-[#1a2014] border border-[#3b4632] px-1.5 py-0.5 rounded text-zinc-300 font-extrabold">
-              TRAIT_PERSONALITY: {selectedUnit.class.personality || 'Tactical'}
-            </span>
-            <span className="text-[8px] bg-sky-950/40 border border-sky-800/40 px-1.5 py-0.5 rounded text-sky-300 font-extrabold">
-              BUFF_STATUS: NOMINAL
-            </span>
-          </div>
         </div>
 
-        {/* Tactical Parameters Column */}
+        {/* Parameters */}
         <div className="md:col-span-7 flex flex-col justify-between gap-3">
-          {/* Attributes Multi Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">HEALTH INTEGRITY</span>
-              <span className="text-sm font-black text-emerald-400 font-mono leading-none">
-                {selectedUnit.hp} <span className="text-[9px] text-zinc-450 font-normal">/ {selectedUnit.class.stats.maxHP}</span>
+            <div className="bg-zinc-800/30 border border-zinc-700/20 rounded-lg p-2 text-center flex flex-col justify-center">
+              <span className="text-[7px] text-zinc-500 font-semibold tracking-wider mb-1 uppercase">HP</span>
+              <span className="text-sm font-bold text-emerald-400 font-mono leading-none">
+                {selectedUnit.hp}<span className="text-[8px] text-zinc-500 font-normal">/{selectedUnit.class.stats.maxHP}</span>
               </span>
-              <div className="w-full bg-black/60 h-[3px] rounded-sm overflow-hidden p-[0.3px] mt-1.5 border border-[#344426]">
-                <div 
-                  className="h-full rounded bg-emerald-400 shadow-[0_0_4px_#34d399]"
+              <div className="w-full bg-zinc-900 h-1 rounded-full overflow-hidden mt-1.5">
+                <div
+                  className="h-full rounded-full bg-emerald-400 transition-all"
                   style={{ width: `${(selectedUnit.hp / selectedUnit.class.stats.maxHP) * 100}%` }}
                 />
               </div>
             </div>
 
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">ACTION POINTS</span>
-              <span className="text-sm font-black text-amber-300 font-mono leading-none">
-                {selectedUnit.ap} <span className="text-[9px] text-zinc-450 font-normal">/ 2 AP</span>
+            <div className="bg-zinc-800/30 border border-zinc-700/20 rounded-lg p-2 text-center flex flex-col justify-center">
+              <span className="text-[7px] text-zinc-500 font-semibold tracking-wider mb-1 uppercase">AP</span>
+              <span className="text-sm font-bold text-amber-300 font-mono leading-none">
+                {selectedUnit.ap}<span className="text-[8px] text-zinc-500 font-normal">/2</span>
               </span>
-              <div className="flex gap-[2px] justify-center mt-1.5">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <span 
-                    key={i} 
-                    className={`w-1.5 h-1.5 rounded-full ${i < selectedUnit.ap ? 'bg-amber-400 shadow-[0_0_3px_#fbbf24]' : 'bg-zinc-800'}`}
+              <div className="flex gap-1 justify-center mt-1.5">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`w-2 h-1 rounded-full ${i < selectedUnit.ap ? 'bg-amber-400' : 'bg-zinc-800'}`}
                   />
                 ))}
               </div>
             </div>
 
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">RANGE POTENTIAL</span>
-              <span className="text-sm font-black text-sky-305 font-mono leading-none text-sky-300">
-                {selectedUnit.class.stats.range} <span className="text-[8px] text-[#b6caa2] font-black">CELLS</span>
+            <div className="bg-zinc-800/30 border border-zinc-700/20 rounded-lg p-2 text-center flex flex-col justify-center">
+              <span className="text-[7px] text-zinc-500 font-semibold tracking-wider mb-1 uppercase">Range</span>
+              <span className="text-sm font-bold text-sky-300 font-mono leading-none">
+                {selectedUnit.class.stats.range}
               </span>
-              <span className="text-[7px] text-zinc-400 font-black truncate tracking-tight mt-1.5 uppercase">
-                MOBILITY: {selectedUnit.class.stats.mobility}
+              <span className="text-[7px] text-zinc-600 mt-1 uppercase">
+                Move: {selectedUnit.class.stats.mobility}
               </span>
             </div>
 
-            <div className="bg-black/45 border border-[#2d3a20] rounded p-2 text-center flex flex-col justify-center">
-              <span className="text-[7.5px] text-[#b6caa2] font-black tracking-tight mb-1 uppercase">BASE ACCURACY</span>
-              <span className="text-sm font-black text-purple-400 font-mono leading-none">
-                {selectedUnit.class.stats.damage} <span className="text-[8px] text-[#b6caa2] font-black">DMG</span>
+            <div className="bg-zinc-800/30 border border-zinc-700/20 rounded-lg p-2 text-center flex flex-col justify-center">
+              <span className="text-[7px] text-zinc-500 font-semibold tracking-wider mb-1 uppercase">Damage</span>
+              <span className="text-sm font-bold text-red-400 font-mono leading-none">
+                {selectedUnit.class.stats.damage}
               </span>
-              <span className="text-[7px] text-zinc-400 font-black truncate tracking-tight mt-1.5 uppercase">
-                HIT RATE: {selectedUnit.class.stats.accuracy}%
+              <span className="text-[7px] text-zinc-600 mt-1 uppercase">
+                Acc: {selectedUnit.class.stats.accuracy}%
               </span>
             </div>
           </div>
 
-          {/* Detailed Special Ability Display Pane (Requested "display unit stats and abilitys") */}
+          {/* Ability */}
           {selectedUnit.class.ability && (
-            <div className="bg-[#1c2415]/80 border border-indigo-950/40 rounded p-2.5 flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-              <div className="p-1 px-2 hover:border-indigo-400/40 rounded bg-indigo-950/40 border border-indigo-500/35 font-bold text-center shrink-0 min-w-[100px]">
-                <span className="block text-[6.5px] text-indigo-305 font-black uppercase tracking-widest text-[#a5b4fc]">SPEC_ABIL</span>
-                <span className="text-[9.5px] text-indigo-400 font-black uppercase font-mono">{selectedUnit.class.ability.name}</span>
+            <div className="bg-fuchsia-500/[0.03] border border-fuchsia-500/15 rounded-lg p-2.5 flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
+              <div className="px-2 py-1 rounded-md bg-fuchsia-500/10 border border-fuchsia-500/20 text-center shrink-0 min-w-[90px]">
+                <span className="block text-[7px] text-fuchsia-400/60 font-semibold uppercase tracking-wider">Ability</span>
+                <span className="text-[9px] text-fuchsia-300 font-bold uppercase">{selectedUnit.class.ability.name}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[9px] text-[#afd19c] leading-relaxed uppercase">
+                <p className="text-[9px] text-zinc-400 leading-relaxed">
                   {selectedUnit.class.ability.description}
                 </p>
-                <div className="flex flex-wrap gap-x-2 mt-1.5 font-mono text-[7px] text-[#c7d2fe] font-black">
-                  <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded">AP COST: {selectedUnit.class.ability.apCost} AP</span>
+                <div className="flex flex-wrap gap-x-2 mt-1.5 font-mono text-[7px] text-zinc-500 font-semibold">
+                  <span>{selectedUnit.class.ability.apCost} AP</span>
                   {selectedUnit.class.ability.range !== undefined && (
-                    <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded">REACH: {selectedUnit.class.ability.range} BLOCKS</span>
+                    <span>Range: {selectedUnit.class.ability.range}</span>
                   )}
-                  <span className="bg-[#243354]/40 border border-indigo-900/40 px-1 py-0.5 rounded uppercase">TARGET PROTOCOL: {selectedUnit.class.ability.type}</span>
+                  <span className="uppercase">{selectedUnit.class.ability.type}</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Action List Section */}
-          <div className="bg-black/30 border border-[#2d3a20] p-1.5 sm:p-2 rounded flex flex-col gap-1.5">
+          {/* Actions */}
+          <div className="bg-zinc-800/15 border border-zinc-700/15 p-2 rounded-lg flex flex-col gap-1.5">
             {mode === 'deploy' ? (
               <>
-                <div className="text-[8.5px] font-bold font-mono text-amber-400 bg-amber-950/25 px-2 py-1 rounded border border-amber-500/30 flex items-center gap-1.5">
-                  <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="uppercase">DEPLOYMENT COMPATIBLE: CLICK HIGHLIGHTED CELL ON BOARD TO PLACE UNIT</span>
+                <div className="text-[9px] font-semibold font-mono text-amber-400/80 bg-amber-500/5 px-2 py-1.5 rounded-md border border-amber-500/10 flex items-center gap-1.5">
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-400/60 shrink-0" />
+                  Click a highlighted cell to place this unit
                 </div>
                 <div className="flex gap-2 w-full mt-0.5">
-                  <div className="flex-1 text-[#bfcfb5] text-[8.5px] font-extrabold font-mono tracking-wider bg-[#1c2415]/60 border border-[#303a24] rounded px-3 py-2 text-center uppercase">
-                    ⚡ PRE-DEPLOYMENT TELEMETRY READY // ROW DEPLOY RANGE: {selectedUnit.team === 'player' ? 'ROWS 8-15 (BOTTOM)' : 'ROWS 1-7 (TOP)'}
-                  </div>
                   <button
+                    type="button"
                     onClick={onCancelSelection}
-                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white font-bold border border-zinc-700/30 px-3 py-1.5 rounded transition-all text-[9px] uppercase cursor-pointer active:scale-95 shrink-0"
+                    className="bg-zinc-800/40 hover:bg-zinc-700/40 text-zinc-500 hover:text-zinc-300 font-semibold border border-zinc-700/30 px-3 py-1.5 rounded-lg transition-all text-[9px] uppercase cursor-pointer shrink-0"
                   >
-                    CANCEL
+                    Cancel
                   </button>
                 </div>
               </>
             ) : (
               <>
-                {/* Live feedback warnings in selection console */}
                 {liveWarning ? (
-                  <div className="text-[8.5px] font-bold font-mono text-purple-400 bg-purple-950/25 px-2 py-1 rounded border border-purple-500/35 flex items-center gap-1.5 animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-purple-400" />
-                    <span className="uppercase truncate">{liveWarning}</span>
+                  <div className="text-[9px] font-semibold font-mono text-red-400/80 bg-red-500/5 px-2 py-1.5 rounded-md border border-red-500/10 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-400/60" />
+                    <span className="truncate">{liveWarning}</span>
                   </div>
                 ) : hoveredUnit && isMyUnitControl ? (
-                  <div className="text-[8.5px] font-bold font-mono text-emerald-305 bg-emerald-950/20 px-2 py-1 rounded border border-emerald-500/20 flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5 text-emerald-400 animate-spin" style={{ animationDuration: '6s' }} />
-                    <span className="uppercase truncate">{actionCostIndicator}</span>
+                  <div className="text-[9px] font-semibold font-mono text-emerald-400/80 bg-emerald-500/5 px-2 py-1.5 rounded-md border border-emerald-500/10 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400/60 animate-spin [animation-duration:6s]" />
+                    <span className="truncate">{actionHint}</span>
                   </div>
                 ) : isMyUnitControl ? (
-                  <div className="text-[8.5px] font-bold text-zinc-200 bg-[#1e2716]/65 px-2 py-1 rounded border border-[#3e4a32] flex items-center gap-1.5">
-                    <HelpCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="uppercase truncate">{actionCostIndicator === "SELECT CELL TO INITIATE" ? "CELL GUIDE: CLICK A TILE TO MOVE OR LOCKED ENEMY TO FIRE." : actionCostIndicator}</span>
+                  <div className="text-[9px] font-semibold text-zinc-500 bg-zinc-800/30 px-2 py-1.5 rounded-md border border-zinc-700/20 flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+                    <span className="truncate">Click a tile to move or an enemy to fire</span>
                   </div>
                 ) : (
-                  <div className="text-[8.5px] font-bold text-sky-300 bg-sky-950/20 px-2 py-1 rounded border border-sky-800/25 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span className="uppercase">MONITOR_MODE: AWAITING ACTIVE COMMAND MATRIX AUTHORIZATION</span>
+                  <div className="text-[9px] font-semibold text-zinc-500 bg-zinc-800/20 px-2 py-1.5 rounded-md border border-zinc-700/15 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+                    <span>Viewing opponent's unit</span>
                   </div>
                 )}
 
-                {/* Tactical Control Actions */}
                 {isMyUnitControl ? (
                   <div className="flex gap-2 w-full mt-0.5">
-                    {/* Special Ability Activation Toggle */}
                     {selectedUnit.class.ability && (
                       <button
+                        type="button"
                         onClick={onToggleAbility}
                         disabled={selectedUnit.ap < selectedUnit.class.ability.apCost}
-                        className={`flex-1 py-1.5 px-2 rounded font-black text-[9px] uppercase tracking-wider text-center transition-all border shrink-0 ${
-                          isAbilityActive 
-                            ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.2)] animate-pulse'
+                        className={`flex-1 py-1.5 px-2 rounded-lg font-semibold text-[9px] uppercase tracking-wider text-center transition-all border cursor-pointer ${
+                          isAbilityActive
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
                             : selectedUnit.ap < selectedUnit.class.ability.apCost
-                              ? 'bg-zinc-800/30 border-zinc-900 text-zinc-600 cursor-not-allowed opacity-50'
-                              : 'bg-indigo-900/40 hover:bg-indigo-600/60 border-indigo-500 text-[#c7d2fe] hover:text-white cursor-pointer active:scale-95'
+                              ? 'bg-zinc-800/20 border-zinc-800/30 text-zinc-600 cursor-not-allowed opacity-50'
+                              : 'bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border-fuchsia-500/25 text-fuchsia-300 hover:text-fuchsia-200'
                         }`}
                         title={`Cost: ${selectedUnit.class.ability.apCost} AP`}
                       >
-                        {isAbilityActive ? 'Cancel Spec' : `SPEC_ABIL: ${selectedUnit.class.ability.name}`}
+                        {isAbilityActive ? 'Cancel' : selectedUnit.class.ability.name}
                       </button>
                     )}
 
-                    {/* Force unit to pass (reduce ap to 0 so next behaves) */}
                     <button
+                      type="button"
                       onClick={onPassUnit}
-                      className="bg-[#202518] hover:bg-stone-800 text-[#dae3ce] font-black border border-[#2d3a20] px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-purple-400 active:scale-95 shrink-0"
-                      title="Spends all remaining AP of this unit to terminate its selection activity"
+                      className="bg-zinc-800/30 hover:bg-zinc-700/30 text-zinc-500 hover:text-zinc-300 font-semibold border border-zinc-700/25 px-2.5 py-1.5 rounded-lg transition-all text-[9px] uppercase cursor-pointer shrink-0"
+                      title="Skip this unit's remaining AP"
                     >
-                      Pass Unit
+                      Pass
                     </button>
 
                     <button
+                      type="button"
                       onClick={onCancelSelection}
-                      className="bg-zinc-900 hover:bg-zinc-800 text-zinc-400 font-bold border border-zinc-700/30 px-2.5 py-1.5 rounded transition-all text-[9px] uppercase hover:text-white active:scale-95 shrink-0"
+                      className="bg-zinc-800/30 hover:bg-zinc-700/30 text-zinc-500 hover:text-zinc-300 font-semibold border border-zinc-700/25 px-2.5 py-1.5 rounded-lg transition-all text-[9px] uppercase cursor-pointer shrink-0"
                     >
-                      unselect
+                      Deselect
                     </button>
                   </div>
                 ) : isOpponentUnit ? (
-                  <div className="text-[8px] text-purple-400 font-extrabold uppercase italic p-1 border border-dashed border-purple-500/20 bg-purple-950/5 text-center rounded">
-                    ⚡ SECURITY PROTOCOLS IN PROGRESS: HOSTILE COMMAND CONSOLE LOCKED
+                  <div className="text-[8px] text-zinc-600 font-semibold italic p-1 text-center rounded">
+                    Enemy unit — view only
                   </div>
                 ) : null}
               </>

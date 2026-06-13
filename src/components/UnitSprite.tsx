@@ -1,14 +1,14 @@
 import React from 'react';
-import { 
-  Crosshair, 
-  Zap, 
-  Target, 
-  Bomb, 
-  ShieldAlert, 
-  Locate, 
-  Activity, 
-  Wrench, 
-  Flame, 
+import {
+  Crosshair,
+  Zap,
+  Target,
+  Bomb,
+  ShieldAlert,
+  Locate,
+  Activity,
+  Wrench,
+  Flame,
   HeartPulse,
   User
 } from 'lucide-react';
@@ -21,19 +21,19 @@ interface UnitSpriteProps {
   pose?: 'idle' | 'aim' | 'firing';
 }
 
-export default function UnitSprite({ 
-  className = "w-10 h-10", 
-  classVal, 
-  team, 
-  facing = 'right', 
-  pose = 'idle' 
+export default function UnitSprite({
+  className = "w-10 h-10",
+  classVal,
+  team,
+  facing = 'right',
+  pose = 'idle'
 }: UnitSpriteProps) {
-  
+
   const isFlipped = facing === 'left';
   const isFiring = pose === 'firing';
 
   const getIcon = () => {
-    const props = { className: "w-5 h-5 sm:w-6 sm:h-6 drop-shadow-md", strokeWidth: 2 };
+    const props = { className: "w-5 h-5 sm:w-6 sm:h-6 drop-shadow-lg", strokeWidth: 2.2 };
     switch (classVal) {
       case 'Scout': return <Crosshair {...props} />;
       case 'Assault': return <Zap {...props} />;
@@ -49,17 +49,34 @@ export default function UnitSprite({
     }
   };
 
-  const bgTheme = team === 'player' 
-    ? 'bg-[#13273e]/90 border-[#38bdf8] shadow-[0_0_12px_rgba(56,189,248,0.4)] text-sky-400' 
-    : 'bg-[#2e1065]/90 border-[#c026d3] shadow-[0_0_12px_rgba(192,38,211,0.4)] text-fuchsia-400';
+  const playerTheme = {
+    outer: 'bg-gradient-to-br from-sky-950/90 via-[#0c1929]/95 to-sky-950/90',
+    border: 'border-sky-400/70',
+    shadow: 'shadow-[0_0_14px_rgba(56,189,248,0.35),inset_0_1px_1px_rgba(56,189,248,0.15)]',
+    iconColor: 'text-sky-300',
+    ring: 'ring-sky-500/20',
+  };
+
+  const enemyTheme = {
+    outer: 'bg-gradient-to-br from-purple-950/90 via-[#1a0a2e]/95 to-fuchsia-950/90',
+    border: 'border-fuchsia-400/70',
+    shadow: 'shadow-[0_0_14px_rgba(192,38,211,0.35),inset_0_1px_1px_rgba(192,38,211,0.15)]',
+    iconColor: 'text-fuchsia-300',
+    ring: 'ring-fuchsia-500/20',
+  };
+
+  const theme = team === 'player' ? playerTheme : enemyTheme;
+
+  const firingClasses = isFiring
+    ? 'scale-115 border-white/80 shadow-[0_0_20px_rgba(255,255,255,0.5),0_0_40px_rgba(255,200,50,0.3)]'
+    : '';
 
   return (
-    <div 
-      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center select-none transition-all duration-300 ${bgTheme} ${isFiring ? 'scale-110 border-white bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.6)]' : ''}`}
+    <div
+      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center select-none transition-all duration-200 ring-1 ${theme.outer} ${theme.border} ${theme.shadow} ${theme.iconColor} ${theme.ring} ${firingClasses}`}
       style={{ transform: isFlipped ? 'scaleX(-1)' : undefined }}
     >
       {getIcon()}
     </div>
   );
 }
-

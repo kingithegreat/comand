@@ -340,14 +340,12 @@ export default function App() {
       }
 
       if (foundMatch) {
-        // Join the discovered match
         const matchRef = doc(db, 'matches', foundMatch.id);
-        const data = foundMatch.data();
         await updateDoc(matchRef, {
            guestId: user.uid
         });
         setOnlineMatchId(foundMatch.id);
-        setGameMode(data.isCoop ? 'online_coop' : 'online');
+        setGameMode(foundMatch.isCoop ? 'online_coop' : 'online');
       } else {
         // Create new public match if none found
         await createRoom(true);
@@ -437,7 +435,7 @@ export default function App() {
     );
   }
 
-  if (gameMode === 'online' && onlineMatchId) {
+  if ((gameMode === 'online' || gameMode === 'online_coop') && onlineMatchId) {
     if (matchLoading) {
        return <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
     }
@@ -749,7 +747,7 @@ export default function App() {
     return (
        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
          <Game 
-           gameMode="online" 
+           gameMode={gameMode as 'online' | 'online_coop'}
            onBack={() => { handleAbortMatch(); }} 
            onlineMatch={{ id: onlineMatchId, ...matchData }} 
            userId={user?.uid} 
@@ -761,183 +759,213 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
-      {/* Visual CRT Glass Scanlines overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
-      
-      {/* Ambient background tactical radar layout */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] border border-zinc-800 border-opacity-50/15 rounded-full pointer-events-none z-0">
-        <div className="absolute inset-20 border border-zinc-800 border-opacity-50/10 rounded-full"></div>
-        <div className="absolute inset-40 border border-zinc-800 border-opacity-50/5 rounded-full"></div>
-        <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-[#2d3422]/10"></div>
-        <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-[#2d3422]/10"></div>
+    <div className="min-h-screen bg-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+      {/* Ambient animated background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.04)_0%,transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(56,189,248,0.03)_0%,transparent_40%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(168,85,247,0.03)_0%,transparent_40%)]" />
+      </div>
+
+      {/* Subtle CRT scanlines */}
+      <div className="fixed inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.06)_97%)] bg-[length:100%_3px] pointer-events-none z-50 opacity-60"></div>
+
+      {/* Animated radar rings */}
+      <div className="absolute top-[15%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none z-0">
+        <div className="absolute inset-0 border border-zinc-800/10 rounded-full animate-[spin_60s_linear_infinite]"></div>
+        <div className="absolute inset-24 border border-zinc-800/8 rounded-full animate-[spin_45s_linear_infinite_reverse]"></div>
+        <div className="absolute inset-48 border border-amber-500/5 rounded-full"></div>
+        <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-gradient-to-b from-transparent via-zinc-800/10 to-transparent"></div>
+        <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-gradient-to-r from-transparent via-zinc-800/10 to-transparent"></div>
+      </div>
+
+      {/* Floating particles */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[10%] left-[15%] w-1 h-1 rounded-full bg-amber-500/30 animate-particle" />
+        <div className="absolute top-[30%] right-[20%] w-1.5 h-1.5 rounded-full bg-sky-500/20 animate-particle-slow" style={{animationDelay: '1s'}} />
+        <div className="absolute top-[60%] left-[70%] w-1 h-1 rounded-full bg-purple-500/25 animate-particle" style={{animationDelay: '3s'}} />
+        <div className="absolute top-[80%] left-[25%] w-1 h-1 rounded-full bg-emerald-500/20 animate-particle-slow" style={{animationDelay: '2s'}} />
       </div>
 
       <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
-         {/* Terminal Header */}
-         <div className="text-center space-y-3 pb-2 border-b border-zinc-800 border-opacity-50/30 relative">
-           <button 
-             onClick={toggleSound} 
-             className="absolute right-0 top-0 p-2 rounded-full border border-zinc-800 border-opacity-50 bg-zinc-900 bg-opacity-80 text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-colors"
+         {/* Hero Header */}
+         <div className="text-center space-y-4 pb-4 border-b border-zinc-800/30 relative">
+           <button
+             onClick={toggleSound}
+             className="absolute right-0 top-0 p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 text-zinc-500 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 backdrop-blur-sm"
              title={soundEnabled ? "Disable Audio" : "Enable Audio"}
            >
              {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
            </button>
-           <div className="w-16 h-16 bg-[#161a12] border border-zinc-800 border-opacity-50 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(45,52,34,0.4)] mx-auto relative group">
-              <Target className="w-8 h-8 text-amber-500 absolute scale-105 opacity-40 blur-sm animate-pulse" />
-              <Target className="w-8 h-8 text-amber-400 relative z-10 transition-transform group-hover:rotate-45 duration-700" />
+           <div className="w-20 h-20 bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-700/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.1),0_0_60px_rgba(251,191,36,0.05)] mx-auto relative group">
+              <div className="absolute inset-0 rounded-2xl bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <Target className="w-9 h-9 text-amber-500/40 absolute scale-110 blur-sm animate-pulse" />
+              <Target className="w-9 h-9 text-amber-400 relative z-10 transition-transform group-hover:rotate-90 duration-700" />
            </div>
-           <h1 className="text-4xl font-extrabold tracking-widest text-zinc-300 font-mono uppercase">
-             TACTICAL <span className="text-[#fbbf24] font-black filter drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]">COMMAND</span>
-           </h1>
-           <div className="flex items-center justify-center gap-4 text-[9.5px] font-mono text-[#8b9180] tracking-wider uppercase">
-             <span>SYS_VER: 2.1.0</span>
-             <span className="w-1 h-1 rounded-full bg-[#2d3422]"></span>
-             <span>LINK_SECURE: AES-256</span>
-             <span className="w-1 h-1 rounded-full bg-[#2d3422]"></span>
-             <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> ONLINE</span>
+           <div>
+             <h1 className="text-5xl font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-zinc-200 via-white to-zinc-300 uppercase" style={{fontFamily: 'Orbitron, monospace'}}>
+               TACTICAL
+             </h1>
+             <h1 className="text-5xl font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 uppercase mt-[-4px] drop-shadow-[0_0_20px_rgba(251,191,36,0.3)]" style={{fontFamily: 'Orbitron, monospace'}}>
+               COMMAND
+             </h1>
+           </div>
+           <div className="flex items-center justify-center gap-4 text-[9px] font-mono text-zinc-500 tracking-wider uppercase">
+             <span className="text-zinc-600">SYS v2.1.0</span>
+             <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
+             <span className="text-zinc-600">AES-256</span>
+             <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
+             <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse"></span> <span className="text-emerald-500/80">ONLINE</span></span>
            </div>
          </div>
 
-         {/* Tactical Mutators Dashboard */}
-         <div className="flex flex-col gap-4 mb-6">
-            {/* Section 1: Smog Protocol */}
-            <div className="bg-zinc-900 bg-opacity-80/60 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-left shadow-lg">
-               <div className="flex gap-4 items-start">
-                  <div className={`p-2.5 rounded-lg border transition-all ${smogMode ? 'bg-amber-500/10 border-amber-500/80 text-amber-400 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.2)]' : 'bg-black/40 border-zinc-800 border-opacity-50 text-[#8b9180]'}`}>
-                     <Wind className="w-6 h-6 animate-pulse" />
+         {/* Match Configuration */}
+         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Smog Toggle */}
+            <div className={`relative rounded-xl p-4 border transition-all duration-300 ${smogMode ? 'bg-amber-500/5 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.06)]' : 'bg-zinc-900/60 border-zinc-800/50'}`}>
+               <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${smogMode ? 'bg-amber-500/15 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.15)]' : 'bg-zinc-800/50 text-zinc-500'}`}>
+                        <Wind className="w-5 h-5" />
+                     </div>
+                     <div>
+                        <h4 className="text-sm font-mono font-black text-zinc-200 uppercase tracking-wider leading-none">FOG OF WAR</h4>
+                        <p className="text-[10px] text-zinc-500 mt-1 uppercase">Limits visibility to unit sight ranges</p>
+                     </div>
                   </div>
-                  <div>
-                     <h4 className="text-sm sm:text-base font-mono font-black text-zinc-300 uppercase tracking-wider flex items-center gap-2 leading-none mb-1">
-                        SMOG CLASSIFICATION PROTOCOL
-                        {smogMode && <span className="bg-amber-400 text-black text-[9px] px-1.5 font-mono font-black py-0.5 rounded-lg leading-none">ACTIVE TESTBED</span>}
-                     </h4>
-                     <p className="text-xs text-[#8b9180] mt-1.5 uppercase leading-relaxed max-w-sm sm:max-w-md">
-                        Hides tactical quadrants under thick cloud covers. Squares and enemy vectors are visible ONLY if they fall inside friendly units' visual ranges and lines of sight.
-                     </p>
-                  </div>
+                  <button
+                     type="button"
+                     title={smogMode ? "Disable Fog of War" : "Enable Fog of War"}
+                     onClick={() => { setSmogMode(!smogMode); playSound('click'); }}
+                     className={`relative w-12 h-7 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${smogMode ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'bg-zinc-700'}`}
+                  >
+                     <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${smogMode ? 'left-[calc(100%-1.625rem)]' : 'left-0.5'}`} />
+                  </button>
                </div>
-               <button
-                  type="button"
-                  onClick={() => {
-                    setSmogMode(!smogMode);
-                    playSound('click');
-                  }}
-                  className={`w-full sm:w-auto px-5 py-3 border font-mono font-black text-xs sm:text-sm tracking-widest uppercase transition-all duration-200 rounded-lg cursor-pointer shrink-0 ${
-                    smogMode 
-                      ? 'bg-amber-500 border-amber-400 text-zinc-950 hover:bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.25)]' 
-                      : 'bg-black/50 border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 hover:border-[#8b9180]'
-                  }`}
-               >
-                  {smogMode ? 'DEACTIVATE SMOG' : 'ACTIVATE SMOG'}
-               </button>
             </div>
 
-            {/* Section 2: Squad Configuration Slider */}
-            <div className="bg-zinc-900 bg-opacity-80/60 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 text-left shadow-lg">
-               <div className="flex gap-4 items-start flex-1 w-full">
-                  <div className="p-2.5 rounded-lg border bg-black/40 border-zinc-800 border-opacity-50 text-[#8b9180]">
-                     <Users className="w-6 h-6 text-amber-500" />
+            {/* Squad Size */}
+            <div className="relative rounded-xl p-4 border bg-zinc-900/60 border-zinc-800/50">
+               <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-lg bg-zinc-800/50 text-zinc-500 flex items-center justify-center">
+                     <Users className="w-5 h-5 text-amber-400" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                     <h4 className="text-sm sm:text-base font-mono font-black text-zinc-300 uppercase tracking-wider flex items-center gap-2 leading-none mb-1">
-                        SQUAD SIZE PROTOCOL
-                        <span className="bg-amber-400 text-black text-[9px] px-1.5 py-0.5 font-mono font-black rounded-lg leading-none">
-                           {squadSize} {squadSize === 1 ? 'OPERATOR' : 'OPERATORS'} PER SIDE
-                        </span>
+                  <div className="flex-1">
+                     <h4 className="text-sm font-mono font-black text-zinc-200 uppercase tracking-wider leading-none flex items-center gap-2">
+                        SQUAD SIZE
+                        <span className="bg-amber-400 text-black text-[9px] px-1.5 py-0.5 font-black rounded-md leading-none">{squadSize}</span>
                      </h4>
-                     <p className="text-xs text-[#8b9180] mt-1.5 uppercase leading-relaxed max-w-sm sm:max-w-md">
-                        Configure the total active combat representatives deployed per squadron. Roster setup and tactical insertion phases of both teams auto-adjust dynamically.
-                     </p>
+                     <p className="text-[10px] text-zinc-500 mt-1 uppercase">Units per side</p>
                   </div>
                </div>
-
-               {/* Slider Input Control */}
-               <div className="w-full md:w-64 flex flex-col gap-2 shrink-0 bg-black/30 border border-zinc-800 border-opacity-50/70 p-3 rounded-lg">
-                 <div className="flex justify-between items-center text-[8.5px] font-mono text-zinc-400">
-                   <span>MIN: 1 UNIT</span>
-                   <span className="text-amber-400 font-bold">CURRENT: {squadSize}</span>
-                   <span>MAX: 8 UNITS</span>
-                 </div>
-                 <input 
-                   type="range" 
-                   min="1" 
-                   max="8" 
+               <div className="flex flex-col gap-1.5">
+                 <input
+                   type="range"
+                   min="1"
+                   max="8"
+                   aria-label="Squad size"
                    value={squadSize}
-                   onChange={(e) => {
-                     const value = parseInt(e.target.value);
-                     setSquadSize(value);
-                     playSound('click');
-                   }}
-                   className="w-full h-1.5 bg-zinc-800 rounded-2xl appearance-none cursor-pointer accent-amber-500 hover:accent-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                   onChange={(e) => { setSquadSize(parseInt(e.target.value)); playSound('click'); }}
+                   className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-amber-500 focus:outline-none"
                  />
-                 <div className="flex justify-between px-1 text-[7px] font-mono text-zinc-500">
-                   <span>1</span>
-                   <span>2</span>
-                   <span>3</span>
-                   <span>4</span>
-                   <span>5</span>
-                   <span>6</span>
-                   <span>7</span>
-                   <span>8</span>
+                 <div className="flex justify-between px-0.5 text-[8px] font-mono text-zinc-600">
+                   {[1,2,3,4,5,6,7,8].map(n => (
+                     <span key={n} className={n === squadSize ? 'text-amber-400 font-bold' : ''}>{n}</span>
+                   ))}
                  </div>
                </div>
             </div>
          </div>
 
          {/* Modes Selection */}
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button 
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
               onClick={() => setGameMode('campaign')}
-              className="p-5 bg-emerald-950/20 hover:bg-emerald-900/40 border border-emerald-900/50 hover:border-emerald-500/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-emerald-500/20 hover:border-emerald-400/50 bg-gradient-to-br from-emerald-950/30 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(16,185,129,0.1)] transform hover:-translate-y-0.5"
             >
-               <Globe className="w-8 h-8 text-emerald-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
-               <div>
-                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">GLOBAL CAMPAIGN</h3>
-                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Command your squad across international battle sectors.</p>
+               <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+               <div className="relative z-10 flex flex-col gap-3">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/15 group-hover:border-emerald-400/40 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                     <Globe className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">CAMPAIGN</h3>
+                     <p className="text-[10px] text-emerald-500/60 font-mono uppercase tracking-wider">Global Operations</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Command your squad across international battle sectors. Progressive difficulty.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
-            <button 
+            <button
               onClick={() => setGameMode('local_ai')}
-              className="p-5 bg-zinc-900 bg-opacity-80/80 hover:bg-zinc-800 bg-opacity-80/90 border border-zinc-800 border-opacity-50/60 hover:border-amber-400/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-amber-500/20 hover:border-amber-400/50 bg-gradient-to-br from-amber-950/20 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(245,158,11,0.1)] transform hover:-translate-y-0.5"
             >
-               <Monitor className="w-8 h-8 text-[#fbbf24] group-hover:scale-110 transition-transform duration-300" />
-               <div>
-                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">OFFLINE SIMULATOR</h3>
-                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Deploy a 4-man customized tactical squad and play against the smart combat AI.</p>
+               <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+               <div className="relative z-10 flex flex-col gap-3">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/15 group-hover:border-amber-400/40 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                     <Cpu className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform duration-300" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">VS AI</h3>
+                     <p className="text-[10px] text-amber-500/60 font-mono uppercase tracking-wider">Offline Simulator</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Deploy a customized tactical squad and play against the smart combat AI.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-amber-500/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
-            <button 
+            <button
               onClick={() => setGameMode('local_p2p')}
-              className="p-5 bg-zinc-900 bg-opacity-80/80 hover:bg-zinc-800 bg-opacity-80/90 border border-zinc-800 border-opacity-50/60 hover:border-emerald-500/50 rounded-2xl text-left transition-all duration-300 group shadow-md flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-sky-500/20 hover:border-sky-400/50 bg-gradient-to-br from-sky-950/20 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(56,189,248,0.1)] transform hover:-translate-y-0.5"
             >
-               <Users className="w-8 h-8 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
-               <div>
-                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase">SQUAD PASS & PLAY</h3>
-                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Play hotseat 2-player mode locally. Formulate tactics, then hand off command.</p>
+               <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+               <div className="relative z-10 flex flex-col gap-3">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/15 group-hover:border-sky-400/40 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(56,189,248,0.2)]">
+                     <Users className="w-6 h-6 text-sky-400 group-hover:scale-110 transition-transform duration-300" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">PASS & PLAY</h3>
+                     <p className="text-[10px] text-sky-500/60 font-mono uppercase tracking-wider">Local 2-Player</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Hotseat 2-player mode. Formulate tactics, then hand off command.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-emerald-400/50 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
-            <button 
+            <button
               onClick={() => setGameMode('tutorial')}
-              className="p-5 bg-zinc-900 bg-opacity-80/85 hover:bg-[#202716]/95 border border-zinc-800 border-opacity-50/60 hover:border-[#fbbf24]/60 rounded-2xl text-left transition-all duration-300 group shadow-[0_0_15px_rgba(251,191,36,0.05)] flex flex-col gap-2 cursor-pointer relative overflow-hidden"
+              className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-purple-500/20 hover:border-purple-400/50 bg-gradient-to-br from-purple-950/20 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(168,85,247,0.1)] transform hover:-translate-y-0.5"
             >
-               <BookOpen className="w-8 h-8 text-amber-400 group-hover:scale-110 transition-transform duration-300 animate-pulse" />
-               <div>
-                  <h3 className="font-extrabold text-zinc-300 text-lg lg:text-xl font-mono tracking-wider uppercase flex items-center gap-1.5">BATTLE ACADEMY <span className="bg-amber-400 text-black text-[9px] px-1.5 font-black py-0.5 rounded-lg leading-none">NEW</span></h3>
-                  <p className="text-xs text-[#8b9180] mt-1.5 leading-relaxed uppercase">Interactive tactical manual. Learn movement, analyze core abilities, try other characters.</p>
+               <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+               <div className="relative z-10 flex flex-col gap-3">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/15 group-hover:border-purple-400/40 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(168,85,247,0.2)]">
+                     <BookOpen className="w-6 h-6 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase flex items-center gap-2">ACADEMY <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-black text-[8px] px-1.5 font-black py-0.5 rounded-md leading-none">NEW</span></h3>
+                     <p className="text-[10px] text-purple-500/60 font-mono uppercase tracking-wider">Interactive Tutorial</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Learn movement, analyze core abilities, and try different character classes.</p>
                </div>
-               <span className="absolute bottom-2 right-3 text-[9px] font-mono text-amber-500/55 uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">SYS_ENG_CONFIRM »</span>
+               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-purple-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
          </div>
 
          {/* Online Section */}
-         <div className="bg-zinc-900 bg-opacity-80/80 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 shadow-md">
-            <div className="flex items-center gap-2.5 mb-4 border-b border-zinc-800 border-opacity-50/30 pb-2">
-              <Globe className="w-5 h-5 text-purple-400" />
-              <h3 className="font-bold text-zinc-300 text-sm font-mono uppercase tracking-wider">MULTIPLAYER NET-COMM CENTERS</h3>
+         <div className="relative rounded-2xl p-5 border border-zinc-800/40 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 backdrop-blur-sm overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/[0.02] to-sky-500/[0.02]" />
+            <div className="relative z-10">
+            <div className="flex items-center gap-2.5 mb-4 border-b border-zinc-800/30 pb-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                <Globe className="w-4 h-4 text-purple-400" />
+              </div>
+              <h3 className="font-black text-zinc-200 text-sm font-mono uppercase tracking-wider">MULTIPLAYER</h3>
             </div>
 
             {loading || profileLoading ? (
@@ -1014,13 +1042,17 @@ export default function App() {
                </div>
             )}
          </div>
+         </div>
 
          {/* Interactive Tactical Dossier Database */}
-         <div className="bg-zinc-900 bg-opacity-80/80 border border-zinc-800 border-opacity-50/60 rounded-2xl p-5 shadow-md flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-zinc-800 border-opacity-50/30 pb-2">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-amber-400" />
-                <h3 className="font-mono text-sm sm:text-base font-extrabold text-zinc-300 tracking-widest uppercase">TACTICAL DATABASE // INTEL DOSSIER</h3>
+         <div className="relative rounded-2xl p-5 border border-zinc-800/40 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 backdrop-blur-sm flex flex-col gap-4 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.02] to-transparent" />
+            <div className="relative z-10 flex items-center justify-between border-b border-zinc-800/30 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-amber-400" />
+                </div>
+                <h3 className="font-mono text-sm font-black text-zinc-200 tracking-wider uppercase">TACTICAL DATABASE</h3>
               </div>
               <div className="flex gap-2">
                 <button 

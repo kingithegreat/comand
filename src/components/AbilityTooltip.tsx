@@ -175,71 +175,59 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ ability, classNa
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="fixed pointer-events-none z-[9999] w-[250px] bg-[#0c1007]/95 border border-[#445236]/80 text-[#dae3ce] p-3 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.6),0_0_15px_rgba(175,209,156,0.15)] backdrop-blur-md font-mono"
+            className="fixed pointer-events-none z-[9999] w-[250px] bg-zinc-950/95 border border-zinc-700/40 text-zinc-200 p-3 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl font-mono"
             style={{
               left: coords.x,
               top: coords.y,
             }}
           >
             {/* Tooltip Header */}
-            <div className="flex items-center justify-between border-b border-[#2d3422]/60 pb-1.5 mb-2">
+            <div className="flex items-center justify-between border-b border-zinc-800/40 pb-1.5 mb-2">
               <div className="flex items-center gap-1.5 truncate">
                 {mapTypeToIcon(ability.type)}
-                <span className="text-[10px] uppercase font-black tracking-wide text-white truncate">
+                <span className="text-[10px] uppercase font-bold tracking-wide text-zinc-100 truncate">
                   {ability.name}
                 </span>
               </div>
-              <span className={`text-[7px] font-black border uppercase rounded px-1 shrink-0 ${getIntensityColor(specs.intensity)}`}>
+              <span className={`text-[7px] font-semibold border uppercase rounded-md px-1 shrink-0 ${getIntensityColor(specs.intensity)}`}>
                 {specs.intensity}
               </span>
             </div>
 
-            {/* Tactical Grid Metrics */}
             <div className="space-y-1.5 text-[8px] uppercase tracking-wide">
-              {/* Cooldown Info */}
-              <div className="flex justify-between items-center bg-black/35 py-1 px-1.5 rounded">
-                <span className="text-zinc-400 font-bold flex items-center gap-1">
-                  <Clock className="w-2.5 h-2.5 text-zinc-500" /> COOLDOWN:
+              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+                <span className="text-zinc-500 font-semibold flex items-center gap-1">
+                  <Clock className="w-2.5 h-2.5 text-zinc-600" /> Cooldown
                 </span>
-                <span className="text-amber-400 font-black">{specs.cooldown}</span>
+                <span className="text-zinc-300 font-semibold">{specs.cooldown}</span>
               </div>
 
-              {/* Damage or Heal Value Info */}
-              <div className="flex justify-between items-center bg-black/35 py-1 px-1.5 rounded">
-                <span className="text-zinc-400 font-bold flex items-center gap-1">
-                  <Flame className="w-2.5 h-2.5 text-rose-400/80" /> DMG / REPAIR:
+              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+                <span className="text-zinc-500 font-semibold flex items-center gap-1">
+                  <Flame className="w-2.5 h-2.5 text-zinc-600" /> Effect
                 </span>
-                <span className="text-[#fbbf24] font-black">{specs.damageOrHeal}</span>
+                <span className="text-amber-400 font-semibold">{specs.damageOrHeal}</span>
               </div>
 
-              {/* Range block */}
               {ability.range !== undefined && (
-                <div className="flex justify-between items-center bg-black/35 py-1 px-1.5 rounded">
-                  <span className="text-zinc-400 font-bold flex items-center gap-1">
-                    <Crosshair className="w-2.5 h-2.5 text-sky-400" /> TOTAL RANGE:
+                <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+                  <span className="text-zinc-500 font-semibold flex items-center gap-1">
+                    <Crosshair className="w-2.5 h-2.5 text-zinc-600" /> Range
                   </span>
-                  <span className="text-sky-300 font-black">{ability.range} CELLS</span>
+                  <span className="text-sky-300 font-semibold">{ability.range} cells</span>
                 </div>
               )}
 
-              {/* Action Point cost */}
-              <div className="flex justify-between items-center bg-black/35 py-1 px-1.5 rounded">
-                <span className="text-zinc-400 font-bold flex items-center gap-1">
-                  <Zap className="w-2.5 h-2.5 text-yellow-400" /> ENERGY COST:
+              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+                <span className="text-zinc-500 font-semibold flex items-center gap-1">
+                  <Zap className="w-2.5 h-2.5 text-zinc-600" /> Cost
                 </span>
-                <span className="text-yellow-400 font-black">{ability.apCost} AP</span>
+                <span className="text-amber-300 font-semibold">{ability.apCost} AP</span>
               </div>
 
-              {/* Target rule */}
-              <div className="text-[7.5px] border-t border-[#2d3422]/40 pt-1.5 mt-1.5 leading-relaxed text-[#8b9180] normal-case">
-                <span className="uppercase text-amber-500 font-extrabold mr-1">PROTOCOL:</span> 
+              <div className="text-[7.5px] border-t border-zinc-800/30 pt-1.5 mt-1.5 leading-relaxed text-zinc-400 normal-case">
                 {specs.detailedPerk}
               </div>
-            </div>
-            
-            {/* Micro-indicator footer */}
-            <div className="text-center text-[6px] text-zinc-500 uppercase mt-2 tracking-widest border-t border-[#2d3422]/20 pt-1">
-              TACTICAL BIO DOSSIER // SECURE PROTOCOL
             </div>
           </motion.div>
         )}
