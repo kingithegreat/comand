@@ -12,6 +12,11 @@ import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
 import CommanderLeaderboard from './components/CommanderLeaderboard';
 import MatchHistory from './components/MatchHistory';
+import DailyChallenges from './components/DailyChallenges';
+import CosmeticShop from './components/CosmeticShop';
+import SeasonPass from './components/SeasonPass';
+import PlayerStats from './components/PlayerStats';
+import { PlayerProgression, getDefaultProgression, getDailyChallenges, calculateEloChange, getMatchRewards, BOARD_THEMES, SEASON_REWARDS, DailyChallenge } from './progression';
 import { useAudio } from './contexts/AudioContext';
 import { getCharacterLevelInfo, getBoostedStats } from './logic';
 import { CHEMISTRIES, ChemistryDuo } from './chemistries';
@@ -39,11 +44,18 @@ export default function App() {
   const [dbTab, setDbTab] = useState<'tutorial' | 'classes' | 'chemistries'>('tutorial');
   const [activeClassDesc, setActiveClassDesc] = useState<string>('Scout');
 
-  const [joinCode, setJoinCode] = useState('');
+  const [joinCode, setJoinCode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room')?.toUpperCase() || '';
+  });
   const [onlineMatchId, setOnlineMatchId] = useState<string | null>(null);
   const [matchData, matchLoading] = useDocumentData(
     onlineMatchId ? doc(db, 'matches', onlineMatchId) : null
   );
+  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room')?.toUpperCase() || null;
+  });
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [guestProfile, setGuestProfile] = useState<any>(null);
@@ -51,12 +63,127 @@ export default function App() {
   const [smogMode, setSmogMode] = useState(false);
   const [squadSize, setSquadSize] = useState<number>(4);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [menuTab, setMenuTab] = useState<'play' | 'progress' | 'shop'>('play');
+
+  const [progression, setProgression] = useState<PlayerProgression>(() => {
+    try {
+      const stored = localStorage.getItem('tc_progression');
+      return stored ? { ...getDefaultProgression(), ...JSON.parse(stored) } : getDefaultProgression();
+    } catch { return getDefaultProgression(); }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tc_progression', JSON.stringify(progression));
+  }, [progression]);
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (progression.dailyChallengeDate !== today) {
+      const templates = getDailyChallenges(today);
+      const newChallenges: DailyChallenge[] = templates.map(t => ({ ...t, progress: 0, completed: false }));
+      setProgression(p => ({ ...p, dailyChallenges: newChallenges, dailyChallengeDate: today }));
+    }
+  }, [progression.dailyChallengeDate]);
+
+  const handlePurchaseTheme = (themeId: string) => {
+    const theme = BOARD_THEMES.find(t => t.id === themeId);
+    if (!theme || progression.credits < theme.price || progression.unlockedThemes.includes(themeId)) return;
+    setProgression(p => ({
+      ...p,
+      credits: p.credits - theme.price,
+      unlockedThemes: [...p.unlockedThemes, themeId],
+    }));
+  };
+
+  const handleEquipTheme = (themeId: string) => {
+    if (!progression.unlockedThemes.includes(themeId)) return;
+    setProgression(p => ({ ...p, activeTheme: themeId }));
+  };
+
+  const handleMatchComplete = (won: boolean, survivalRate: number, turn: number) => {
+    const rewards = getMatchRewards(won, survivalRate, turn);
+    const eloChange = calculateEloChange(progression.elo, 1000, won);
+    const newWinStreak = won ? progression.winStreak + 1 : 0;
+
+    let newSeasonXP = progression.seasonXP + rewards.seasonXP;
+    let newSeasonLevel = progression.seasonLevel;
+    for (const sr of SEASON_REWARDS) {
+      if (sr.level > newSeasonLevel && newSeasonXP >= sr.xpRequired) {
+        newSeasonLevel = sr.level;
+        if (sr.reward.type === 'credits') {
+          rewards.credits += sr.reward.value as number;
+        }
+        if (sr.reward.type === 'theme') {
+          const themeId = sr.reward.value as string;
+          if (!progression.unlockedThemes.includes(themeId)) {
+            setProgression(p => ({ ...p, unlockedThemes: [...p.unlockedThemes, themeId] }));
+          }
+        }
+      }
+    }
+
+    setProgression(p => ({
+      ...p,
+      elo: Math.max(0, p.elo + eloChange),
+      credits: p.credits + rewards.credits,
+      totalMatches: p.totalMatches + 1,
+      wins: won ? p.wins + 1 : p.wins,
+      losses: won ? p.losses : p.losses + 1,
+      winStreak: newWinStreak,
+      bestWinStreak: Math.max(p.bestWinStreak, newWinStreak),
+      seasonXP: newSeasonXP,
+      seasonLevel: newSeasonLevel,
+    }));
+  };
+
+  const updateChallengeProgress = (type: string, amount: number) => {
+    setProgression(p => ({
+      ...p,
+      dailyChallenges: p.dailyChallenges.map(c => {
+        if (c.completed || c.type !== type) return c;
+        const newProgress = c.progress + amount;
+        const completed = newProgress >= c.target;
+        return { ...c, progress: newProgress, completed };
+      }),
+      credits: p.credits + p.dailyChallenges
+        .filter(c => !c.completed && c.type === type && c.progress + amount >= c.target)
+        .reduce((sum, c) => sum + c.reward, 0),
+    }));
+  };
 
   useEffect(() => {
      if (profile && !editingProfile) {
         setDisplayNameInput(profile.displayName);
      }
   }, [profile, editingProfile]);
+
+  useEffect(() => {
+    if (user && pendingRoomCode && !onlineMatchId) {
+      const autoJoin = async () => {
+        try {
+          const matchRef = doc(db, 'matches', pendingRoomCode);
+          const matchSnap = await getDoc(matchRef);
+          if (matchSnap.exists()) {
+            const data = matchSnap.data();
+            if (data.hostId !== user.uid) {
+              if (!data.guestId) {
+                await updateDoc(matchRef, { guestId: user.uid });
+              } else if (data.guestId !== user.uid) {
+                await updateDoc(matchRef, { spectators: arrayUnion(user.uid) });
+              }
+            }
+            setOnlineMatchId(pendingRoomCode);
+            setGameMode(data.isCoop ? 'online_coop' : 'online');
+          }
+        } catch (err) {
+          console.error("Auto-join failed:", err);
+        }
+        setPendingRoomCode(null);
+        window.history.replaceState({}, '', window.location.pathname);
+      };
+      autoJoin();
+    }
+  }, [user, pendingRoomCode, onlineMatchId]);
 
   useEffect(() => {
     if (matchData?.hostId) {
@@ -90,16 +217,17 @@ export default function App() {
     }
   }, [matchData?.hostId, matchData?.guestId]);
 
-  const handleCopyCode = async (code: string) => {
+  const handleCopyCode = async (code: string, asLink: boolean = false) => {
+    const textToCopy = asLink ? `${window.location.origin}${window.location.pathname}?room=${code}` : code;
     try {
       if (navigator.clipboard) {
-        await navigator.clipboard.writeText(code);
+        await navigator.clipboard.writeText(textToCopy);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } else {
         const dummy = document.createElement("input");
         document.body.appendChild(dummy);
-        dummy.value = code;
+        dummy.value = textToCopy;
         dummy.select();
         document.execCommand("copy");
         document.body.removeChild(dummy);
@@ -359,30 +487,33 @@ export default function App() {
   const joinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = joinCode.trim().toUpperCase();
-    if (!user || !cleanCode) return;
+    if (!user || !cleanCode) {
+      if (!user) alert("Please sign in first.");
+      return;
+    }
     try {
       const matchRef = doc(db, 'matches', cleanCode);
       const matchSnap = await getDoc(matchRef);
       if (matchSnap.exists()) {
          const data = matchSnap.data();
-         if (data.hostId !== user.uid) {
-            if (data.status === 'waiting' && !data.guestId) {
-               await updateDoc(matchRef, {
-                  guestId: user.uid
-               });
-            } else if (data.guestId !== user.uid) {
-               await updateDoc(matchRef, {
-                  spectators: arrayUnion(user.uid)
-               });
-            }
+         if (data.hostId === user.uid) {
+            setOnlineMatchId(cleanCode);
+            setGameMode(data.isCoop ? 'online_coop' : 'online');
+            return;
+         }
+         if (!data.guestId) {
+            await updateDoc(matchRef, { guestId: user.uid });
+         } else if (data.guestId !== user.uid) {
+            await updateDoc(matchRef, { spectators: arrayUnion(user.uid) });
          }
          setOnlineMatchId(cleanCode);
          setGameMode(data.isCoop ? 'online_coop' : 'online');
       } else {
-        alert("Room not found!");
+        alert("Room not found! Check the code and try again.");
       }
     } catch(err: any) {
-      alert(err.message || "Failed to join room.");
+      console.error("Join room error:", err);
+      alert("Failed to join room: " + (err?.code || err?.message || "Unknown error"));
     }
   };
 
@@ -413,9 +544,12 @@ export default function App() {
            }
         }
       }}
-      userProfile={profile} 
-      smogMode={smogMode} 
-      squadSize={squadSize} 
+      userProfile={profile}
+      smogMode={smogMode}
+      squadSize={squadSize}
+      onMatchComplete={handleMatchComplete}
+      onChallengeProgress={updateChallengeProgress}
+      boardTheme={progression.activeTheme}
     />;
   }
 
@@ -501,26 +635,34 @@ export default function App() {
             </div>
 
             {/* Room Code Display */}
-            <div className="bg-black/50 border border-zinc-800 border-opacity-50/50 p-4 rounded-lg flex flex-col items-center gap-1">
+            <div className="bg-black/50 border border-zinc-800 border-opacity-50/50 p-4 rounded-lg flex flex-col items-center gap-2">
               <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold flex items-center gap-2">TRANSMISSION FREQUENCY CODE <span className={`text-[8.5px] px-1 py-0.5 rounded-lg leading-none ${matchData?.isPublic ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-[#2d3422] text-[#8b9180] border border-zinc-800 border-opacity-50'}`}>{matchData?.isPublic ? 'PUBLIC' : 'PRIVATE'}</span></div>
               <div className="flex items-center gap-3">
                 <span className="text-3xl font-extrabold tracking-[0.25em] text-white font-mono select-all pl-2">{onlineMatchId}</span>
                 <button
-                  onClick={() => handleCopyCode(onlineMatchId)}
+                  onClick={() => handleCopyCode(onlineMatchId!, false)}
                   className="p-1.5 rounded-lg border border-zinc-800 border-opacity-50/60 bg-[#161a12] text-[#8b9180] hover:text-[#fbbf24] hover:border-amber-400 transition-all cursor-pointer flex items-center gap-1 text-[9px] font-bold uppercase active:scale-95"
-                  title="Copy room code to clipboard"
+                  title="Copy room code"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" /> <span className="text-emerald-400 text-[8px]">COPIED</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" /> <span className="text-[8px]">COPY</span>
-                    </>
-                  )}
+                  <Copy className="w-3.5 h-3.5" /> <span className="text-[8px]">CODE</span>
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => handleCopyCode(onlineMatchId!, true)}
+                className="w-full py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
+                title="Copy invite link"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" /> <span className="text-emerald-400">LINK COPIED — SEND TO FRIEND</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" /> COPY INVITE LINK
+                  </>
+                )}
+              </button>
             </div>
 
             {/* Commander Profiles & Connections indicators */}
@@ -744,15 +886,22 @@ export default function App() {
       );
     }
 
+    if (!user?.uid) {
+       return <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>AUTHENTICATING COMMANDER...</span></div>;
+    }
+
     return (
        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
-         <Game 
+         <Game
            gameMode={gameMode as 'online' | 'online_coop'}
-           onBack={() => { handleAbortMatch(); }} 
-           onlineMatch={{ id: onlineMatchId, ...matchData }} 
-           userId={user?.uid} 
+           onBack={() => { handleAbortMatch(); }}
+           onlineMatch={{ id: onlineMatchId, ...matchData }}
+           userId={user.uid}
            userProfile={profile}
            squadSize={squadSize}
+           onMatchComplete={handleMatchComplete}
+           onChallengeProgress={updateChallengeProgress}
+           boardTheme={progression.activeTheme}
          />
        </div>
     );
@@ -971,11 +1120,26 @@ export default function App() {
             {loading || profileLoading ? (
                <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
             ) : !user ? (
-               <div className="text-center py-2 font-mono">
-                 <p className="text-[10px] text-[#8b9180] mb-4 uppercase">Establish user credentials to synchronize cloud statistics and access cross-device matchmaking graphs.</p>
-                 <button onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
-                   <LogIn className="w-4 h-4" /> LINK GOOGLE TACTICAL PROFILE
+               <div className="text-center py-2 font-mono space-y-4">
+                 <p className="text-[10px] text-[#8b9180] uppercase">Sign in to create or join a match.</p>
+                 <button type="button" onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
+                   <LogIn className="w-4 h-4" /> SIGN IN WITH GOOGLE
                  </button>
+                 <div className="border-t border-zinc-800/30 pt-4">
+                   <p className="text-[10px] text-zinc-500 uppercase mb-2">Have an invite code? Sign in first, then enter it below.</p>
+                   <div className="flex gap-2 w-full h-11">
+                     <input
+                       value={joinCode}
+                       onChange={e => setJoinCode(e.target.value.toUpperCase())}
+                       placeholder="ROOM CODE"
+                       maxLength={6}
+                       className="w-full h-full bg-black/60 border border-zinc-800 border-opacity-50 focus:border-amber-400 rounded-lg px-3 text-sm text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
+                     />
+                     <button type="button" onClick={handleLogin} disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer">
+                       SIGN IN & JOIN
+                     </button>
+                   </div>
+                 </div>
                </div>
             ) : (
                <div className="space-y-4 font-mono">
@@ -1439,9 +1603,50 @@ export default function App() {
             )}
          </div>
 
-         {/* Commander Leaderboard */}
-         <CommanderLeaderboard />
-         <MatchHistory />
+         {/* Progression Tabs */}
+         <div className="flex gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/30">
+           {(['play', 'progress', 'shop'] as const).map(tab => (
+             <button
+               key={tab}
+               type="button"
+               onClick={() => setMenuTab(tab)}
+               className={`flex-1 py-2 px-3 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono ${
+                 menuTab === tab
+                   ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                   : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+               }`}
+             >
+               {tab === 'play' ? 'Intel' : tab === 'progress' ? 'Progress' : 'Armory'}
+             </button>
+           ))}
+         </div>
+
+         {menuTab === 'play' && (
+           <>
+             {user && <PlayerStats progression={progression} />}
+             <DailyChallenges challenges={progression.dailyChallenges} />
+             <CommanderLeaderboard />
+             <MatchHistory />
+           </>
+         )}
+
+         {menuTab === 'progress' && (
+           <>
+             {user && <PlayerStats progression={progression} />}
+             <SeasonPass seasonXP={progression.seasonXP} seasonLevel={progression.seasonLevel} />
+             <MatchHistory />
+           </>
+         )}
+
+         {menuTab === 'shop' && (
+           <CosmeticShop
+             credits={progression.credits}
+             unlockedThemes={progression.unlockedThemes}
+             activeTheme={progression.activeTheme}
+             onPurchase={handlePurchaseTheme}
+             onEquip={handleEquipTheme}
+           />
+         )}
       </div>
     </div>
   );

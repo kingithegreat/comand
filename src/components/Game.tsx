@@ -13,6 +13,7 @@ import HUDCombatLog from './HUDCombatLog';
 import RosterStatus from './RosterStatus';
 import SelectedUnitConsole from './SelectedUnitConsole';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
+import { BOARD_THEMES } from '../progression';
 import UnitSprite from './UnitSprite';
 import CommanderLeaderboard from './CommanderLeaderboard';
 import MatchHistory from './MatchHistory';
@@ -184,8 +185,8 @@ const updateUnitSessionStats = (
   });
 };
 
-export default function Game({ 
-  gameMode, 
+export default function Game({
+  gameMode,
   onBack,
   onlineMatch,
   userId,
@@ -193,8 +194,11 @@ export default function Game({
   smogMode,
   squadSize = 4,
   campaignMissionId,
-  onNextMission
-}: { 
+  onNextMission,
+  onMatchComplete,
+  onChallengeProgress,
+  boardTheme,
+}: {
   gameMode: 'local_ai' | 'local_p2p' | 'online' | 'online_coop',
   onBack: () => void,
   onlineMatch?: any,
@@ -204,7 +208,10 @@ export default function Game({
   squadSize?: number,
   campaignMissionId?: string | null,
   onNextMission?: () => void,
-  key?: string
+  key?: string,
+  onMatchComplete?: (won: boolean, survivalRate: number, turn: number) => void,
+  onChallengeProgress?: (type: string, amount: number) => void,
+  boardTheme?: string,
 }) {
   const { playSound } = useAudio();
   const isOnline = (gameMode === 'online' || gameMode === 'online_coop') && onlineMatch;
@@ -728,23 +735,24 @@ export default function Game({
           isSyncInitializedRef.current = true;
        } else {
           if (mode === 'deploy') {
-             if (deployWriteInFlightRef.current) return;
-             if (isSpectator) {
-                setUnits(recalculateSquadStats(remoteUnits));
-             } else {
-                const myTeamName = myTeam || 'player';
-                const myLocalUnits = unitsRef.current.filter(u => u.team === myTeamName);
-                const opponentRemoteUnits = remoteUnits.filter((u: any) => u.team !== myTeamName);
+             if (!deployWriteInFlightRef.current) {
+               if (isSpectator) {
+                  setUnits(recalculateSquadStats(remoteUnits));
+               } else {
+                  const myTeamName = myTeam || 'player';
+                  const myLocalUnits = unitsRef.current.filter(u => u.team === myTeamName);
+                  const opponentRemoteUnits = remoteUnits.filter((u: any) => u.team !== myTeamName);
 
-                const merged = [...opponentRemoteUnits, ...myLocalUnits];
-                const mergedWithStats = recalculateSquadStats(merged);
+                  const merged = [...opponentRemoteUnits, ...myLocalUnits];
+                  const mergedWithStats = recalculateSquadStats(merged);
 
-                const sortedMerged = [...mergedWithStats].sort((a, b) => a.id.localeCompare(b.id));
-                const sortedLocal = [...unitsRef.current].sort((a, b) => a.id.localeCompare(b.id));
+                  const sortedMerged = [...mergedWithStats].sort((a, b) => a.id.localeCompare(b.id));
+                  const sortedLocal = [...unitsRef.current].sort((a, b) => a.id.localeCompare(b.id));
 
-                if (JSON.stringify(sortedMerged.map(u => u.id)) !== JSON.stringify(sortedLocal.map(u => u.id))) {
-                   setUnits(mergedWithStats);
-                }
+                  if (JSON.stringify(sortedMerged.map(u => u.id)) !== JSON.stringify(sortedLocal.map(u => u.id))) {
+                     setUnits(mergedWithStats);
+                  }
+               }
              }
           } else if (mode === 'play') {
              const localUnits = unitsRef.current;
@@ -1956,6 +1964,21 @@ export default function Game({
         }
       });
     }
+
+    const won = winner === (myTeam || 'player');
+    const startCount = startingUnits.filter(u => u.team === (myTeam || 'player')).length || 1;
+    const surviveCount = units.filter(u => u.team === (myTeam || 'player') && u.hp > 0).length;
+    const survivalRate = surviveCount / startCount;
+    if (onMatchComplete) onMatchComplete(won, survivalRate, turn);
+    if (onChallengeProgress) {
+      if (won) onChallengeProgress('win', 1);
+      const kills = units.filter(u => u.team !== (myTeam || 'player') && u.hp <= 0).length;
+      if (kills > 0) onChallengeProgress('kill', kills);
+      if (won && survivalRate >= 1) onChallengeProgress('survive', 1);
+      if (battleStats.playerDamageDealt > 0) onChallengeProgress('damage', battleStats.playerDamageDealt);
+      if (battleStats.playerHealsPerformed > 0) onChallengeProgress('heal', battleStats.playerHealsPerformed);
+      if (battleStats.playerAbilitiesUsed > 0) onChallengeProgress('ability', battleStats.playerAbilitiesUsed);
+    }
   }, [winner, myTeam, deployedClasses]);
 
   // Forfeit Match action logic
@@ -2078,6 +2101,7 @@ export default function Game({
         };
         addLog(`[DEPLOY] ${teamSelection === 'player' ? 'Blue' : 'Purple'} ${selectedClass.className} deployed at quadrant ${getCoord(x, y)}.`, 'system');
         playSound('deploy');
+        if (onChallengeProgress) onChallengeProgress('deploy_class', 1);
         const deployId = crypto.randomUUID();
         setDamageTexts(prev => [...prev, { id: deployId, x, y, amount: -2 }]);
         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== deployId)), 1000);
@@ -3978,9 +4002,18 @@ export default function Game({
               <div 
                 onDoubleClick={handleGridDoubleClick}
                 onTouchStart={handleGridDoubleTap}
-                className={`@container shrink-0 touch-manipulation relative w-full flex items-center bg-[#090b07] border border-[#1e2317] rounded-lg p-2 overflow-hidden animate-fade-in mt-1 select-none transition-all duration-300 ${
-                  zoomLevel === 140 ? 'justify-start cursor-zoom-out overflow-x-auto' : 'justify-center cursor-zoom-in'
-                }`}
+                className={`@container shrink-0 touch-manipulation relative w-full flex items-center border rounded-lg p-2 overflow-x-auto animate-fade-in mt-1 select-none transition-all duration-300 ${
+                  zoomLevel === 140 ? 'justify-start cursor-zoom-out' : 'justify-center cursor-zoom-in'
+                } ${(() => {
+                  const t = BOARD_THEMES.find(th => th.id === boardTheme);
+                  if (!t || t.id === 'default') return 'bg-[#090b07] border-[#1e2317]';
+                  if (t.id === 'arctic') return 'bg-slate-950 border-cyan-800/30';
+                  if (t.id === 'volcanic') return 'bg-stone-950 border-red-900/30';
+                  if (t.id === 'neon') return 'bg-violet-950 border-fuchsia-700/30';
+                  if (t.id === 'desert') return 'bg-yellow-950 border-amber-800/30';
+                  if (t.id === 'jungle') return 'bg-emerald-950 border-green-800/30';
+                  return 'bg-[#090b07] border-[#1e2317]';
+                })()}`}
                 style={{ containerType: 'inline-size' }}
               >
                 {/* Floating Zoom HUD Indicator Badge */}
