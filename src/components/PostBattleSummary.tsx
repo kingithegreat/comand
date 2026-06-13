@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Unit, CharacterClass } from '../types';
 import { VictoryConfetti } from './VictoryConfetti';
 import {
@@ -15,7 +15,11 @@ import {
   Info,
   Clock,
   Skull,
-  Heart
+  Heart,
+  Share2,
+  Check,
+  RefreshCw,
+  Coins
 } from 'lucide-react';
 
 interface BattleStats {
@@ -38,6 +42,10 @@ interface PostBattleSummaryProps {
   onBack: () => void;
   onNextMission?: () => void;
   onReviewReplay?: () => void;
+  onRematch?: () => void;
+  isOnline?: boolean;
+  creditsEarned?: number;
+  eloChange?: number;
 }
 
 export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
@@ -50,7 +58,12 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
   onBack,
   onNextMission,
   onReviewReplay,
+  onRematch,
+  isOnline,
+  creditsEarned,
+  eloChange,
 }) => {
+  const [shared, setShared] = useState(false);
   const playerTeam = myTeam || 'player';
   const isVictory = winner === playerTeam;
 
@@ -412,8 +425,39 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
 
         </div>
 
+        {/* REWARDS BANNER */}
+        {(creditsEarned !== undefined || eloChange !== undefined) && (
+          <div className="px-5 pb-2">
+            <div className="flex items-center justify-center gap-6 p-3 rounded-xl bg-zinc-800/20 border border-zinc-700/20">
+              {creditsEarned !== undefined && (
+                <div className="flex items-center gap-2 text-[11px] font-mono font-bold uppercase">
+                  <Coins className="w-4 h-4 text-amber-400" />
+                  <span className="text-amber-400">+{creditsEarned} Credits</span>
+                </div>
+              )}
+              {eloChange !== undefined && (
+                <div className={`flex items-center gap-2 text-[11px] font-mono font-bold uppercase ${
+                  eloChange >= 0 ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  <TrendingUp className="w-4 h-4" />
+                  <span>{eloChange >= 0 ? '+' : ''}{eloChange} ELO</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* BOTTOM ACTIONS */}
         <div className="p-4 border-t border-zinc-800/50 flex flex-col sm:flex-row items-center justify-center gap-3 shrink-0 flex-wrap">
+          {onRematch && (
+            <button
+              type="button"
+              onClick={onRematch}
+              className="px-8 py-3 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400/50 text-sky-300 font-mono text-xs font-semibold uppercase tracking-wider transition-all rounded-xl cursor-pointer max-w-sm w-full text-center shadow-[0_0_20px_rgba(56,189,248,0.1)] flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" /> Rematch
+            </button>
+          )}
           {onNextMission && (
             <button
               type="button"
@@ -423,10 +467,30 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
               Next Mission
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              const lines = [
+                `⚔️ TACTICAL COMMAND — ${isVictory ? 'VICTORY' : 'DEFEAT'}`,
+                `Rating: ${rankText} (${calculatedScore.toFixed(0)}/100)`,
+                `Turns: ${turn} | Accuracy: ${accuracyRate.toFixed(0)}%`,
+                `Damage: ${battleStats.playerDamageDealt} | Kills: ${enemiesNeutralizedCount}`,
+                mvpUnit ? `MVP: ${mvpUnit.name || mvpUnit.class.className}` : '',
+                ``,
+                `Play at: ${window.location.origin}`,
+              ].filter(Boolean).join('\n');
+              navigator.clipboard?.writeText(lines).then(() => {
+                setShared(true);
+                setTimeout(() => setShared(false), 2000);
+              });
+            }}
+            className="px-8 py-3 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/25 hover:border-fuchsia-400/40 text-fuchsia-300 font-mono text-xs font-semibold uppercase tracking-wider transition-all rounded-xl cursor-pointer max-w-sm w-full text-center flex items-center justify-center gap-2"
+          >
+            {shared ? <><Check className="w-4 h-4 text-emerald-400" /> Copied!</> : <><Share2 className="w-4 h-4" /> Share Result</>}
+          </button>
           {onReviewReplay && (
             <button
               type="button"
-              id="analyze-blackbox-replay-btn"
               onClick={onReviewReplay}
               className="px-8 py-3 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/25 hover:border-teal-400/40 text-teal-300 font-mono text-xs font-semibold uppercase tracking-wider transition-all rounded-xl cursor-pointer max-w-sm w-full text-center"
             >
@@ -435,7 +499,6 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
           )}
           <button
             type="button"
-            id="dismiss-operational-report-btn"
             onClick={onBack}
             className="px-8 py-3 bg-zinc-800/40 hover:bg-zinc-700/40 border border-zinc-700/30 hover:border-zinc-600/40 text-zinc-400 hover:text-zinc-200 font-mono text-xs font-semibold uppercase tracking-wider transition-all rounded-xl cursor-pointer max-w-sm w-full text-center"
           >

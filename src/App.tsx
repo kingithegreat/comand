@@ -17,6 +17,7 @@ import CosmeticShop from './components/CosmeticShop';
 import SeasonPass from './components/SeasonPass';
 import PlayerStats from './components/PlayerStats';
 import { PlayerProgression, getDefaultProgression, getDailyChallenges, calculateEloChange, getMatchRewards, BOARD_THEMES, SEASON_REWARDS, DailyChallenge } from './progression';
+import FriendList from './components/FriendList';
 import { useAudio } from './contexts/AudioContext';
 import { getCharacterLevelInfo, getBoostedStats } from './logic';
 import { CHEMISTRIES, ChemistryDuo } from './chemistries';
@@ -101,39 +102,42 @@ export default function App() {
   };
 
   const handleMatchComplete = (won: boolean, survivalRate: number, turn: number) => {
-    const rewards = getMatchRewards(won, survivalRate, turn);
-    const eloChange = calculateEloChange(progression.elo, 1000, won);
-    const newWinStreak = won ? progression.winStreak + 1 : 0;
+    setProgression(p => {
+      const rewards = getMatchRewards(won, survivalRate, turn);
+      const eloChange = calculateEloChange(p.elo, 1000, won);
+      const newWinStreak = won ? p.winStreak + 1 : 0;
 
-    let newSeasonXP = progression.seasonXP + rewards.seasonXP;
-    let newSeasonLevel = progression.seasonLevel;
-    for (const sr of SEASON_REWARDS) {
-      if (sr.level > newSeasonLevel && newSeasonXP >= sr.xpRequired) {
-        newSeasonLevel = sr.level;
-        if (sr.reward.type === 'credits') {
-          rewards.credits += sr.reward.value as number;
-        }
-        if (sr.reward.type === 'theme') {
-          const themeId = sr.reward.value as string;
-          if (!progression.unlockedThemes.includes(themeId)) {
-            setProgression(p => ({ ...p, unlockedThemes: [...p.unlockedThemes, themeId] }));
+      let newSeasonXP = p.seasonXP + rewards.seasonXP;
+      let newSeasonLevel = p.seasonLevel;
+      const newThemes = [...p.unlockedThemes];
+
+      for (const sr of SEASON_REWARDS) {
+        if (sr.level > newSeasonLevel && newSeasonXP >= sr.xpRequired) {
+          newSeasonLevel = sr.level;
+          if (sr.reward.type === 'credits') {
+            rewards.credits += sr.reward.value as number;
+          }
+          if (sr.reward.type === 'theme') {
+            const themeId = sr.reward.value as string;
+            if (!newThemes.includes(themeId)) newThemes.push(themeId);
           }
         }
       }
-    }
 
-    setProgression(p => ({
-      ...p,
-      elo: Math.max(0, p.elo + eloChange),
-      credits: p.credits + rewards.credits,
-      totalMatches: p.totalMatches + 1,
-      wins: won ? p.wins + 1 : p.wins,
-      losses: won ? p.losses : p.losses + 1,
-      winStreak: newWinStreak,
-      bestWinStreak: Math.max(p.bestWinStreak, newWinStreak),
-      seasonXP: newSeasonXP,
-      seasonLevel: newSeasonLevel,
-    }));
+      return {
+        ...p,
+        elo: Math.max(0, p.elo + eloChange),
+        credits: p.credits + rewards.credits,
+        totalMatches: p.totalMatches + 1,
+        wins: won ? p.wins + 1 : p.wins,
+        losses: won ? p.losses : p.losses + 1,
+        winStreak: newWinStreak,
+        bestWinStreak: Math.max(p.bestWinStreak, newWinStreak),
+        seasonXP: newSeasonXP,
+        seasonLevel: newSeasonLevel,
+        unlockedThemes: newThemes,
+      };
+    });
   };
 
   const updateChallengeProgress = (type: string, amount: number) => {
@@ -550,6 +554,7 @@ export default function App() {
       onMatchComplete={handleMatchComplete}
       onChallengeProgress={updateChallengeProgress}
       boardTheme={progression.activeTheme}
+      playerElo={progression.elo}
     />;
   }
 
@@ -902,6 +907,7 @@ export default function App() {
            onMatchComplete={handleMatchComplete}
            onChallengeProgress={updateChallengeProgress}
            boardTheme={progression.activeTheme}
+           playerElo={progression.elo}
          />
        </div>
     );
@@ -1625,6 +1631,7 @@ export default function App() {
            <>
              {user && <PlayerStats progression={progression} />}
              <DailyChallenges challenges={progression.dailyChallenges} />
+             {user && <FriendList />}
              <CommanderLeaderboard />
              <MatchHistory />
            </>

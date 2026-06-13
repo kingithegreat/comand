@@ -13,7 +13,7 @@ import HUDCombatLog from './HUDCombatLog';
 import RosterStatus from './RosterStatus';
 import SelectedUnitConsole from './SelectedUnitConsole';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
-import { BOARD_THEMES } from '../progression';
+import { BOARD_THEMES, calculateEloChange, getMatchRewards } from '../progression';
 import UnitSprite from './UnitSprite';
 import CommanderLeaderboard from './CommanderLeaderboard';
 import MatchHistory from './MatchHistory';
@@ -198,6 +198,7 @@ export default function Game({
   onMatchComplete,
   onChallengeProgress,
   boardTheme,
+  playerElo,
 }: {
   gameMode: 'local_ai' | 'local_p2p' | 'online' | 'online_coop',
   onBack: () => void,
@@ -212,6 +213,7 @@ export default function Game({
   onMatchComplete?: (won: boolean, survivalRate: number, turn: number) => void,
   onChallengeProgress?: (type: string, amount: number) => void,
   boardTheme?: string,
+  playerElo?: number,
 }) {
   const { playSound } = useAudio();
   const isOnline = (gameMode === 'online' || gameMode === 'online_coop') && onlineMatch;
@@ -3558,6 +3560,15 @@ export default function Game({
           onBack={onBack}
           onNextMission={campaignMissionId && winner === 'player' ? onNextMission : undefined}
           onReviewReplay={turnSnapshots.length > 0 ? () => setReplaySnapshotIndex(turnSnapshots.length - 1) : undefined}
+          onRematch={onBack}
+          isOnline={!!isOnline}
+          creditsEarned={(() => {
+            const won = winner === (myTeam || 'player');
+            const sc = startingUnits.filter(u => u.team === (myTeam || 'player')).length || 1;
+            const sv = units.filter(u => u.team === (myTeam || 'player') && u.hp > 0).length;
+            return getMatchRewards(won, sv / sc, turn).credits;
+          })()}
+          eloChange={calculateEloChange(playerElo || 1000, 1000, winner === (myTeam || 'player'))}
         />
       )}
 
