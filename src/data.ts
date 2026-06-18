@@ -5,13 +5,13 @@ export const CLASSES: CharacterClass[] = [
     className: "Sniper",
     archetype: "Long Range",
     description: "Long-range precision marksman clad in a shadow cloak. Excels at picking off high-value targets.",
-    stats: { maxHP: 70, damage: 45, range: 12, mobility: 3, accuracy: 95 },
+    stats: { maxHP: 70, damage: 38, range: 10, mobility: 3, accuracy: 88 },
     personality: 'Cautious',
     ability: {
       name: "Piercing Round",
-      description: "Fires an armor-piercing shot, dealing 55 high-range damage (1 AP).",
+      description: "Fires an armor-piercing shot that ignores cover, dealing 45 damage (1 AP).",
       apCost: 1,
-      range: 12,
+      range: 10,
       type: "offensive"
     }
   },

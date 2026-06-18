@@ -979,10 +979,8 @@ export default function Game({
         return true;
       }
       if (!unitAtTile || unitAtTile.team === selectedUnit.team) return false;
-      if (selectedUnit.class.className !== 'Sniper') {
-        const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
-        if (!hasLos) return false;
-      }
+      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+      if (!hasLos) return false;
       return true;
     }
     
@@ -1056,7 +1054,7 @@ export default function Game({
           selectedUnit.class.className === 'Flamethrower' ? 85 :
           selectedUnit.class.className === 'Assassin' ? 250 :
           selectedUnit.class.className === 'Demoman' ? (demoHits * 30) :
-          selectedUnit.class.className === 'Sniper' ? 55 :
+          selectedUnit.class.className === 'Sniper' ? 45 :
           selectedUnit.class.className === 'Assault' ? 25 :
           selectedUnit.class.className === 'Support' ? 20 : 0
         )
@@ -1190,17 +1188,17 @@ export default function Game({
     else if (selectedUnit.class.className === 'Sniper') {
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - 55) };
+          return { ...u, hp: Math.max(0, u.hp - 45) };
         }
         return u;
       });
       const damageId = crypto.randomUUID();
-      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: 55 }]);
+      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: 45 }]);
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
       setShake(true);
       setTimeout(() => setShake(false), 200);
-      addLog(`[SNIPED] ${attackerColor} Sniper discharged Piercing Round direct slug onto ${targetColor} ${targetUnit?.class.className} for 55 damage at ${getCoord(x, y)}!`, 'combat');
-      if (targetUnit && targetUnit.hp - 55 <= 0) {
+      addLog(`[SNIPED] ${attackerColor} Sniper discharged Piercing Round direct slug onto ${targetColor} ${targetUnit?.class.className} for 45 damage at ${getCoord(x, y)}!`, 'combat');
+      if (targetUnit && targetUnit.hp - 45 <= 0) {
         addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} neutralized by deep range Sniper strike.`, 'death');
       }
     }
@@ -1483,29 +1481,30 @@ export default function Game({
           }
        }
        else if (enemy.class.className === 'Sniper') {
-          const target = playerUnits.find(u => 
+          const target = playerUnits.find(u =>
              u.hp > 0 &&
-             (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 12
-          ); // Sniper Piercing round ignores normal cover blockers
+             (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 10 &&
+             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment)
+          );
           if (target) {
              const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
              const effectId = crypto.randomUUID();
-             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: 55 }]);
+             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: 45 }]);
              setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
              setShake(true);
              setTimeout(() => setShake(false), 200);
-             
+
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 55) };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 45) };
                 return u;
              }));
              setTimeout(() => {
                 setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
              }, 800);
-             
-             addLog(`[SNIPED] Enemy Sniper discharged Piercing Round direct slug onto Blue ${target.class.className} for 55 damage at ${getCoord(target.x, target.y)}!`, 'combat');
-             if (target.hp - 55 <= 0) {
+
+             addLog(`[SNIPED] Enemy Sniper discharged Piercing Round direct slug onto Blue ${target.class.className} for 45 damage at ${getCoord(target.x, target.y)}!`, 'combat');
+             if (target.hp - 45 <= 0) {
                 addLog(`[FATALITY] Blue ${target.class.className} neutralized by deep range Sniper strike.`, 'death');
              }
              return;
@@ -1632,10 +1631,14 @@ export default function Game({
           }
           if (foundTile) {
              const { x: tx, y: ty } = foundTile;
-             setMapEnvironment(prev => prev.map((row, ry) => 
-               row.map((cell, cx) => cx === tx && ry === ty ? { ...cell, type: 'crate' } : cell)
-             ));
+             const updatedMap = mapEnvironment.map((row, ry) =>
+               row.map((cell, cx) => cx === tx && ry === ty ? { ...cell, type: 'crate' as const } : cell)
+             );
+             setMapEnvironment(updatedMap);
              setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: u.ap - 1 } : u));
+             if (isOnline && onlineMatch?.id) {
+               updateDoc(doc(db, 'matches', onlineMatch.id), { gridEnv: JSON.stringify(updatedMap) });
+             }
              addLog(`[CONSTRUCT] Enemy Technician deployed localized cargo shielding cover at sector ${getCoord(tx, ty)}.`, 'ability');
              return;
           }
@@ -2084,13 +2087,17 @@ export default function Game({
         if (totalTeamUnits.length >= matchSquadSize) return;
 
         if (gameMode === 'online_coop') {
+           if (!userId) {
+             addLog(`[SYSTEM] Co-op requires authentication. Please sign in.`, 'system');
+             return;
+           }
            const myDeployedCount = totalTeamUnits.filter(u => u.ownerId === userId).length;
            const allowedDeployCount = isHost ? Math.ceil(matchSquadSize / 2) : Math.floor(matchSquadSize / 2);
            if (myDeployedCount >= allowedDeployCount) {
-             return; // Add log if needed, simple early return works
+             return;
            }
         }
-        
+
         const activeClass = getUnitClassWithBoosts(selectedClass, teamSelection);
         const newUnit: Unit = {
           id: crypto.randomUUID(),
@@ -2099,7 +2106,7 @@ export default function Game({
           hp: activeClass.stats.maxHP,
           ap: 2,
           team: teamSelection,
-          ownerId: userId,
+          ownerId: userId || 'unknown',
         };
         addLog(`[DEPLOY] ${teamSelection === 'player' ? 'Blue' : 'Purple'} ${selectedClass.className} deployed at quadrant ${getCoord(x, y)}.`, 'system');
         playSound('deploy');
@@ -2151,7 +2158,7 @@ export default function Game({
 
       if (existingUnit) {
          if (existingUnit.team === activeTeam) {
-            if (gameMode === 'online_coop' && existingUnit.ownerId !== userId) {
+            if (gameMode === 'online_coop' && (!userId || existingUnit.ownerId !== userId)) {
                addLog(`[SYSTEM] Access Denied. Sector lock belongs to another commander.`, 'system');
                return;
             }

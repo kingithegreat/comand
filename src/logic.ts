@@ -132,10 +132,14 @@ export const checkLineOfSight = (
   while (true) {
     if (cx === x2 && cy === y2) break;
     
-    // Ignore origin
     if (cx !== x1 || cy !== y1) {
-       if (map[cy][cx].type === "wall") { // Hard cover blocks LOS completely here
+       if (map[cy][cx].type === "wall") {
           return false;
+       }
+       if (cx !== x2 || cy !== y2) {
+         if (map[cy][cx].type === "crate") {
+            return false;
+         }
        }
     }
 

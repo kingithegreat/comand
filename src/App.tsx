@@ -433,7 +433,15 @@ export default function App() {
   const createRoom = async (isPublic: boolean = false, isCoop: boolean = false) => {
     if (!user) return;
     try {
-      const newMatchId = Math.random().toString(36).substring(2, 8).toUpperCase();
+      let newMatchId = '';
+      let attempts = 0;
+      while (attempts < 5) {
+        newMatchId = crypto.randomUUID().substring(0, 6).toUpperCase();
+        const existing = await getDoc(doc(db, 'matches', newMatchId));
+        if (!existing.exists()) break;
+        attempts++;
+      }
+      if (!newMatchId) return;
       await setDoc(doc(db, 'matches', newMatchId), {
         hostId: user.uid,
         status: 'waiting',
@@ -1290,7 +1298,7 @@ export default function App() {
                     <Shield className="w-4 h-4 text-emerald-400" /> 02. COVER & LINE-OF-SIGHT (LOS)
                   </h4>
                   <p className="uppercase">
-                    Solid walls and cargo crates absorb primary dynamic ordnance. If a direct tracing vector from shooting coordinate to hostile coordinate hits an obstacle, firing is blocked! Snipers bypass direct range rules but are still blockable by walls. Technicians can build crates anywhere on adjacent floor grids.
+                    Solid walls and cargo crates absorb primary dynamic ordnance. If a direct tracing vector from shooting coordinate to hostile coordinate hits an obstacle, firing is blocked! Sniper Piercing Rounds ignore cover penalties but are still blockable by walls and crates. Technicians can build crates anywhere on adjacent floor grids.
                   </p>
                 </div>
 
