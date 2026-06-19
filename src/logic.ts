@@ -115,6 +115,29 @@ export const calculateHitChance = (
   return { chance: finalChance, isCovered };
 };
 
+export const countWallsPenetrated = (
+  x1: number, y1: number, x2: number, y2: number, map: GridCell[][]
+): number => {
+  let dx = Math.abs(x2 - x1);
+  let dy = -Math.abs(y2 - y1);
+  let sx = x1 < x2 ? 1 : -1;
+  let sy = y1 < y2 ? 1 : -1;
+  let err = dx + dy;
+  let count = 0;
+  let cx = x1, cy = y1;
+  while (true) {
+    if (cx === x2 && cy === y2) break;
+    if (cx !== x1 || cy !== y1) {
+      if (cy < 0 || cy >= map.length || cx < 0 || cx >= (map[0]?.length ?? 0)) return count;
+      if (map[cy][cx].type === 'wall') count++;
+    }
+    let e2 = 2 * err;
+    if (e2 >= dy) { err += dy; cx += sx; }
+    if (e2 <= dx) { err += dx; cy += sy; }
+  }
+  return count;
+};
+
 export const checkLineOfSight = (
   x1: number,
   y1: number,

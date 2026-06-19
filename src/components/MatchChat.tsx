@@ -43,6 +43,7 @@ export default function MatchChat({ matchId }: MatchChatProps) {
       });
     } catch (err) {
       console.error("Error sending message:", err);
+      setInputText(text);
     }
   };
 

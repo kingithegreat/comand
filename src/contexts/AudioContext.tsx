@@ -47,7 +47,7 @@ const createCompressor = (ctx: AudioContext): DynamicsCompressorNode => {
   return comp;
 };
 
-export type SoundEffect = 'click' | 'select' | 'move' | 'attack' | 'damage' | 'deploy' | 'win' | 'lose' | 'heal' | 'ability' | 'critical' | 'error' | 'destroy';
+export type SoundEffect = 'click' | 'select' | 'move' | 'attack' | 'damage' | 'deploy' | 'win' | 'lose' | 'heal' | 'ability' | 'critical' | 'error' | 'destroy' | 'shield' | 'debuff' | 'turnChange' | 'explosion' | 'miss';
 export type MusicTrack = 'menu' | 'battle' | 'none';
 
 let musicNodes: { oscs: OscillatorNode[]; gains: GainNode[]; sources: AudioBufferSourceNode[]; master: GainNode | null; interval: ReturnType<typeof setInterval> | null } = {
@@ -992,60 +992,515 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       case 'error': {
-        const osc = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
-        const gain2 = ctx.createGain();
+        try {
+          // Harsh buzzer: two dissonant tones with distortion-like grit
+          const buzz1 = ctx.createOscillator();
+          const buzz1Gain = ctx.createGain();
+          buzz1.type = 'sawtooth';
+          buzz1.frequency.setValueAtTime(180, now);
+          buzz1.frequency.linearRampToValueAtTime(120, now + 0.15);
+          buzz1Gain.gain.setValueAtTime(0.3, now);
+          buzz1Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+          const buzz1Filter = ctx.createBiquadFilter();
+          buzz1Filter.type = 'lowpass';
+          buzz1Filter.frequency.setValueAtTime(600, now);
+          buzz1.connect(buzz1Filter);
+          buzz1Filter.connect(buzz1Gain);
+          buzz1Gain.connect(ctx.destination);
+          buzz1.start(now);
+          buzz1.stop(now + 0.18);
 
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(200, now);
-        gain.gain.setValueAtTime(0.15, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          // Second harsh tone slightly higher for dissonance
+          const buzz2 = ctx.createOscillator();
+          const buzz2Gain = ctx.createGain();
+          buzz2.type = 'square';
+          buzz2.frequency.setValueAtTime(210, now);
+          buzz2.frequency.linearRampToValueAtTime(140, now + 0.15);
+          buzz2Gain.gain.setValueAtTime(0.25, now);
+          buzz2Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+          buzz2.connect(buzz2Gain);
+          buzz2Gain.connect(ctx.destination);
+          buzz2.start(now);
+          buzz2.stop(now + 0.18);
 
-        osc2.type = 'square';
-        osc2.frequency.setValueAtTime(150, now + 0.12);
-        gain2.gain.setValueAtTime(0.15, now + 0.12);
-        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          // Second beat of the buzzer (double-buzz pattern)
+          const buzz3 = ctx.createOscillator();
+          const buzz3Gain = ctx.createGain();
+          buzz3.type = 'sawtooth';
+          buzz3.frequency.setValueAtTime(150, now + 0.22);
+          buzz3.frequency.linearRampToValueAtTime(90, now + 0.45);
+          buzz3Gain.gain.setValueAtTime(0.35, now + 0.22);
+          buzz3Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          const buzz3Filter = ctx.createBiquadFilter();
+          buzz3Filter.type = 'lowpass';
+          buzz3Filter.frequency.setValueAtTime(500, now + 0.22);
+          buzz3.connect(buzz3Filter);
+          buzz3Filter.connect(buzz3Gain);
+          buzz3Gain.connect(ctx.destination);
+          buzz3.start(now + 0.22);
+          buzz3.stop(now + 0.5);
 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
+          const buzz4 = ctx.createOscillator();
+          const buzz4Gain = ctx.createGain();
+          buzz4.type = 'square';
+          buzz4.frequency.setValueAtTime(175, now + 0.22);
+          buzz4.frequency.linearRampToValueAtTime(100, now + 0.45);
+          buzz4Gain.gain.setValueAtTime(0.3, now + 0.22);
+          buzz4Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          buzz4.connect(buzz4Gain);
+          buzz4Gain.connect(ctx.destination);
+          buzz4.start(now + 0.22);
+          buzz4.stop(now + 0.5);
 
-        osc.start(now);
-        osc.stop(now + 0.1);
-        osc2.start(now + 0.12);
-        osc2.stop(now + 0.25);
+          // Noise burst for texture
+          const errNoise = ctx.createBufferSource();
+          errNoise.buffer = getNoiseBuffer(ctx);
+          const errNoiseBp = ctx.createBiquadFilter();
+          errNoiseBp.type = 'bandpass';
+          errNoiseBp.frequency.setValueAtTime(400, now);
+          errNoiseBp.Q.setValueAtTime(2, now);
+          const errNoiseGain = ctx.createGain();
+          errNoiseGain.gain.setValueAtTime(0.12, now);
+          errNoiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          errNoise.connect(errNoiseBp);
+          errNoiseBp.connect(errNoiseGain);
+          errNoiseGain.connect(ctx.destination);
+          errNoise.start(now);
+          errNoise.stop(now + 0.15);
+        } catch (_) {}
         break;
       }
 
       case 'destroy': {
-        const noise = ctx.createBufferSource();
-        noise.buffer = getNoiseBuffer(ctx);
-        const noiseGain = ctx.createGain();
-        const noiseBand = ctx.createBiquadFilter();
-        noiseBand.type = 'bandpass';
-        noiseBand.frequency.setValueAtTime(800, now);
-        noiseBand.Q.setValueAtTime(0.5, now);
-        noiseGain.gain.setValueAtTime(0.3, now);
-        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        noise.connect(noiseBand);
-        noiseBand.connect(noiseGain);
-        noiseGain.connect(ctx.destination);
-        noise.start(now);
-        noise.stop(now + 0.3);
+        try {
+          const comp = createCompressor(ctx);
+          comp.connect(ctx.destination);
 
-        const thud = ctx.createOscillator();
-        const thudGain = ctx.createGain();
-        thud.type = 'sine';
-        thud.frequency.setValueAtTime(120, now);
-        thud.frequency.exponentialRampToValueAtTime(40, now + 0.15);
-        thudGain.gain.setValueAtTime(0.25, now);
-        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-        thud.connect(thudGain);
-        thudGain.connect(ctx.destination);
-        thud.start(now);
-        thud.stop(now + 0.2);
+          // Heavy initial blast - loud noise burst
+          const blast = ctx.createBufferSource();
+          blast.buffer = getNoiseBuffer(ctx);
+          const blastLp = ctx.createBiquadFilter();
+          blastLp.type = 'lowpass';
+          blastLp.frequency.setValueAtTime(1200, now);
+          blastLp.frequency.exponentialRampToValueAtTime(150, now + 0.4);
+          blastLp.Q.setValueAtTime(1.5, now);
+          const blastGain = ctx.createGain();
+          blastGain.gain.setValueAtTime(0.7, now);
+          blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          blast.connect(blastLp);
+          blastLp.connect(blastGain);
+          blastGain.connect(comp);
+          blast.start(now);
+          blast.stop(now + 0.5);
+
+          // Deep sub-bass boom that drops in pitch
+          const boom = ctx.createOscillator();
+          const boomGain = ctx.createGain();
+          boom.type = 'sine';
+          boom.frequency.setValueAtTime(150, now);
+          boom.frequency.exponentialRampToValueAtTime(20, now + 0.5);
+          boomGain.gain.setValueAtTime(0.8, now);
+          boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+          boom.connect(boomGain);
+          boomGain.connect(comp);
+          boom.start(now);
+          boom.stop(now + 0.6);
+
+          // Cracking/shattering mid layer
+          const crack = ctx.createOscillator();
+          const crackGain = ctx.createGain();
+          crack.type = 'sawtooth';
+          crack.frequency.setValueAtTime(600, now);
+          crack.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+          crackGain.gain.setValueAtTime(0.45, now);
+          crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          crack.connect(crackGain);
+          crackGain.connect(comp);
+          crack.start(now);
+          crack.stop(now + 0.15);
+
+          // High-frequency shrapnel/debris
+          const shrap = ctx.createBufferSource();
+          shrap.buffer = getNoiseBuffer(ctx);
+          const shrapHp = ctx.createBiquadFilter();
+          shrapHp.type = 'highpass';
+          shrapHp.frequency.setValueAtTime(3000, now + 0.03);
+          const shrapGain = ctx.createGain();
+          shrapGain.gain.setValueAtTime(0.25, now + 0.03);
+          shrapGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          shrap.connect(shrapHp);
+          shrapHp.connect(shrapGain);
+          shrapGain.connect(comp);
+          shrap.start(now + 0.03);
+          shrap.stop(now + 0.35);
+
+          // Metallic ring from destruction
+          const ring = ctx.createOscillator();
+          const ringGain = ctx.createGain();
+          ring.type = 'sine';
+          ring.frequency.setValueAtTime(1800, now + 0.02);
+          ring.frequency.exponentialRampToValueAtTime(900, now + 0.4);
+          ringGain.gain.setValueAtTime(0.1, now + 0.02);
+          ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          ring.connect(ringGain);
+          ringGain.connect(ctx.destination);
+          ring.start(now + 0.02);
+          ring.stop(now + 0.5);
+
+          // Reverb tail for spaciousness
+          const reverb = createReverb(ctx);
+          const reverbGain = ctx.createGain();
+          reverbGain.gain.setValueAtTime(0.12, now);
+          const revSrc = ctx.createBufferSource();
+          revSrc.buffer = getNoiseBuffer(ctx);
+          const revBp = ctx.createBiquadFilter();
+          revBp.type = 'bandpass';
+          revBp.frequency.setValueAtTime(500, now);
+          revSrc.connect(revBp);
+          revBp.connect(reverb);
+          reverb.connect(reverbGain);
+          reverbGain.connect(ctx.destination);
+          revSrc.start(now);
+          revSrc.stop(now + 0.15);
+        } catch (_) {}
+        break;
+      }
+
+      case 'shield': {
+        try {
+          // Ascending sparkle/chime - four rising bell-like tones
+          const shieldNotes = [880, 1174.66, 1396.91, 1760];
+          shieldNotes.forEach((freq, i) => {
+            const t = now + i * 0.07;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.18, t + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.25);
+
+            // Harmonic overtone for shimmer
+            const harm = ctx.createOscillator();
+            const harmGain = ctx.createGain();
+            harm.type = 'sine';
+            harm.frequency.setValueAtTime(freq * 2.5, t);
+            harmGain.gain.setValueAtTime(0, t);
+            harmGain.gain.linearRampToValueAtTime(0.05, t + 0.02);
+            harmGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+            harm.connect(harmGain);
+            harmGain.connect(ctx.destination);
+            harm.start(t);
+            harm.stop(t + 0.15);
+          });
+
+          // Crystalline noise shimmer
+          const shimmer = ctx.createBufferSource();
+          shimmer.buffer = getNoiseBuffer(ctx);
+          const shimBp = ctx.createBiquadFilter();
+          shimBp.type = 'bandpass';
+          shimBp.frequency.setValueAtTime(8000, now);
+          shimBp.Q.setValueAtTime(10, now);
+          const shimGain = ctx.createGain();
+          shimGain.gain.setValueAtTime(0.04, now);
+          shimGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          shimmer.connect(shimBp);
+          shimBp.connect(shimGain);
+          shimGain.connect(ctx.destination);
+          shimmer.start(now);
+          shimmer.stop(now + 0.5);
+
+          // Warm pad underneath for body
+          const pad = ctx.createOscillator();
+          const padGain = ctx.createGain();
+          pad.type = 'triangle';
+          pad.frequency.setValueAtTime(440, now);
+          pad.frequency.linearRampToValueAtTime(880, now + 0.3);
+          padGain.gain.setValueAtTime(0, now);
+          padGain.gain.linearRampToValueAtTime(0.08, now + 0.05);
+          padGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          pad.connect(padGain);
+          padGain.connect(ctx.destination);
+          pad.start(now);
+          pad.stop(now + 0.45);
+        } catch (_) {}
+        break;
+      }
+
+      case 'debuff': {
+        try {
+          // Descending ominous tone - three falling dissonant notes
+          const debuffNotes = [440, 330, 220];
+          debuffNotes.forEach((freq, i) => {
+            const t = now + i * 0.12;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, t);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.7, t + 0.15);
+            const filt = ctx.createBiquadFilter();
+            filt.type = 'lowpass';
+            filt.frequency.setValueAtTime(800, t);
+            filt.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+            gain.gain.setValueAtTime(0.2, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            osc.connect(filt);
+            filt.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.18);
+          });
+
+          // Low rumbling undertone for dread
+          const drone = ctx.createOscillator();
+          const droneGain = ctx.createGain();
+          drone.type = 'sine';
+          drone.frequency.setValueAtTime(80, now);
+          drone.frequency.linearRampToValueAtTime(50, now + 0.5);
+          droneGain.gain.setValueAtTime(0.2, now);
+          droneGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+          drone.connect(droneGain);
+          droneGain.connect(ctx.destination);
+          drone.start(now);
+          drone.stop(now + 0.55);
+
+          // Dissonant minor second for unease
+          const dissonance = ctx.createOscillator();
+          const dissGain = ctx.createGain();
+          dissonance.type = 'square';
+          dissonance.frequency.setValueAtTime(233, now);
+          dissonance.frequency.linearRampToValueAtTime(116, now + 0.4);
+          const dissFilt = ctx.createBiquadFilter();
+          dissFilt.type = 'lowpass';
+          dissFilt.frequency.setValueAtTime(500, now);
+          dissGain.gain.setValueAtTime(0.08, now);
+          dissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          dissonance.connect(dissFilt);
+          dissFilt.connect(dissGain);
+          dissGain.connect(ctx.destination);
+          dissonance.start(now);
+          dissonance.stop(now + 0.45);
+        } catch (_) {}
+        break;
+      }
+
+      case 'turnChange': {
+        try {
+          // Quick military snare roll (rapid noise bursts)
+          for (let i = 0; i < 6; i++) {
+            const t = now + i * 0.04;
+            const hit = ctx.createBufferSource();
+            hit.buffer = getNoiseBuffer(ctx);
+            const hitBp = ctx.createBiquadFilter();
+            hitBp.type = 'bandpass';
+            hitBp.frequency.setValueAtTime(3500, t);
+            hitBp.Q.setValueAtTime(2, t);
+            const hitGain = ctx.createGain();
+            hitGain.gain.setValueAtTime(0.15 + i * 0.03, t);
+            hitGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+            hit.connect(hitBp);
+            hitBp.connect(hitGain);
+            hitGain.connect(ctx.destination);
+            hit.start(t);
+            hit.stop(t + 0.04);
+          }
+
+          // Accented final hit (louder snare)
+          const accent = ctx.createBufferSource();
+          accent.buffer = getNoiseBuffer(ctx);
+          const accentBp = ctx.createBiquadFilter();
+          accentBp.type = 'bandpass';
+          accentBp.frequency.setValueAtTime(3000, now + 0.28);
+          accentBp.Q.setValueAtTime(1.5, now + 0.28);
+          const accentGain = ctx.createGain();
+          accentGain.gain.setValueAtTime(0.35, now + 0.28);
+          accentGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          accent.connect(accentBp);
+          accentBp.connect(accentGain);
+          accentGain.connect(ctx.destination);
+          accent.start(now + 0.28);
+          accent.stop(now + 0.4);
+
+          // Brief brass-like alert tone at the end
+          const alert = ctx.createOscillator();
+          const alertGain = ctx.createGain();
+          alert.type = 'square';
+          alert.frequency.setValueAtTime(523.25, now + 0.3);
+          const alertFilt = ctx.createBiquadFilter();
+          alertFilt.type = 'lowpass';
+          alertFilt.frequency.setValueAtTime(1000, now + 0.3);
+          alertFilt.frequency.exponentialRampToValueAtTime(400, now + 0.55);
+          alertGain.gain.setValueAtTime(0, now + 0.3);
+          alertGain.gain.linearRampToValueAtTime(0.15, now + 0.33);
+          alertGain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+          alert.connect(alertFilt);
+          alertFilt.connect(alertGain);
+          alertGain.connect(ctx.destination);
+          alert.start(now + 0.3);
+          alert.stop(now + 0.55);
+
+          // Kick drum under the accent
+          const kick = ctx.createOscillator();
+          const kickGain = ctx.createGain();
+          kick.type = 'sine';
+          kick.frequency.setValueAtTime(120, now + 0.28);
+          kick.frequency.exponentialRampToValueAtTime(40, now + 0.4);
+          kickGain.gain.setValueAtTime(0.3, now + 0.28);
+          kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+          kick.connect(kickGain);
+          kickGain.connect(ctx.destination);
+          kick.start(now + 0.28);
+          kick.stop(now + 0.42);
+        } catch (_) {}
+        break;
+      }
+
+      case 'explosion': {
+        try {
+          const comp = createCompressor(ctx);
+          comp.connect(ctx.destination);
+
+          // Massive initial noise blast
+          const blast = ctx.createBufferSource();
+          blast.buffer = getNoiseBuffer(ctx);
+          const blastLp = ctx.createBiquadFilter();
+          blastLp.type = 'lowpass';
+          blastLp.frequency.setValueAtTime(2000, now);
+          blastLp.frequency.exponentialRampToValueAtTime(80, now + 0.6);
+          blastLp.Q.setValueAtTime(1, now);
+          const blastGain = ctx.createGain();
+          blastGain.gain.setValueAtTime(0.8, now);
+          blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+          blast.connect(blastLp);
+          blastLp.connect(blastGain);
+          blastGain.connect(comp);
+          blast.start(now);
+          blast.stop(now + 0.7);
+
+          // Very deep sub-bass rumble
+          const sub = ctx.createOscillator();
+          const subGain = ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(60, now);
+          sub.frequency.exponentialRampToValueAtTime(15, now + 0.8);
+          subGain.gain.setValueAtTime(0.85, now);
+          subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+          sub.connect(subGain);
+          subGain.connect(comp);
+          sub.start(now);
+          sub.stop(now + 0.9);
+
+          // Secondary sub harmonic for chest-thumping feel
+          const sub2 = ctx.createOscillator();
+          const sub2Gain = ctx.createGain();
+          sub2.type = 'triangle';
+          sub2.frequency.setValueAtTime(40, now);
+          sub2.frequency.exponentialRampToValueAtTime(12, now + 0.7);
+          sub2Gain.gain.setValueAtTime(0.6, now);
+          sub2Gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+          sub2.connect(sub2Gain);
+          sub2Gain.connect(comp);
+          sub2.start(now);
+          sub2.stop(now + 0.8);
+
+          // Mid-range crackle
+          const midCrack = ctx.createOscillator();
+          const midCrackGain = ctx.createGain();
+          midCrack.type = 'sawtooth';
+          midCrack.frequency.setValueAtTime(800, now);
+          midCrack.frequency.exponentialRampToValueAtTime(50, now + 0.15);
+          midCrackGain.gain.setValueAtTime(0.4, now);
+          midCrackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+          midCrack.connect(midCrackGain);
+          midCrackGain.connect(comp);
+          midCrack.start(now);
+          midCrack.stop(now + 0.18);
+
+          // High debris scatter
+          const debris = ctx.createBufferSource();
+          debris.buffer = getNoiseBuffer(ctx);
+          const debrisHp = ctx.createBiquadFilter();
+          debrisHp.type = 'highpass';
+          debrisHp.frequency.setValueAtTime(4000, now + 0.05);
+          const debrisGain = ctx.createGain();
+          debrisGain.gain.setValueAtTime(0.2, now + 0.05);
+          debrisGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          debris.connect(debrisHp);
+          debrisHp.connect(debrisGain);
+          debrisGain.connect(comp);
+          debris.start(now + 0.05);
+          debris.stop(now + 0.4);
+
+          // Reverb tail for the boom
+          const reverb = createReverb(ctx);
+          const reverbGain = ctx.createGain();
+          reverbGain.gain.setValueAtTime(0.18, now);
+          const revSrc = ctx.createBufferSource();
+          revSrc.buffer = getNoiseBuffer(ctx);
+          const revLp = ctx.createBiquadFilter();
+          revLp.type = 'lowpass';
+          revLp.frequency.setValueAtTime(600, now);
+          revSrc.connect(revLp);
+          revLp.connect(reverb);
+          reverb.connect(reverbGain);
+          reverbGain.connect(ctx.destination);
+          revSrc.start(now);
+          revSrc.stop(now + 0.2);
+        } catch (_) {}
+        break;
+      }
+
+      case 'miss': {
+        try {
+          // Quick whoosh - filtered noise sweep
+          const whoosh = ctx.createBufferSource();
+          whoosh.buffer = getNoiseBuffer(ctx);
+          const whooshBp = ctx.createBiquadFilter();
+          whooshBp.type = 'bandpass';
+          whooshBp.frequency.setValueAtTime(800, now);
+          whooshBp.frequency.exponentialRampToValueAtTime(4000, now + 0.08);
+          whooshBp.frequency.exponentialRampToValueAtTime(600, now + 0.2);
+          whooshBp.Q.setValueAtTime(3, now);
+          const whooshGain = ctx.createGain();
+          whooshGain.gain.setValueAtTime(0.2, now);
+          whooshGain.gain.linearRampToValueAtTime(0.25, now + 0.06);
+          whooshGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          whoosh.connect(whooshBp);
+          whooshBp.connect(whooshGain);
+          whooshGain.connect(ctx.destination);
+          whoosh.start(now);
+          whoosh.stop(now + 0.22);
+
+          // Thin high-pitched whiff for the air displacement
+          const whiff = ctx.createOscillator();
+          const whiffGain = ctx.createGain();
+          whiff.type = 'sine';
+          whiff.frequency.setValueAtTime(2000, now);
+          whiff.frequency.exponentialRampToValueAtTime(800, now + 0.15);
+          whiffGain.gain.setValueAtTime(0.06, now);
+          whiffGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          whiff.connect(whiffGain);
+          whiffGain.connect(ctx.destination);
+          whiff.start(now);
+          whiff.stop(now + 0.15);
+
+          // Subtle low thump for near-miss impact
+          const thump = ctx.createOscillator();
+          const thumpGain = ctx.createGain();
+          thump.type = 'sine';
+          thump.frequency.setValueAtTime(100, now + 0.12);
+          thump.frequency.exponentialRampToValueAtTime(50, now + 0.22);
+          thumpGain.gain.setValueAtTime(0.08, now + 0.12);
+          thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          thump.connect(thumpGain);
+          thumpGain.connect(ctx.destination);
+          thump.start(now + 0.12);
+          thump.stop(now + 0.25);
+        } catch (_) {}
         break;
       }
     }

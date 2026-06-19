@@ -4,7 +4,7 @@ import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell, TurnSnapshot } from '../types';
 import { generateMap, MAPS } from '../mapUtils';
-import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats } from '../logic';
+import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats, countWallsPenetrated } from '../logic';
 import { getActiveChemistries, applyChemistryBuffsToStats, CHEMISTRIES } from '../chemistries';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc, setDoc, getDoc, increment, runTransaction } from 'firebase/firestore';
@@ -1056,6 +1056,7 @@ export default function Game({
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
       addLog(`[HEAL] ${attackerColor} Medic discharged Nanite Resuscitation onto ${attackerColor} ${targetUnit?.class.className} (+55 HP) at ${getCoord(x, y)}.`, 'ability');
       playSound('heal');
+      playSound('shield');
     }
     else if (selectedUnit.class.className === 'Flamethrower') {
       newUnits = newUnits.map(u => {
@@ -1145,19 +1146,21 @@ export default function Game({
       addLog(`[BOMBARD] ${attackerColor} Demoman launched high-explosive bundle at sector ${getCoord(x, y)} dealing 40 damage to surrounding enemy units.`, 'combat');
     }
     else if (selectedUnit.class.className === 'Sniper') {
+      const wallsHit = countWallsPenetrated(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+      const sniperAbilityDmg = wallsHit > 0 ? Math.floor(45 * 0.5) : 45;
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - 45) };
+          return { ...u, hp: Math.max(0, u.hp - sniperAbilityDmg) };
         }
         return u;
       });
       const damageId = crypto.randomUUID();
-      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: 45 }]);
+      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: sniperAbilityDmg }]);
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
       setShake(true);
       setTimeout(() => setShake(false), 200);
-      addLog(`[SNIPED] ${attackerColor} Sniper discharged Piercing Round direct slug onto ${targetColor} ${targetUnit?.class.className} for 45 damage at ${getCoord(x, y)}!`, 'combat');
-      if (targetUnit && targetUnit.hp - 45 <= 0) {
+      addLog(`[SNIPED] ${attackerColor} Sniper discharged Piercing Round direct slug onto ${targetColor} ${targetUnit?.class.className} for ${sniperAbilityDmg} damage at ${getCoord(x, y)}!${wallsHit > 0 ? ' (Reduced - wall penetration)' : ''}`, 'combat');
+      if (targetUnit && targetUnit.hp - sniperAbilityDmg <= 0) {
         addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} neutralized by deep range Sniper strike.`, 'death');
       }
     }
@@ -1175,6 +1178,7 @@ export default function Game({
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
       setShake(true);
       setTimeout(() => setShake(false), 200);
+      playSound('debuff');
 
       if (isSupport) {
         addLog(`[SUPPRESS] ${attackerColor} Support delivered Disruptor Matrix automatic suppress at ${targetColor} ${targetUnit?.class.className}: Dealt 20 damage, drained 1 AP!`, 'combat');
@@ -1200,6 +1204,7 @@ export default function Game({
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
       setShake(true);
       setTimeout(() => setShake(false), 200);
+      playSound('debuff');
       addLog(`[EMP] ${attackerColor} Phantom discharged EMP Pulse at ${targetColor} ${targetUnit?.class.className}: Dealt 15 damage, drained 1 AP!`, 'combat');
       if (targetUnit && targetUnit.hp - 15 <= 0) {
         addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} systems overloaded by electromagnetic surge.`, 'death');
@@ -1320,6 +1325,7 @@ export default function Game({
   };
 
   const handleEndTurn = useCallback(() => {
+    if (isSpectator) return;
     const nextTeam = activeTeam === 'player' ? 'enemy' : 'player';
     const nextTurn = activeTeam === 'enemy' ? turn + 1 : turn;
 
@@ -1330,6 +1336,7 @@ export default function Game({
     }));
 
     setBattleStats(prev => ({ ...prev, turnsElapsed: prev.turnsElapsed + 1 }));
+    playSound('turnChange');
     addLog(`[CYCLE] Terminating ${activeTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'} action cycle. Rotating control to ${nextTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'}. Turn ${nextTurn} active.`, 'system');
 
     if (isOnline) {
@@ -1354,7 +1361,7 @@ export default function Game({
        }
     }
     setSelectedUnitId(null);
-  }, [activeTeam, turn, units, isOnline, onlineMatch, addLog, gameMode, pendingTurnData]);
+  }, [activeTeam, turn, units, isOnline, onlineMatch, addLog, gameMode, pendingTurnData, isSpectator]);
 
   // Synchronize dynamic visual turn timer for multiplayer matches
   useEffect(() => {
@@ -1504,23 +1511,25 @@ export default function Game({
           );
           if (target) {
              const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
+             const wallsHit = countWallsPenetrated(enemy.x, enemy.y, target.x, target.y, mapEnvironment);
+             const aiSniperDmg = wallsHit > 0 ? Math.floor(45 * 0.5) : 45;
              const effectId = crypto.randomUUID();
-             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: 45 }]);
+             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: aiSniperDmg }]);
              setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
              setShake(true);
              setTimeout(() => setShake(false), 200);
 
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 45) };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - aiSniperDmg) };
                 return u;
              }));
              setTimeout(() => {
                 setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
              }, 800);
 
-             addLog(`[SNIPED] Enemy Sniper discharged Piercing Round direct slug onto Blue ${target.class.className} for 45 damage at ${getCoord(target.x, target.y)}!`, 'combat');
-             if (target.hp - 45 <= 0) {
+             addLog(`[SNIPED] Enemy Sniper discharged Piercing Round direct slug onto Blue ${target.class.className} for ${aiSniperDmg} damage at ${getCoord(target.x, target.y)}!${wallsHit > 0 ? ' (Reduced - wall penetration)' : ''}`, 'combat');
+             if (target.hp - aiSniperDmg <= 0) {
                 addLog(`[FATALITY] Blue ${target.class.className} neutralized by deep range Sniper strike.`, 'death');
              }
              return;
@@ -1806,9 +1815,13 @@ export default function Game({
        const isHit = Math.random() * 100 <= chance;
 
        if (isHit) {
-         const effectiveDmg = (enemy.class.className === 'Assassin' && p.class.className === 'Heavy')
+         let effectiveDmg = (enemy.class.className === 'Assassin' && p.class.className === 'Heavy')
            ? Math.floor(enemy.class.stats.damage * 0.5)
            : enemy.class.stats.damage;
+         if (enemy.class.className === 'Sniper') {
+           const wallsHit = countWallsPenetrated(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
+           if (wallsHit > 0) effectiveDmg = Math.floor(effectiveDmg * 0.5);
+         }
          setBattleStats(prev => ({ ...prev, damageTaken: prev.damageTaken + effectiveDmg }));
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
@@ -1836,6 +1849,7 @@ export default function Game({
          }
        } else {
          playSound('attack');
+         setTimeout(() => playSound('miss'), 150);
          const damageId = crypto.randomUUID();
          setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: 0 }]);
          setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
@@ -1848,7 +1862,7 @@ export default function Game({
          setTimeout(() => {
             setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
          }, 800);
-         
+
          addLog(`[MISS] Enemy ${enemy.class.className} fired on Blue ${p.class.className} (${chance}% hit chance) but missed!${isCovered ? ' (Cover interference)' : ''}`, 'info');
        }
        return;
@@ -2341,9 +2355,13 @@ export default function Game({
                   const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
 
                   if (isHit) {
-                    const effectiveDmg = (unit.class.className === 'Assassin' && existingUnit.class.className === 'Heavy')
+                    let effectiveDmg = (unit.class.className === 'Assassin' && existingUnit.class.className === 'Heavy')
                       ? Math.floor(unit.class.stats.damage * 0.5)
                       : unit.class.stats.damage;
+                    if (unit.class.className === 'Sniper') {
+                      const wallsHit = countWallsPenetrated(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment);
+                      if (wallsHit > 0) effectiveDmg = Math.floor(effectiveDmg * 0.5);
+                    }
                     if (unit.team === (myTeam || 'player')) {
                       setBattleStats(prev => ({
                         ...prev,
@@ -2393,8 +2411,9 @@ export default function Game({
                       }));
                     }
                     playSound('attack');
+                    setTimeout(() => playSound('miss'), 150);
                     const effectId = crypto.randomUUID();
-                    setDamageTexts(prev => [...prev, { id: effectId, x: existingUnit.x, y: existingUnit.y, amount: 0 }]); // Using 0 to represent miss
+                    setDamageTexts(prev => [...prev, { id: effectId, x: existingUnit.x, y: existingUnit.y, amount: 0 }]);
                     setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
 
                     const newUnits = units.map(u => {
@@ -2499,7 +2518,7 @@ export default function Game({
              setUnits(newUnits);
              setShake(true);
              setTimeout(() => setShake(false), 300);
-             playSound('destroy');
+             playSound('explosion');
              const teamColor = unit.team === 'player' ? 'Blue' : 'Purple';
              addLog(`[DETONATE] ${teamColor} ${unit.class.className} detonated explosive barrel at ${getCoord(x, y)} dealing 30 blast damage!`, 'combat');
              if (isOnline && onlineMatch?.id) {

@@ -800,6 +800,182 @@ export const MAPS: MapPreset[] = [
       "_______________"
     ]
   },
+  {
+    id: "bunker_siege",
+    name: "Bunker Siege",
+    description: "A heavily fortified compound with thick walls and narrow chokepoints. Attackers must breach layered defenses to reach the interior.",
+    layout: [
+      "_X___________X_",
+      "_X_XX_____XX_X_",
+      "___X__C_C__X___",
+      "_XXX_______XXX_",
+      "___X___B___X___",
+      "_C___X___X___C_",
+      "XX____XXX____XX",
+      "_______________",
+      "XX____XXX____XX",
+      "_C___X___X___C_",
+      "___X___B___X___",
+      "_XXX_______XXX_",
+      "___X__C_C__X___",
+      "_X_XX_____XX_X_",
+      "_X___________X_"
+    ]
+  },
+  {
+    id: "snipers_paradise",
+    name: "Sniper's Paradise",
+    description: "Long open corridors stretch across the battlefield with only scattered crates for cover. Perfect for long-range engagements.",
+    layout: [
+      "_______________",
+      "_C_________C___",
+      "_______________",
+      "____C_____C____",
+      "_______________",
+      "_______C_______",
+      "XX_C_______C_XX",
+      "_______________",
+      "XX_C_______C_XX",
+      "_______C_______",
+      "_______________",
+      "____C_____C____",
+      "_______________",
+      "_C_________C___",
+      "_______________"
+    ]
+  },
+  {
+    id: "killbox_arena",
+    name: "Killbox Arena",
+    description: "A cramped arena packed with explosive barrels. One stray shot can set off a devastating chain reaction.",
+    layout: [
+      "XXXXXXXXXXXXXXX",
+      "X_B___B___B___X",
+      "X__B___B___B__X",
+      "X_B_B_____B_B_X",
+      "X____B_B_B____X",
+      "X_B_________B_X",
+      "X___B_B_B_B___X",
+      "X_____________X",
+      "X___B_B_B_B___X",
+      "X_B_________B_X",
+      "X____B_B_B____X",
+      "X_B_B_____B_B_X",
+      "X__B___B___B__X",
+      "X_B___B___B___X",
+      "XXXXXXXXXXXXXXX"
+    ]
+  },
+  {
+    id: "frozen_outpost",
+    name: "Frozen Outpost",
+    description: "A symmetrical military compound with mirrored fortifications on each side. Discipline and formation win the day.",
+    layout: [
+      "__X_________X__",
+      "_XX___C_C___XX_",
+      "__X__XX_XX__X__",
+      "______C_C______",
+      "_C_X_______X_C_",
+      "__XX___B___XX__",
+      "___X_______X___",
+      "_______C_______",
+      "___X_______X___",
+      "__XX___B___XX__",
+      "_C_X_______X_C_",
+      "______C_C______",
+      "__X__XX_XX__X__",
+      "_XX___C_C___XX_",
+      "__X_________X__"
+    ]
+  },
+  {
+    id: "bridge_of_death",
+    name: "Bridge of Death",
+    description: "A narrow bridge spans a deadly chasm. Units must cross in tight formation, making every step a life-or-death decision.",
+    layout: [
+      "_____XXXXX_____",
+      "__C__X___X__C__",
+      "_____X___X_____",
+      "__B__X___X__B__",
+      "XXXXX_____XXXXX",
+      "XXXXX_____XXXXX",
+      "XXXXX__C__XXXXX",
+      "XXXXX_____XXXXX",
+      "XXXXX__C__XXXXX",
+      "XXXXX_____XXXXX",
+      "XXXXX_____XXXXX",
+      "__B__X___X__B__",
+      "_____X___X_____",
+      "__C__X___X__C__",
+      "_____XXXXX_____"
+    ]
+  },
+  {
+    id: "minefield",
+    name: "Minefield",
+    description: "Fire tiles are scattered across the battlefield like buried mines. Only those who find the safe paths will survive the crossing.",
+    layout: [
+      "_______________",
+      "__F___F___F____",
+      "____F___F___F__",
+      "_F_____F_____F_",
+      "___F_______F___",
+      "_____F_C_F_____",
+      "__F_____C____F_",
+      "___C_F___F_C___",
+      "_F_____C____F__",
+      "_____F_C_F_____",
+      "___F_______F___",
+      "_F_____F_____F_",
+      "____F___F___F__",
+      "__F___F___F____",
+      "_______________"
+    ]
+  },
+  {
+    id: "the_gauntlet",
+    name: "The Gauntlet",
+    description: "A long corridor of hazards forces both teams to run a deadly gauntlet of fire and poison before clashing in the center.",
+    layout: [
+      "XXXC_______CXXX",
+      "X_____________X",
+      "X__F_P_F_P_F__X",
+      "X_____________X",
+      "X__P_F_P_F_P__X",
+      "X_____________X",
+      "XXX__C_B_C__XXX",
+      "_______________",
+      "XXX__C_B_C__XXX",
+      "X_____________X",
+      "X__P_F_P_F_P__X",
+      "X_____________X",
+      "X__F_P_F_P_F__X",
+      "X_____________X",
+      "XXXC_______CXXX"
+    ]
+  },
+  {
+    id: "cathedral_ruins",
+    name: "Cathedral Ruins",
+    description: "The shattered remains of a grand cathedral. Towering pillars still stand amid rubble and debris, creating a hauntingly open battlefield.",
+    layout: [
+      "_______________",
+      "___X___C___X___",
+      "_____C___C_____",
+      "___X_______X___",
+      "_C_____B_____C_",
+      "_______________",
+      "___X___C___X___",
+      "_______X_______",
+      "___X___C___X___",
+      "_______________",
+      "_C_____B_____C_",
+      "___X_______X___",
+      "_____C___C_____",
+      "___X___C___X___",
+      "_______________"
+    ]
+  },
 ];
 
 export const generateMap = (layout?: string[]): GridMap => {
