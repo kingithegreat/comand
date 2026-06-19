@@ -185,6 +185,7 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
         <div className="w-full sm:w-2/3 border-b sm:border-b-0 sm:border-r border-zinc-800 border-opacity-50 p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 sm:overflow-y-auto relative bg-zinc-950 shrink-0 sm:shrink">
            <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1 sm:mb-2 sticky top-0 bg-zinc-950 z-10 py-1">Select Tactical Theater</p>
            {regions.map((r, i) => {
+             const isAct2Start = i === 10;
              const isSelected = selectedRegion.id === r.id;
              let bgClass = "bg-zinc-900 bg-opacity-80 border-zinc-800 border-opacity-50";
              let iconContent = <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-600" />;
@@ -206,8 +207,15 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
              }
 
              return (
-               <div 
-                 key={r.id}
+               <React.Fragment key={r.id}>
+               {isAct2Start && (
+                 <div className="flex items-center gap-3 mt-2 mb-1 shrink-0">
+                   <div className="flex-1 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
+                   <span className="text-[10px] sm:text-xs font-black text-cyan-400 uppercase tracking-[0.3em]">Act 2 — The Reclamation</span>
+                   <div className="flex-1 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
+                 </div>
+               )}
+               <div
                  onClick={() => {
                     if (r.status !== 'locked') {
                        playSound('click');
@@ -231,6 +239,7 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
                  </div>
                  {r.status === 'completed' && <div className="text-[9px] sm:text-[10px] text-emerald-500 font-bold uppercase border border-emerald-500/30 px-1.5 sm:px-2 py-0.5 rounded bg-emerald-500/10">CLEARED</div>}
                </div>
+               </React.Fragment>
              );
            })}
         </div>

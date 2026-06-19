@@ -225,7 +225,7 @@ export default function Game({
   const myTeam = isOnline 
     ? (gameMode === 'online_coop' ? (isSpectator ? undefined : 'player') : (isHost ? 'player' : (isSpectator ? undefined : 'enemy')))
     : (gameMode === 'local_ai' ? 'player' : (gameMode === 'local_p2p' ? activeTeam : undefined));
-  const isSmogActive = isOnline ? !!onlineMatch?.smogEnabled : (gameMode === 'local_ai' && ['sector-2', 'sector-5', 'sector-7', 'sector-9'].includes(campaignMissionId || '')) ? true : !!smogMode;
+  const isSmogActive = isOnline ? !!onlineMatch?.smogEnabled : (gameMode === 'local_ai' && ['sector-2', 'sector-5', 'sector-7', 'sector-9', 'sector-11', 'sector-14', 'sector-15'].includes(campaignMissionId || '')) ? true : !!smogMode;
   const matchSquadSize = isOnline ? (onlineMatch?.squadSize || squadSize || 4) : (squadSize || 4);
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>(() => {

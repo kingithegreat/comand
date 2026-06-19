@@ -976,6 +976,96 @@ export const MAPS: MapPreset[] = [
       "_______________"
     ]
   },
+
+  // ─── ACT 2 MAPS ────────────────────────────────────────────────
+  {
+    id: "blackout_station",
+    name: "Blackout Station",
+    description: "A powered-down deep-space relay station. Tight corridors and sealed bulkheads create deadly close-quarters chokepoints in total darkness.",
+    layout: [
+      "XXXXX___XXXXX__",
+      "X___X___X___X__",
+      "X_C_XX_XX_C_X__",
+      "X_______X___X__",
+      "XXX___XXX__XX__",
+      "___X_______X___",
+      "__CX__C_C__XC__",
+      "___X_______X___",
+      "___X___C___X___",
+      "__XX__XXX__XXX_",
+      "__X___X_______X",
+      "__X_C_XX_XX_C_X",
+      "__X___X___X___X",
+      "__XXXXX___XXXXX",
+      "_______________",
+    ]
+  },
+  {
+    id: "molten_foundry",
+    name: "Molten Foundry",
+    description: "An active war factory with molten metal channels cutting across the floor. Assembly line walls create narrow shooting lanes.",
+    layout: [
+      "X__C_______C__X",
+      "_XX_FFFFFFF_XX_",
+      "__X___________X",
+      "_CX__XX_XX__XC_",
+      "__X___________X",
+      "__XFFF_C_FFFX__",
+      "___X_______X___",
+      "_C___X_B_X___C_",
+      "___X_______X___",
+      "__XFFF_C_FFFX__",
+      "__X___________X",
+      "_CX__XX_XX__XC_",
+      "__X___________X",
+      "_XX_FFFFFFF_XX_",
+      "X__C_______C__X",
+    ]
+  },
+  {
+    id: "frozen_spire",
+    name: "Frozen Spire",
+    description: "A cryo-cooled signal tower on an ice moon. Leaking coolant creates poison zones around the central spire structure.",
+    layout: [
+      "__C_________C__",
+      "____PP___PP____",
+      "__X__P___P__X__",
+      "_XX___PPP___XX_",
+      "__X____C____X__",
+      "___XXXX_XXXX___",
+      "_C_X__P_P__X_C_",
+      "___X_PPCPP_X___",
+      "_C_X__P_P__X_C_",
+      "___XXXX_XXXX___",
+      "__X____C____X__",
+      "_XX___PPP___XX_",
+      "__X__P___P__X__",
+      "____PP___PP____",
+      "__C_________C__",
+    ]
+  },
+  {
+    id: "earth_citadel",
+    name: "Earth Citadel",
+    description: "The rogue AI's final stronghold on Earth. A devastated cityscape filled with fire, toxic waste, and crumbling fortifications. The last battlefield.",
+    layout: [
+      "X_C__F___F__C_X",
+      "_XX_PP___PP_XX_",
+      "__X___B_B___X__",
+      "_CX_________XC_",
+      "__X__XXXXX__X__",
+      "FF_X_X_C_X_X_FF",
+      "___X_X___X_X___",
+      "_C_X___B___X_C_",
+      "___X_X___X_X___",
+      "FF_X_X_C_X_X_FF",
+      "__X__XXXXX__X__",
+      "_CX_________XC_",
+      "__X___B_B___X__",
+      "_XX_PP___PP_XX_",
+      "X_C__F___F__C_X",
+    ]
+  },
 ];
 
 export const generateMap = (layout?: string[]): GridMap => {

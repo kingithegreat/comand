@@ -1,6 +1,8 @@
-import React, { useState, useCallback } from 'react';
-import { ArrowLeft, Save, Trash2, Download, Upload, RotateCcw, Grid, Copy, Check } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { ArrowLeft, Save, Trash2, Download, Upload, RotateCcw, Grid, Copy, Check, Globe, ThumbsUp, Play, Loader2, Users } from 'lucide-react';
 import { safeGetItem, safeSetItem } from '../lib/storage';
+import { db, auth } from '../firebase';
+import { collection, addDoc, getDocs, query, orderBy, limit, doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
 
 type TileType = 'floor' | 'wall' | 'crate' | 'fire' | 'poison' | 'barrel';
 
@@ -82,6 +84,65 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
   const [copied, setCopied] = useState(false);
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [showCommunity, setShowCommunity] = useState(false);
+  const [communityMaps, setCommunityMaps] = useState<any[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState(false);
+  const [votedMaps, setVotedMaps] = useState<Set<string>>(() => {
+    try {
+      const stored = safeGetItem('tc_voted_maps');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const fetchCommunityMaps = useCallback(async () => {
+    setCommunityLoading(true);
+    try {
+      const q = query(collection(db, 'community_maps'), orderBy('votes', 'desc'), limit(50));
+      const snap = await getDocs(q);
+      setCommunityMaps(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch { setCommunityMaps([]); }
+    setCommunityLoading(false);
+  }, []);
+
+  const handlePublish = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setPublishing(true);
+    try {
+      const layout = gridToLayout(grid);
+      await addDoc(collection(db, 'community_maps'), {
+        name: mapName || 'Untitled',
+        layout,
+        authorId: user.uid,
+        authorName: user.displayName || 'Commander',
+        votes: 0,
+        plays: 0,
+        createdAt: Date.now(),
+      });
+      setPublishSuccess(true);
+      setTimeout(() => setPublishSuccess(false), 3000);
+    } catch {}
+    setPublishing(false);
+  };
+
+  const handleVote = async (mapId: string) => {
+    if (votedMaps.has(mapId)) return;
+    try {
+      await updateDoc(doc(db, 'community_maps', mapId), { votes: increment(1) });
+      const next = new Set(votedMaps);
+      next.add(mapId);
+      setVotedMaps(next);
+      safeSetItem('tc_voted_maps', JSON.stringify([...next]));
+      setCommunityMaps(prev => prev.map(m => m.id === mapId ? { ...m, votes: (m.votes || 0) + 1 } : m));
+    } catch {}
+  };
+
+  const handleCommunityPlay = async (mapId: string, layout: string[]) => {
+    try { updateDoc(doc(db, 'community_maps', mapId), { plays: increment(1) }).catch(() => {}); } catch {}
+    if (onPlayMap) onPlayMap(layout);
+  };
 
   const paintTile = useCallback((x: number, y: number) => {
     setGrid(prev => {
@@ -256,6 +317,15 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
           <button onClick={() => setShowSaved(!showSaved)} className="flex items-center gap-1.5 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-lg text-xs font-bold uppercase cursor-pointer transition-colors">
             <Download className="w-3.5 h-3.5" /> Saved Maps ({savedMaps.length})
           </button>
+          <button onClick={() => { setShowCommunity(!showCommunity); if (!showCommunity) fetchCommunityMaps(); }} className="flex items-center gap-1.5 px-4 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-lg text-xs font-bold uppercase cursor-pointer transition-colors">
+            <Globe className="w-3.5 h-3.5" /> Community Maps
+          </button>
+          {auth.currentUser && (
+            <button onClick={handlePublish} disabled={publishing} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-xs font-bold uppercase cursor-pointer transition-colors disabled:opacity-50">
+              {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : publishSuccess ? <Check className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+              {publishing ? 'Publishing...' : publishSuccess ? 'Published!' : 'Publish Map'}
+            </button>
+          )}
           {onPlayMap && (
             <button
               onClick={() => onPlayMap(gridToLayout(grid))}
@@ -322,6 +392,81 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
                       )}
                       <button onClick={() => handleDelete(i)} className="py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-[10px] font-bold uppercase cursor-pointer transition-colors">
                         <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Community Maps */}
+        {showCommunity && (
+          <div className="bg-zinc-900/80 border border-cyan-500/20 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-3.5 h-3.5" /> Community Maps
+              </span>
+              <button onClick={fetchCommunityMaps} className="text-[9px] text-zinc-500 hover:text-cyan-400 uppercase font-bold cursor-pointer transition-colors">
+                Refresh
+              </button>
+            </div>
+            {communityLoading ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-cyan-400/60">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-xs uppercase font-bold">Loading community maps...</span>
+              </div>
+            ) : communityMaps.length === 0 ? (
+              <p className="text-xs text-zinc-500 uppercase text-center py-4">No community maps yet. Be the first to publish one!</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {communityMaps.map((m) => (
+                  <div key={m.id} className="bg-black/40 border border-zinc-800/40 rounded-lg p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white uppercase">{m.name}</span>
+                      <span className="text-[8px] text-zinc-500">by {m.authorName}</span>
+                    </div>
+                    <div className="grid gap-[0.5px]" style={{ gridTemplateColumns: `repeat(15, 1fr)` }}>
+                      {m.layout?.map((row: string, ry: number) =>
+                        row.split('').map((ch: string, rx: number) => {
+                          const t = CHAR_TO_TILE[ch] || 'floor';
+                          return (
+                            <div
+                              key={`${rx}-${ry}`}
+                              className={`w-1.5 h-1.5 ${t === 'wall' ? 'bg-zinc-500' : t === 'crate' ? 'bg-amber-700' : t === 'fire' ? 'bg-orange-500' : t === 'poison' ? 'bg-lime-500' : t === 'barrel' ? 'bg-red-600' : 'bg-zinc-900/60'}`}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                      <span className="flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> {m.votes || 0}</span>
+                      <span className="flex items-center gap-1"><Play className="w-3 h-3" /> {m.plays || 0} plays</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setGrid(layoutToGrid(m.layout)); setMapName(m.name); setShowCommunity(false); }}
+                        className="flex-1 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-lg text-[10px] font-bold uppercase cursor-pointer transition-colors"
+                      >
+                        Load
+                      </button>
+                      {onPlayMap && (
+                        <button onClick={() => handleCommunityPlay(m.id, m.layout)} className="flex-1 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-lg text-[10px] font-bold uppercase cursor-pointer transition-colors">
+                          Play
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleVote(m.id)}
+                        disabled={votedMaps.has(m.id)}
+                        className={`py-1.5 px-3 rounded-lg text-[10px] font-bold uppercase cursor-pointer transition-colors border ${
+                          votedMaps.has(m.id)
+                            ? 'bg-amber-500/20 border-amber-500/30 text-amber-400 cursor-default'
+                            : 'bg-zinc-800/50 hover:bg-amber-500/10 border-zinc-700/30 hover:border-amber-500/30 text-zinc-400 hover:text-amber-400'
+                        }`}
+                      >
+                        <ThumbsUp className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
