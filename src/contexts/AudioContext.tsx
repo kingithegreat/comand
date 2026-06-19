@@ -161,91 +161,158 @@ const playMenuMusic = (ctx: AudioContext) => {
 const playBattleMusic = (ctx: AudioContext) => {
   stopMusicNodes();
   const master = ctx.createGain();
-  master.gain.setValueAtTime(0.05, ctx.currentTime);
-  master.connect(ctx.destination);
+  master.gain.setValueAtTime(0.07, ctx.currentTime);
+  const comp = createCompressor(ctx);
+  master.connect(comp);
+  comp.connect(ctx.destination);
   musicNodes.master = master;
 
-  const bassNotes = [55, 58.27, 51.91, 49];
+  const marchBass = [55, 55, 58.27, 51.91, 49, 49, 55, 51.91];
+  const droneChords = [
+    [82.41, 110, 146.83],
+    [87.31, 116.54, 155.56],
+    [77.78, 103.83, 138.59],
+    [73.42, 98, 130.81],
+  ];
+  const brassNotes = [220, 246.94, 261.63, 293.66, 329.63, 293.66, 261.63, 246.94,
+                      220, 196, 174.61, 196, 220, 261.63, 246.94, 220];
   let beatIdx = 0;
 
   const playBeat = () => {
     pruneMusicNodes();
     const now = ctx.currentTime;
-    const bassFreq = bassNotes[Math.floor(beatIdx / 4) % bassNotes.length];
+    const beatInBar = beatIdx % 8;
 
-    const kick = ctx.createOscillator();
-    const kickGain = ctx.createGain();
-    kick.type = 'sine';
-    kick.frequency.setValueAtTime(90, now);
-    kick.frequency.exponentialRampToValueAtTime(30, now + 0.15);
-    kickGain.gain.setValueAtTime(0.5, now);
-    kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-    kick.connect(kickGain);
-    kickGain.connect(master);
-    kick.start(now);
-    kick.stop(now + 0.2);
-    musicNodes.oscs.push(kick);
-    musicNodes.gains.push(kickGain);
-
-    if (beatIdx % 2 === 1) {
-      const hihat = ctx.createBufferSource();
-      hihat.buffer = getNoiseBuffer(ctx);
-      const hihatHp = ctx.createBiquadFilter();
-      hihatHp.type = 'highpass';
-      hihatHp.frequency.setValueAtTime(8000, now);
-      const hihatGain = ctx.createGain();
-      hihatGain.gain.setValueAtTime(0.08, now);
-      hihatGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-      hihat.connect(hihatHp);
-      hihatHp.connect(hihatGain);
-      hihatGain.connect(master);
-      hihat.start(now);
-      hihat.stop(now + 0.05);
-      musicNodes.sources.push(hihat);
-      musicNodes.gains.push(hihatGain);
+    // War drum kick — heavy on beats 0 and 4 (march rhythm)
+    if (beatInBar === 0 || beatInBar === 4) {
+      const kick = ctx.createOscillator();
+      const kickGain = ctx.createGain();
+      kick.type = 'sine';
+      kick.frequency.setValueAtTime(100, now);
+      kick.frequency.exponentialRampToValueAtTime(25, now + 0.25);
+      kickGain.gain.setValueAtTime(0.7, now);
+      kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      kick.connect(kickGain);
+      kickGain.connect(master);
+      kick.start(now);
+      kick.stop(now + 0.35);
+      musicNodes.oscs.push(kick);
+      musicNodes.gains.push(kickGain);
     }
 
+    // Snare-like hit on beats 2 and 6
+    if (beatInBar === 2 || beatInBar === 6) {
+      const snare = ctx.createBufferSource();
+      snare.buffer = getNoiseBuffer(ctx);
+      const snareFilter = ctx.createBiquadFilter();
+      snareFilter.type = 'bandpass';
+      snareFilter.frequency.setValueAtTime(3000, now);
+      snareFilter.Q.setValueAtTime(1.5, now);
+      const snareGain = ctx.createGain();
+      snareGain.gain.setValueAtTime(0.18, now);
+      snareGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      snare.connect(snareFilter);
+      snareFilter.connect(snareGain);
+      snareGain.connect(master);
+      snare.start(now);
+      snare.stop(now + 0.12);
+      musicNodes.sources.push(snare);
+      musicNodes.gains.push(snareGain);
+    }
+
+    // Double-time toms on odd beats for urgency
+    if (beatInBar % 2 === 1) {
+      const tom = ctx.createOscillator();
+      const tomGain = ctx.createGain();
+      tom.type = 'sine';
+      tom.frequency.setValueAtTime(beatInBar === 1 ? 150 : beatInBar === 3 ? 130 : beatInBar === 5 ? 170 : 120, now);
+      tom.frequency.exponentialRampToValueAtTime(60, now + 0.15);
+      tomGain.gain.setValueAtTime(0.25, now);
+      tomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      tom.connect(tomGain);
+      tomGain.connect(master);
+      tom.start(now);
+      tom.stop(now + 0.18);
+      musicNodes.oscs.push(tom);
+      musicNodes.gains.push(tomGain);
+    }
+
+    // Deep bass drone — changes every 8 beats
+    const bassFreq = marchBass[beatInBar];
     const bass = ctx.createOscillator();
     const bassGain = ctx.createGain();
+    const bassFilter = ctx.createBiquadFilter();
     bass.type = 'sawtooth';
     bass.frequency.setValueAtTime(bassFreq, now);
-    const bassFilter = ctx.createBiquadFilter();
     bassFilter.type = 'lowpass';
-    bassFilter.frequency.setValueAtTime(200, now);
-    bassGain.gain.setValueAtTime(0.25, now);
-    bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    bassFilter.frequency.setValueAtTime(180, now);
+    bassGain.gain.setValueAtTime(0.3, now);
+    bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
     bass.connect(bassFilter);
     bassFilter.connect(bassGain);
     bassGain.connect(master);
     bass.start(now);
-    bass.stop(now + 0.4);
+    bass.stop(now + 0.45);
     musicNodes.oscs.push(bass);
     musicNodes.gains.push(bassGain);
 
-    if (beatIdx % 8 === 0) {
-      const melodyNotes = [220, 261.63, 293.66, 246.94, 220, 196, 174.61, 196];
-      const note = melodyNotes[Math.floor(beatIdx / 8) % melodyNotes.length];
-      const mel = ctx.createOscillator();
-      const melGain = ctx.createGain();
-      mel.type = 'triangle';
-      mel.frequency.setValueAtTime(note, now);
-      mel.frequency.linearRampToValueAtTime(note * 1.01, now + 1.5);
-      melGain.gain.setValueAtTime(0, now);
-      melGain.gain.linearRampToValueAtTime(0.15, now + 0.2);
-      melGain.gain.linearRampToValueAtTime(0, now + 1.8);
-      mel.connect(melGain);
-      melGain.connect(master);
-      mel.start(now);
-      mel.stop(now + 2);
-      musicNodes.oscs.push(mel);
-      musicNodes.gains.push(melGain);
+    // Tension string pad — sustains over 4 bars, changes chord
+    if (beatIdx % 16 === 0) {
+      const chord = droneChords[Math.floor(beatIdx / 16) % droneChords.length];
+      chord.forEach(freq => {
+        const pad = ctx.createOscillator();
+        const padGain = ctx.createGain();
+        pad.type = 'sawtooth';
+        pad.frequency.setValueAtTime(freq, now);
+        pad.frequency.linearRampToValueAtTime(freq * 1.005, now + 4);
+        const padFilter = ctx.createBiquadFilter();
+        padFilter.type = 'lowpass';
+        padFilter.frequency.setValueAtTime(400, now);
+        padFilter.frequency.linearRampToValueAtTime(600, now + 3);
+        padFilter.frequency.linearRampToValueAtTime(300, now + 7);
+        padGain.gain.setValueAtTime(0, now);
+        padGain.gain.linearRampToValueAtTime(0.12, now + 1.5);
+        padGain.gain.linearRampToValueAtTime(0.08, now + 5);
+        padGain.gain.linearRampToValueAtTime(0, now + 7.8);
+        pad.connect(padFilter);
+        padFilter.connect(padGain);
+        padGain.connect(master);
+        pad.start(now);
+        pad.stop(now + 8);
+        musicNodes.oscs.push(pad);
+        musicNodes.gains.push(padGain);
+      });
+    }
+
+    // Brass-like melody — plays every 4 beats
+    if (beatIdx % 4 === 0) {
+      const note = brassNotes[Math.floor(beatIdx / 4) % brassNotes.length];
+      const brass = ctx.createOscillator();
+      const brassGain = ctx.createGain();
+      const brassFilter = ctx.createBiquadFilter();
+      brass.type = 'square';
+      brass.frequency.setValueAtTime(note, now);
+      brassFilter.type = 'lowpass';
+      brassFilter.frequency.setValueAtTime(800, now);
+      brassFilter.frequency.linearRampToValueAtTime(500, now + 1.5);
+      brassGain.gain.setValueAtTime(0, now);
+      brassGain.gain.linearRampToValueAtTime(0.1, now + 0.08);
+      brassGain.gain.linearRampToValueAtTime(0.07, now + 0.5);
+      brassGain.gain.linearRampToValueAtTime(0, now + 1.8);
+      brass.connect(brassFilter);
+      brassFilter.connect(brassGain);
+      brassGain.connect(master);
+      brass.start(now);
+      brass.stop(now + 2);
+      musicNodes.oscs.push(brass);
+      musicNodes.gains.push(brassGain);
     }
 
     beatIdx++;
   };
 
   playBeat();
-  musicNodes.interval = setInterval(playBeat, 500);
+  musicNodes.interval = setInterval(playBeat, 375);
 };
 
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
