@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, ShieldAlert, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal, Wind, Flag, MessageSquare, Save, Download } from 'lucide-react';
+import { Shield, ShieldAlert, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal, Wind, Flag, MessageSquare, Save, Download, Undo2, Eye, EyeOff, Keyboard } from 'lucide-react';
 import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell, TurnSnapshot, StatusEffect } from '../types';
@@ -414,6 +414,27 @@ export default function Game({
   const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>(null);
   const [colorblindMode, setColorblindMode] = useState(false);
 
+  // Feature: Undo Move
+  const [lastMoveState, setLastMoveState] = useState<{ unitId: string; x: number; y: number; ap: number; facing?: 'up' | 'down' | 'left' | 'right' } | null>(null);
+
+  // Feature: Overwatch
+  const [overwatchUnits, setOverwatchUnits] = useState<string[]>([]);
+
+  // Feature: Danger Zone
+  const [showDangerZone, setShowDangerZone] = useState(false);
+
+  // Feature: Kill Feed
+  const [killFeed, setKillFeed] = useState<{ id: string; killer: string; killerTeam: string; victim: string; victimTeam: string; timestamp: number }[]>([]);
+
+  // Feature: Hover Tooltip
+  const [tooltipUnit, setTooltipUnit] = useState<{ unit: Unit; screenX: number; screenY: number } | null>(null);
+
+  // Feature: Minimap
+  const [showMinimap, setShowMinimap] = useState(true);
+
+  // Feature: Camera Follow AI
+  const [aiHighlightTile, setAiHighlightTile] = useState<{ x: number; y: number } | null>(null);
+
   useEffect(() => {
     if (mode === 'play') {
       setActiveLeftTab(null);
@@ -422,6 +443,25 @@ export default function Game({
       setActiveLeftTab(null);
       setActiveRightTab(null);
     }
+  }, [mode]);
+
+  // Kill feed auto-cleanup
+  useEffect(() => {
+    if (killFeed.length === 0) return;
+    const timer = setTimeout(() => {
+      setKillFeed(prev => prev.filter(k => Date.now() - k.timestamp < 4000));
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [killFeed]);
+
+  // Clear undo state on turn change or attack
+  useEffect(() => {
+    setLastMoveState(null);
+  }, [turn, activeTeam]);
+
+  // Clear overwatch on new match
+  useEffect(() => {
+    if (mode === 'deploy') setOverwatchUnits([]);
   }, [mode]);
 
   useEffect(() => {
@@ -511,6 +551,52 @@ export default function Game({
     if (isOnline) {
       updateOnlineState(newUnits, turnRef.current, activeTeamRef.current);
     }
+  };
+
+  // Feature: Undo Move
+  const handleUndoMove = () => {
+    if (!lastMoveState) return;
+    const { unitId, x, y, ap, facing } = lastMoveState;
+    const newUnits = units.map(u =>
+      u.id === unitId ? { ...u, x, y, ap, facing: facing || u.facing } : u
+    );
+    setUnits(newUnits);
+    setLastMoveState(null);
+    addLog(`[UNDO] Movement reverted — unit returned to ${getCoord(x, y)}.`, 'system');
+    playSound('click');
+    if (isOnline) {
+      updateOnlineState(newUnits, turnRef.current, activeTeamRef.current);
+    }
+  };
+
+  // Feature: Overwatch
+  const handleSetOverwatch = () => {
+    if (!selectedUnit || selectedUnit.ap < 1 || selectedUnit.team !== activeTeam) return;
+    if (overwatchUnits.includes(selectedUnit.id)) return;
+    setOverwatchUnits(prev => [...prev, selectedUnit.id]);
+    const newUnits = units.map(u =>
+      u.id === selectedUnit.id ? { ...u, ap: 0 } : u
+    );
+    setUnits(newUnits);
+    setSelectedUnitId(null);
+    const teamColor = selectedUnit.team === 'player' ? 'Blue' : 'Purple';
+    addLog(`[OVERWATCH] ${teamColor} ${selectedUnit.class.className} is on overwatch — will fire at first enemy in range!`, 'ability');
+    playSound('shield');
+    if (isOnline) {
+      updateOnlineState(newUnits, turnRef.current, activeTeamRef.current);
+    }
+  };
+
+  // Feature: Kill Feed Helper
+  const addKillFeedEntry = (killerName: string, killerTeam: string, victimName: string, victimTeam: string) => {
+    setKillFeed(prev => [...prev, {
+      id: crypto.randomUUID(),
+      killer: killerName,
+      killerTeam,
+      victim: victimName,
+      victimTeam,
+      timestamp: Date.now()
+    }].slice(-5));
   };
 
   const handleRenameUnit = useCallback((unitId: string, newName: string) => {
@@ -1001,10 +1087,51 @@ export default function Game({
     }
   };
 
+  // Feature: Keyboard Shortcuts
+  useEffect(() => {
+    if (mode !== 'play' || winner) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const key = e.key.toLowerCase();
+      if (key === 'escape') {
+        setSelectedUnitId(null);
+        setIsAbilityActive(false);
+        setIsSecondAbilityActive(false);
+      } else if (key === 'e') {
+        if (activeTeam === (myTeam || 'player')) handleEndTurn();
+      } else if (key === 'q' && selectedUnit && selectedUnit.class.ability && selectedUnit.ap >= 1) {
+        if (selectedUnit.class.ability.type === 'self') {
+          handleSelfAbility();
+        } else {
+          setIsAbilityActive(prev => !prev);
+          setIsSecondAbilityActive(false);
+        }
+      } else if (key === 'w' && selectedUnit && selectedUnit.class.secondAbility && selectedUnit.ap >= 1 && !(selectedUnit.abilityDisabled && selectedUnit.abilityDisabled > 0)) {
+        setIsSecondAbilityActive(prev => !prev);
+        setIsAbilityActive(false);
+      } else if (key === 'tab') {
+        e.preventDefault();
+        const myUnits = units.filter(u => u.team === activeTeam && u.hp > 0 && u.ap > 0);
+        if (myUnits.length === 0) return;
+        const currentIdx = myUnits.findIndex(u => u.id === selectedUnitId);
+        const nextIdx = (currentIdx + 1) % myUnits.length;
+        setSelectedUnitId(myUnits[nextIdx].id);
+        playSound('click');
+      } else if (key === 'z' && lastMoveState) {
+        handleUndoMove();
+      } else if (key === 'd') {
+        setShowDangerZone(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [mode, winner, activeTeam, myTeam, selectedUnit, selectedUnitId, units, lastMoveState]);
+
   const executeAbility = (x: number, y: number) => {
     if (!selectedUnit || !selectedUnit.class.ability) return;
     const ability = selectedUnit.class.ability;
     if (selectedUnit.ap < ability.apCost) return;
+    setLastMoveState(null); // Can't undo after using ability
 
     const targetUnit = units.find(u => u.x === x && u.y === y && u.hp > 0);
 
@@ -1597,6 +1724,53 @@ export default function Game({
       };
     });
 
+    // Feature: Overwatch — fire at enemies before turn switches
+    let overwatchFired = false;
+    const owTeam = nextTeam;
+    const owEnemies = updatedUnits.filter(u => u.team !== owTeam && u.hp > 0);
+    overwatchUnits.forEach(owId => {
+      const owUnit = updatedUnits.find(u => u.id === owId && u.team === owTeam && u.hp > 0);
+      if (!owUnit) return;
+      for (const enemy of owEnemies) {
+        const dist = Math.abs(owUnit.x - enemy.x) + Math.abs(owUnit.y - enemy.y);
+        const pen = owUnit.class.className === 'Sniper' ? 1 : 0;
+        if (dist <= owUnit.class.stats.range && checkLineOfSight(owUnit.x, owUnit.y, enemy.x, enemy.y, mapEnvironment, pen)) {
+          const { chance } = calculateHitChance(owUnit, enemy, mapEnvironment);
+          const isHit = Math.random() * 100 <= chance;
+          const owColor = owUnit.team === 'player' ? 'Blue' : 'Purple';
+          const eColor = enemy.team === 'player' ? 'Blue' : 'Purple';
+          if (isHit) {
+            const dmg = Math.floor(owUnit.class.stats.damage * 0.75);
+            const idx = updatedUnits.findIndex(u => u.id === enemy.id);
+            if (idx >= 0) {
+              updatedUnits[idx] = { ...updatedUnits[idx], hp: Math.max(0, updatedUnits[idx].hp - dmg) };
+            }
+            const dmgId = crypto.randomUUID();
+            setDamageTexts(prev => [...prev, { id: dmgId, x: enemy.x, y: enemy.y, amount: dmg }]);
+            setTimeout(() => setDamageTexts(c => c.filter(d => d.id !== dmgId)), 1000);
+            addLog(`[OVERWATCH] ${owColor} ${owUnit.class.className} reaction fire! Hit ${eColor} ${enemy.class.className} for ${dmg} damage!`, 'combat');
+            if (updatedUnits[idx]?.hp <= 0) {
+              addLog(`[FATALITY] ${eColor} ${enemy.class.className} eliminated by overwatch fire!`, 'death');
+              addKillFeedEntry(owUnit.class.className, owUnit.team, enemy.class.className, enemy.team);
+            }
+            overwatchFired = true;
+          } else {
+            addLog(`[OVERWATCH] ${owColor} ${owUnit.class.className} reaction fire missed ${eColor} ${enemy.class.className}!`, 'info');
+          }
+          break;
+        }
+      }
+    });
+    setOverwatchUnits([]);
+    if (overwatchFired) {
+      setShake(true);
+      setTimeout(() => setShake(false), 200);
+      playSound('attack');
+    }
+
+    // Clear AI camera highlight on turn end
+    if (nextTeam === (myTeam || 'player')) setAiHighlightTile(null);
+
     setBattleStats(prev => ({ ...prev, turnsElapsed: prev.turnsElapsed + 1 }));
     playSound('turnChange');
     addLog(`[CYCLE] Terminating ${activeTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'} action cycle. Rotating control to ${nextTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'}. Turn ${nextTurn} active.`, 'system');
@@ -1678,6 +1852,8 @@ export default function Game({
     const playerUnits = units.filter(u => u.team === 'player' && u.hp > 0);
     const friendlies = units.filter(u => u.team === 'enemy' && u.id !== enemy.id && u.hp > 0);
     const aiDifficulty = getAIDifficulty();
+    // Feature: Camera Follow — highlight active AI unit
+    setAiHighlightTile({ x: enemy.x, y: enemy.y });
 
     // AI special ability activation triggers (Intelligent tactical actions)
     if (enemy.ap >= 1 && enemy.class.ability) {
@@ -2119,8 +2295,12 @@ export default function Game({
           else if (personality === 'Cautious') score += -p.class.stats.maxHP;
           else if (personality === 'Tactical') score += -p.hp;
           else if (personality === 'Support') score += -dist - p.hp;
+          // Feature: AI Focus Fire — strongly prefer finishing wounded targets
+          if (p.hp <= enemy.class.stats.damage) score += 60;
+          else if (p.hp < p.class.stats.maxHP * 0.5) score += 35;
           if (aiDifficulty >= 2 && p.hp <= enemy.class.stats.damage) score += 50;
           if (aiDifficulty >= 3 && p.class.className === 'Medic') score += 30;
+          if (aiDifficulty >= 2 && p.class.className === 'Sniper') score += 15;
 
           const fuzz = aiDifficulty === 0 ? 20 : aiDifficulty === 1 ? 5 : 2;
           score += (Math.random() - 0.5) * fuzz;
@@ -2681,6 +2861,7 @@ export default function Game({
                   const isHit = existingUnit.markedForDeath ? true : Math.random() * 100 <= chance;
                   const attackerColor = unit.team === 'player' ? 'Blue' : 'Purple';
                   const targetColor = existingUnit.team === 'player' ? 'Blue' : 'Purple';
+                  setLastMoveState(null); // Can't undo after attacking
                   
                   const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
 
@@ -2730,6 +2911,7 @@ export default function Game({
                     addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${effectiveDmg} damage!${isCovered ? ' (Target partially behind cover)' : ''}`, 'combat');
                     if (relHP <= 0) {
                         addLog(`[FATALITY] ${targetColor} ${existingUnit.class.className} neutralized under hostile fire.`, 'death');
+                        addKillFeedEntry(unit.class.className, unit.team, existingUnit.class.className, existingUnit.team);
                     }
 
                     setUnits(newUnits);
@@ -2878,9 +3060,11 @@ export default function Game({
            }
            
            setPending2APMove(null);
+           // Store pre-move state for undo
+           setLastMoveState({ unitId: unit.id, x: unit.x, y: unit.y, ap: unit.ap, facing: unit.facing });
            const moveFacing = getFacingDirection(unit.x, unit.y, x, y, unit.facing);
-           const newUnits = units.map(u => 
-             u.id === selectedUnitId 
+           const newUnits = units.map(u =>
+             u.id === selectedUnitId
                ? { ...u, x, y, ap: u.ap - reachableObj.apCost, facing: moveFacing }
                : u
            );
@@ -3700,12 +3884,42 @@ export default function Game({
             );
         }
 
+        // Feature: Danger Zone overlay
+        let dangerOverlay = null;
+        if (showDangerZone && mode === 'play' && !unit) {
+          const viewerTeam = isOnline ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player');
+          const enemies = finalUnits.filter(u => u.team !== viewerTeam && u.hp > 0);
+          const inDanger = enemies.some(en => {
+            const dist = Math.abs(en.x - x) + Math.abs(en.y - y);
+            return dist <= en.class.stats.range + en.class.stats.mobility;
+          });
+          if (inDanger) {
+            dangerOverlay = <div className="absolute inset-0 bg-red-500/15 border border-red-500/20 z-[5] pointer-events-none rounded-sm" />;
+          }
+        }
+
+        // Feature: AI camera highlight
+        let aiCameraHighlight = null;
+        if (aiHighlightTile && aiHighlightTile.x === x && aiHighlightTile.y === y && activeTeam === 'enemy' && mode === 'play') {
+          aiCameraHighlight = <div className="absolute inset-0 border-2 border-yellow-400/60 rounded z-[25] pointer-events-none animate-pulse" />;
+        }
+
         grid.push(
           <div
             key={`${x}-${y}`}
             onClick={() => handleCellClick(x, y)}
-            onMouseEnter={() => setHoveredTile({x, y})}
-            onMouseLeave={() => setHoveredTile(null)}
+            onMouseEnter={(e) => {
+              setHoveredTile({x, y});
+              if (unit && mode === 'play') {
+                setTooltipUnit({ unit, screenX: e.clientX, screenY: e.clientY });
+              }
+            }}
+            onMouseMove={(e) => {
+              if (tooltipUnit && unit) {
+                setTooltipUnit({ unit, screenX: e.clientX, screenY: e.clientY });
+              }
+            }}
+            onMouseLeave={() => { setHoveredTile(null); setTooltipUnit(null); }}
             className={`w-full pt-[100%] relative transition-all cursor-pointer rounded-md group ${bgClass} ${borderClass} ${losClass}`}
           >
             {backgroundDecor}
@@ -3716,6 +3930,8 @@ export default function Game({
             {laserPathTracer}
             {obstacleAlert}
             {deployGridOverlay}
+            {dangerOverlay}
+            {aiCameraHighlight}
             {overlayClass && <div className={`absolute inset-0 ${overlayClass} z-0`}></div>}
             {cell.type === 'wall' && <div className="absolute inset-0 opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMSIvPgo8L3N2Zz4=')]"></div>}
             
@@ -4119,6 +4335,82 @@ export default function Game({
       {/* Subtle CRT Overlay */}
       <div className="pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_3px,4px_100%] mix-blend-overlay opacity-60"></div>
 
+      {/* Feature: Kill Feed Toasts */}
+      {killFeed.length > 0 && mode === 'play' && (
+        <div className="absolute top-2 right-2 z-[90] flex flex-col gap-1 pointer-events-none max-w-[260px]">
+          {killFeed.map(k => (
+            <div key={k.id} className="bg-black/85 border border-zinc-700/50 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[10px] font-mono animate-in slide-in-from-right-4 fade-in duration-300 backdrop-blur-sm shadow-lg">
+              <span className={`font-black uppercase ${k.killerTeam === 'player' ? 'text-sky-400' : 'text-fuchsia-400'}`}>{k.killer}</span>
+              <Crosshair className="w-3 h-3 text-red-500 shrink-0" />
+              <span className={`font-black uppercase ${k.victimTeam === 'player' ? 'text-sky-400' : 'text-fuchsia-400'}`}>{k.victim}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Feature: Minimap */}
+      {showMinimap && mode === 'play' && mapEnvironment.length > 0 && (
+        <div className="absolute bottom-2 right-2 z-[45] pointer-events-auto">
+          <div className="bg-black/80 border border-zinc-700/60 rounded-lg p-1 backdrop-blur-sm shadow-lg">
+            <div className="grid gap-0" style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 4px)` }}>
+              {Array.from({ length: GRID_SIZE }).map((_, row) =>
+                Array.from({ length: GRID_SIZE }).map((_, col) => {
+                  const unit = units.find(u => u.x === col && u.y === row && u.hp > 0);
+                  const cell = mapEnvironment[row]?.[col];
+                  let bg = 'bg-zinc-800';
+                  if (cell?.type === 'wall') bg = 'bg-zinc-600';
+                  else if (cell?.type === 'crate') bg = 'bg-amber-900/80';
+                  else if (cell?.type === 'fire') bg = 'bg-orange-600/60';
+                  else if (cell?.type === 'poison') bg = 'bg-lime-600/60';
+                  if (unit) bg = unit.team === 'player' ? 'bg-sky-400' : 'bg-fuchsia-500';
+                  if (aiHighlightTile && aiHighlightTile.x === col && aiHighlightTile.y === row && activeTeam === 'enemy') bg = 'bg-yellow-400';
+                  return <div key={`mm-${row}-${col}`} className={`w-1 h-1 ${bg}`} />;
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature: Hover Tooltip */}
+      {tooltipUnit && mode === 'play' && (
+        <div
+          className="absolute z-[95] pointer-events-none bg-black/90 border border-zinc-600/60 rounded-lg px-3 py-2 backdrop-blur-sm shadow-xl max-w-[200px]"
+          style={{ left: Math.min(tooltipUnit.screenX + 15, window.innerWidth - 220), top: Math.min(tooltipUnit.screenY - 10, window.innerHeight - 150) }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-[11px] font-black uppercase tracking-wider ${tooltipUnit.unit.team === 'player' ? 'text-sky-400' : 'text-fuchsia-400'}`}>
+              {tooltipUnit.unit.class.className}
+            </span>
+            {tooltipUnit.unit.name && <span className="text-[8px] text-zinc-500 font-mono">"{tooltipUnit.unit.name}"</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[9px] font-mono">
+            <span className="text-zinc-500">HP</span>
+            <span className={tooltipUnit.unit.hp > tooltipUnit.unit.class.stats.maxHP * 0.5 ? 'text-emerald-400' : 'text-red-400'}>{tooltipUnit.unit.hp}/{tooltipUnit.unit.class.stats.maxHP}</span>
+            <span className="text-zinc-500">AP</span>
+            <span className="text-amber-400">{tooltipUnit.unit.ap}/2</span>
+            <span className="text-zinc-500">DMG</span>
+            <span className="text-zinc-300">{tooltipUnit.unit.class.stats.damage}</span>
+            <span className="text-zinc-500">RNG</span>
+            <span className="text-zinc-300">{tooltipUnit.unit.class.stats.range}</span>
+            <span className="text-zinc-500">ACC</span>
+            <span className="text-zinc-300">{tooltipUnit.unit.class.stats.accuracy}%</span>
+          </div>
+          {tooltipUnit.unit.statusEffects && tooltipUnit.unit.statusEffects.length > 0 && (
+            <div className="flex gap-1 mt-1 border-t border-zinc-800 pt-1">
+              {tooltipUnit.unit.statusEffects.map((e, i) => (
+                <span key={i} className={`text-[8px] px-1 py-0.5 rounded font-bold uppercase ${e.type === 'burning' ? 'bg-orange-900/50 text-orange-400' : e.type === 'poisoned' ? 'bg-lime-900/50 text-lime-400' : 'bg-yellow-900/50 text-yellow-400'}`}>
+                  {e.type} ({e.duration})
+                </span>
+              ))}
+            </div>
+          )}
+          {overwatchUnits.includes(tooltipUnit.unit.id) && (
+            <div className="text-[8px] text-cyan-400 font-bold uppercase mt-1 border-t border-zinc-800 pt-1">ON OVERWATCH</div>
+          )}
+        </div>
+      )}
+
       {levelUpQueue.length > 0 && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
           {levelUpQueue.map((item) => (
@@ -4264,7 +4556,22 @@ export default function Game({
           onBack={onBack}
           onNextMission={campaignMissionId && winner === 'player' ? onNextMission : undefined}
           onReviewReplay={turnSnapshots.length > 0 ? () => setReplaySnapshotIndex(turnSnapshots.length - 1) : undefined}
-          onRematch={onBack}
+          onRematch={isOnline ? onBack : () => {
+            setWinner(null);
+            setMode('deploy');
+            setUnits([]);
+            setSelectedUnitId(null);
+            setTurn(1);
+            setActiveTeam('player');
+            setLogs([{ id: crypto.randomUUID(), text: "TACTICAL SEC-NET RE-INITIALIZED. REMATCH ENGAGED.", type: 'system', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }]);
+            setTurnSnapshots([]);
+            setReplaySnapshotIndex(null);
+            setOverwatchUnits([]);
+            setKillFeed([]);
+            setLastMoveState(null);
+            processedWinnerRef.current = null;
+            addLog(`[SYSTEM] Rematch initiated — redeploy your squad.`, 'system');
+          }}
           isOnline={!!isOnline}
           creditsEarned={(() => {
             const won = winner === (myTeam || 'player');
@@ -5048,6 +5355,51 @@ export default function Game({
                        {isSecondAbilityActive ? 'CANCEL' : `[LV3] ${selectedUnit.class.secondAbility.name}`}
                     </button>
                  </div>
+              )}
+
+              {/* TACTICAL CONTROL BAR: Undo, Overwatch, Danger Zone, Keyboard Hints */}
+              {mode === 'play' && activeTeam === (myTeam || 'player') && (
+                <div className="w-full shrink-0 flex justify-center mx-auto mt-1 z-[70]">
+                  <div className="flex flex-wrap items-center gap-1.5 max-w-lg">
+                    {/* Undo Move */}
+                    {lastMoveState && (
+                      <button
+                        type="button"
+                        onClick={handleUndoMove}
+                        className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-950/30 text-amber-400 font-mono text-[9px] uppercase tracking-wider hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Undo2 className="w-3 h-3" /> UNDO [Z]
+                      </button>
+                    )}
+                    {/* Overwatch */}
+                    {selectedUnit && selectedUnit.team === activeTeam && selectedUnit.ap >= 1 && !overwatchUnits.includes(selectedUnit.id) && (
+                      <button
+                        type="button"
+                        onClick={handleSetOverwatch}
+                        className="px-3 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-400 font-mono text-[9px] uppercase tracking-wider hover:bg-cyan-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Crosshair className="w-3 h-3" /> OVERWATCH
+                      </button>
+                    )}
+                    {/* Danger Zone Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowDangerZone(!showDangerZone)}
+                      className={`px-3 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${showDangerZone ? 'border-red-500/50 bg-red-950/40 text-red-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      {showDangerZone ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      {showDangerZone ? 'HIDE THREATS [D]' : 'SHOW THREATS [D]'}
+                    </button>
+                    {/* Keyboard hints */}
+                    <div className="hidden sm:flex items-center gap-1 text-[7px] font-mono text-zinc-600 ml-1">
+                      <span className="px-1 py-0.5 border border-zinc-800 rounded bg-zinc-900/50">TAB</span> cycle
+                      <span className="px-1 py-0.5 border border-zinc-800 rounded bg-zinc-900/50 ml-1">E</span> end
+                      <span className="px-1 py-0.5 border border-zinc-800 rounded bg-zinc-900/50 ml-1">Q</span> ability
+                      <span className="px-1 py-0.5 border border-zinc-800 rounded bg-zinc-900/50 ml-1">W</span> 2nd
+                      <span className="px-1 py-0.5 border border-zinc-800 rounded bg-zinc-900/50 ml-1">ESC</span> deselect
+                    </div>
+                  </div>
+                </div>
               )}
 
             </div>
