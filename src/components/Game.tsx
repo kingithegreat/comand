@@ -2406,8 +2406,40 @@ export default function Game({
             }
          }
       } else if (selectedUnitId) {
-         const reachableObj = isReachableTileObj(x, y);
          const unit = units.find(u => u.id === selectedUnitId);
+         const cell = mapEnvironment[y]?.[x];
+         if (unit && unit.team === activeTeam && unit.ap >= 1 && cell?.type === 'crate') {
+           const dist = Math.abs(unit.x - x) + Math.abs(unit.y - y);
+           if (dist <= 1) {
+             const updatedMap = mapEnvironment.map((row, ry) =>
+               row.map((c, cx) => cx === x && ry === y ? { ...c, type: 'floor' as const } : c)
+             );
+             setMapEnvironment(updatedMap);
+             const newUnits = units.map(u =>
+               u.id === unit.id ? { ...u, ap: u.ap - 1 } : u
+             );
+             setUnits(newUnits);
+             const teamColor = unit.team === 'player' ? 'Blue' : 'Purple';
+             addLog(`[DEMOLISH] ${teamColor} ${unit.class.className} destroyed crate cover at ${getCoord(x, y)}.`, 'combat');
+             playSound('damage');
+             setShake(true);
+             setTimeout(() => setShake(false), 200);
+             const effectId = crypto.randomUUID();
+             setDamageTexts(prev => [...prev, { id: effectId, x, y, amount: 0 }]);
+             setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+             if (isOnline && onlineMatch?.id) {
+               updateDoc(doc(db, 'matches', onlineMatch.id), {
+                 units: JSON.stringify(newUnits),
+                 gridEnv: JSON.stringify(updatedMap),
+                 turn: turnRef.current,
+                 activeTeam: activeTeamRef.current
+               });
+             }
+             if (unit.ap - 1 <= 0) setSelectedUnitId(null);
+             return;
+           }
+         }
+         const reachableObj = isReachableTileObj(x, y);
          if (reachableObj && unit && unit.team === activeTeam) {
            if (reachableObj.apCost === 2) {
              const hasPending = pending2APMove && pending2APMove.x === x && pending2APMove.y === y && pending2APMove.unitId === unit.id;
