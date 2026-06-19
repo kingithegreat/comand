@@ -1580,7 +1580,7 @@ export default function Game({
       const newInvTurns = (u.invisibleTurns || 0) > 0 ? u.invisibleTurns! - 1 : 0;
       return {
         ...u, hp: newHp, ap: newAp,
-        apPenalty: u.team === nextTeam ? 0 : u.apPenalty,
+        apPenalty: u.apPenalty,
         statusEffects: newEffects.length > 0 ? newEffects : undefined,
         fortified: u.team === nextTeam ? false : u.fortified,
         invisible: newInvTurns > 0 ? u.invisible : false,
