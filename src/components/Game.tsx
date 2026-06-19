@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Shield, ShieldAlert, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal, Wind, Flag, MessageSquare, Save, Download } from 'lucide-react';
 import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
-import { CharacterClass, Unit, GridCell, TurnSnapshot } from '../types';
+import { CharacterClass, Unit, GridCell, TurnSnapshot, StatusEffect } from '../types';
 import { generateMap, MAPS } from '../mapUtils';
 import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats, countWallsPenetrated } from '../logic';
 import { getActiveChemistries, applyChemistryBuffsToStats, CHEMISTRIES } from '../chemistries';
@@ -251,6 +251,7 @@ export default function Game({
   const [selectedClass, setSelectedClass] = useState<CharacterClass | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [isAbilityActive, setIsAbilityActive] = useState(false);
+  const [isSecondAbilityActive, setIsSecondAbilityActive] = useState(false);
   const [units, setUnitsRaw] = useState<Unit[]>([]);
   const [levelUpQueue, setLevelUpQueue] = useState<{id: string, className: string, newLevel: number, unitId: string}[]>([]);
   const projectedLevelsRef = useRef<{ [unitId: string]: number }>({});
@@ -411,6 +412,7 @@ export default function Game({
 
   const [activeLeftTab, setActiveLeftTab] = useState<'map' | 'logs' | 'leaderboard' | 'chat' | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>(null);
+  const [colorblindMode, setColorblindMode] = useState(false);
 
   useEffect(() => {
     if (mode === 'play') {
@@ -1061,7 +1063,9 @@ export default function Game({
     else if (selectedUnit.class.className === 'Flamethrower') {
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - 85) };
+          const existing = u.statusEffects || [];
+          const effects = existing.some(e => e.type === 'burning') ? existing : [...existing, { type: 'burning' as const, duration: 2 }];
+          return { ...u, hp: Math.max(0, u.hp - 85), statusEffects: effects };
         }
         return u;
       });
@@ -1271,6 +1275,227 @@ export default function Game({
     }
   };
 
+  const executeSecondAbility = (x: number, y: number) => {
+    if (!selectedUnit || !selectedUnit.class.secondAbility || selectedUnit.ap < 1) return;
+    if (selectedUnit.abilityDisabled && selectedUnit.abilityDisabled > 0) return;
+    const attackerColor = selectedUnit.team === 'player' ? 'Blue' : 'Purple';
+    const targetUnit = units.find(u => u.x === x && u.y === y && u.hp > 0);
+    const targetColor = targetUnit?.team === 'player' ? 'Blue' : 'Purple';
+
+    let newUnits = [...units];
+
+    if (selectedUnit.class.className === 'Sniper') {
+      if (!targetUnit || targetUnit.team === selectedUnit.team) return;
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        if (u.id === targetUnit.id) return { ...u, markedForDeath: true };
+        return u;
+      });
+      addLog(`[DEAD EYE] ${attackerColor} Sniper marked ${targetColor} ${targetUnit.class.className} for guaranteed hit!`, 'ability');
+      playSound('debuff');
+    } else if (selectedUnit.class.className === 'Assault') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 4) return;
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - x) + Math.abs(u.y - y);
+        if (d <= 2 && u.team !== selectedUnit.team && u.hp > 0) {
+          const existing = u.statusEffects || [];
+          return { ...u, statusEffects: [...existing, { type: 'stunned' as const, duration: 1 }] };
+        }
+        return u;
+      });
+      playSound('explosion');
+      addLog(`[FLASHBANG] ${attackerColor} Assault stunned enemies near ${String.fromCharCode(65+x)}${y+1}!`, 'ability');
+    } else if (selectedUnit.class.className === 'Heavy') {
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1, fortified: true };
+        return u;
+      });
+      playSound('shield');
+      addLog(`[FORTIFY] ${attackerColor} Heavy is fortified — 50% damage reduction this turn!`, 'ability');
+    } else if (selectedUnit.class.className === 'Support') {
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - selectedUnit.x) + Math.abs(u.y - selectedUnit.y);
+        if (d <= 4 && u.team === selectedUnit.team && u.hp > 0 && u.id !== selectedUnit.id) {
+          return { ...u, ap: Math.min(3, u.ap + 1) };
+        }
+        return u;
+      });
+      playSound('shield');
+      addLog(`[RALLY] ${attackerColor} Support rallied nearby allies — +1 AP to friendlies within 4 tiles!`, 'ability');
+    } else if (selectedUnit.class.className === 'Assassin') {
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1, invisible: true, invisibleTurns: 2 };
+        return u;
+      });
+      playSound('shield');
+      addLog(`[VANISH] ${attackerColor} Assassin vanished — invisible for 2 turns, next attack deals double damage!`, 'ability');
+    } else if (selectedUnit.class.className === 'Phantom') {
+      if (!targetUnit || targetUnit.team === selectedUnit.team) return;
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 7) return;
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        if (u.id === targetUnit.id) return { ...u, abilityDisabled: 2 };
+        return u;
+      });
+      playSound('debuff');
+      addLog(`[HACK] ${attackerColor} Phantom hacked ${targetColor} ${targetUnit.class.className} — abilities disabled for 2 turns!`, 'ability');
+    } else if (selectedUnit.class.className === 'Vanguard') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 2) return;
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - selectedUnit.x) + Math.abs(u.y - selectedUnit.y);
+        if (d <= 2 && u.team !== selectedUnit.team && u.hp > 0) {
+          const existing = u.statusEffects || [];
+          const dmgId = crypto.randomUUID();
+          setDamageTexts(prev => [...prev, { id: dmgId, x: u.x, y: u.y, amount: 30 }]);
+          setTimeout(() => setDamageTexts(c => c.filter(d => d.id !== dmgId)), 1000);
+          return { ...u, hp: Math.max(0, u.hp - 30), statusEffects: [...existing, { type: 'stunned' as const, duration: 1 }] };
+        }
+        return u;
+      });
+      setShake(true);
+      setTimeout(() => setShake(false), 300);
+      playSound('explosion');
+      addLog(`[EARTHQUAKE] ${attackerColor} Vanguard slammed the ground — 30 damage and stun to nearby enemies!`, 'ability');
+    } else if (selectedUnit.class.className === 'Shotgunner') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 3) return;
+      let newMap = mapEnvironment.map(row => row.map(c => ({ ...c })));
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - x) + Math.abs(u.y - y);
+        if (d <= 2 && u.team !== selectedUnit.team && u.hp > 0) {
+          const dmgId = crypto.randomUUID();
+          setDamageTexts(prev => [...prev, { id: dmgId, x: u.x, y: u.y, amount: 40 }]);
+          setTimeout(() => setDamageTexts(c => c.filter(d => d.id !== dmgId)), 1000);
+          return { ...u, hp: Math.max(0, u.hp - 40) };
+        }
+        return u;
+      });
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (ny >= 0 && ny < 15 && nx >= 0 && nx < 15 && (newMap[ny][nx].type === 'crate' || newMap[ny][nx].type === 'barrel')) {
+            newMap[ny][nx] = { ...newMap[ny][nx], type: 'floor' };
+          }
+        }
+      }
+      setMapEnvironment(newMap);
+      setShake(true);
+      setTimeout(() => setShake(false), 300);
+      playSound('explosion');
+      addLog(`[BREACH] ${attackerColor} Shotgunner breached area at ${String.fromCharCode(65+x)}${y+1} — cover destroyed, 40 damage to enemies!`, 'ability');
+    } else if (selectedUnit.class.className === 'Demoman') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 6) return;
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - x) + Math.abs(u.y - y);
+        if (d <= 3 && u.team !== selectedUnit.team && u.hp > 0) {
+          const dmg = d <= 1 ? 35 : 20;
+          const dmgId = crypto.randomUUID();
+          setDamageTexts(prev => [...prev, { id: dmgId, x: u.x, y: u.y, amount: dmg }]);
+          setTimeout(() => setDamageTexts(c => c.filter(d => d.id !== dmgId)), 1000);
+          return { ...u, hp: Math.max(0, u.hp - dmg) };
+        }
+        return u;
+      });
+      setShake(true);
+      setTimeout(() => setShake(false), 300);
+      playSound('explosion');
+      addLog(`[CLUSTER BOMB] ${attackerColor} Demoman launched cluster bombs at ${String.fromCharCode(65+x)}${y+1} — 35 center / 20 outer damage!`, 'ability');
+    } else if (selectedUnit.class.className === 'Medic') {
+      if (!targetUnit || targetUnit.team !== selectedUnit.team) return;
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 5) return;
+      const healAmt = Math.min(targetUnit.class.stats.maxHP - targetUnit.hp, 50);
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        if (u.id === targetUnit.id) {
+          const cleared = (u.statusEffects || []).filter(e => e.type !== 'poisoned' && e.type !== 'burning');
+          return { ...u, hp: Math.min(u.class.stats.maxHP, u.hp + 50), statusEffects: cleared };
+        }
+        return u;
+      });
+      playSound('shield');
+      addLog(`[REVIVE STIM] ${attackerColor} Medic injected ${targetColor} ${targetUnit.class.className} — healed ${healAmt} HP, cleared burn/poison!`, 'ability');
+    } else if (selectedUnit.class.className === 'Scout') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 4) return;
+      let newMap = mapEnvironment.map(row => row.map(c => ({ ...c })));
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (ny >= 0 && ny < 15 && nx >= 0 && nx < 15 && newMap[ny][nx].type === 'floor') {
+            newMap[ny][nx] = { ...newMap[ny][nx], type: 'fire' };
+          }
+        }
+      }
+      setMapEnvironment(newMap);
+      newUnits = newUnits.map(u => u.id === selectedUnit.id ? { ...u, ap: u.ap - 1 } : u);
+      playSound('explosion');
+      addLog(`[SMOKE BOMB] ${attackerColor} Scout deployed smoke at ${String.fromCharCode(65+x)}${y+1} — area obscured!`, 'ability');
+    } else if (selectedUnit.class.className === 'Technician') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 5) return;
+      if (mapEnvironment[y] && mapEnvironment[y][x].type !== 'floor') return;
+      if (units.some(u => u.x === x && u.y === y && u.hp > 0)) return;
+      let newMap = mapEnvironment.map(row => row.map(c => ({ ...c })));
+      newMap[y][x] = { ...newMap[y][x], type: 'crate' };
+      setMapEnvironment(newMap);
+      newUnits = newUnits.map(u => u.id === selectedUnit.id ? { ...u, ap: u.ap - 1 } : u);
+      playSound('shield');
+      addLog(`[TURRET DEPLOY] ${attackerColor} Technician deployed cover at ${String.fromCharCode(65+x)}${y+1}!`, 'ability');
+    } else if (selectedUnit.class.className === 'Flamethrower') {
+      const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
+      if (dist > 5) return;
+      let newMap = mapEnvironment.map(row => row.map(c => ({ ...c })));
+      newUnits = newUnits.map(u => {
+        if (u.id === selectedUnit.id) return { ...u, ap: u.ap - 1 };
+        const d = Math.abs(u.x - x) + Math.abs(u.y - y);
+        if (d <= 2 && u.team !== selectedUnit.team && u.hp > 0) {
+          const existing = u.statusEffects || [];
+          const dmgId = crypto.randomUUID();
+          setDamageTexts(prev => [...prev, { id: dmgId, x: u.x, y: u.y, amount: 25 }]);
+          setTimeout(() => setDamageTexts(c => c.filter(d => d.id !== dmgId)), 1000);
+          return { ...u, hp: Math.max(0, u.hp - 25), statusEffects: [...existing, { type: 'burning' as const, duration: 3 }] };
+        }
+        return u;
+      });
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (ny >= 0 && ny < 15 && nx >= 0 && nx < 15 && newMap[ny][nx].type === 'floor') {
+            newMap[ny][nx] = { ...newMap[ny][nx], type: 'fire' };
+          }
+        }
+      }
+      setMapEnvironment(newMap);
+      setShake(true);
+      setTimeout(() => setShake(false), 300);
+      playSound('explosion');
+      addLog(`[NAPALM] ${attackerColor} Flamethrower napalmed area at ${String.fromCharCode(65+x)}${y+1} — 25 damage, burning, fire everywhere!`, 'ability');
+    } else {
+      return;
+    }
+
+    if (selectedUnit.team === (myTeam || 'player')) {
+      setBattleStats(prev => ({ ...prev, playerAbilitiesUsed: prev.playerAbilitiesUsed + 1 }));
+    }
+    setIsSecondAbilityActive(false);
+    setUnits(newUnits);
+    if (isOnline) {
+      updateDoc(doc(db, 'matches', onlineMatch.id), {
+        units: JSON.stringify(newUnits), turn, activeTeam, status: mode
+      });
+    }
+  };
+
   const autoDeploy = (team: 'player' | 'enemy') => {
     // Clear existing units for this team
     let currentUnits = units.filter(u => u.team !== team);
@@ -1329,11 +1554,40 @@ export default function Game({
     const nextTeam = activeTeam === 'player' ? 'enemy' : 'player';
     const nextTurn = activeTeam === 'enemy' ? turn + 1 : turn;
 
-    const updatedUnits = units.map(u => ({
-      ...u,
-      ap: u.team === nextTeam ? Math.max(0, 2 - (u.apPenalty || 0)) : u.ap,
-      apPenalty: u.team === nextTeam ? 0 : u.apPenalty
-    }));
+    const updatedUnits = units.map(u => {
+      if (u.hp <= 0) return u;
+      let newHp = u.hp;
+      let newAp = u.team === nextTeam ? Math.max(0, 2 - (u.apPenalty || 0)) : u.ap;
+      let newEffects = (u.statusEffects || []).map(e => ({ ...e, duration: e.duration - 1 })).filter(e => e.duration > 0);
+      const wasBurning = (u.statusEffects || []).some(e => e.type === 'burning');
+      const wasPoisoned = (u.statusEffects || []).some(e => e.type === 'poisoned');
+      const wasStunned = (u.statusEffects || []).some(e => e.type === 'stunned');
+      if (u.team === nextTeam) {
+        if (wasBurning) {
+          newHp = Math.max(0, newHp - 10);
+          addLog(`[BURN] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} takes 10 burn damage!`, 'combat');
+        }
+        if (wasPoisoned) {
+          newHp = Math.max(0, newHp - 8);
+          newAp = Math.max(0, newAp - 1);
+          addLog(`[TOXIC] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} takes 8 poison damage and loses 1 AP!`, 'combat');
+        }
+        if (wasStunned) {
+          newAp = Math.max(0, newAp - 1);
+          addLog(`[STUN] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} is stunned, -1 AP!`, 'combat');
+        }
+      }
+      const newInvTurns = (u.invisibleTurns || 0) > 0 ? u.invisibleTurns! - 1 : 0;
+      return {
+        ...u, hp: newHp, ap: newAp,
+        apPenalty: u.team === nextTeam ? 0 : u.apPenalty,
+        statusEffects: newEffects.length > 0 ? newEffects : undefined,
+        fortified: u.team === nextTeam ? false : u.fortified,
+        invisible: newInvTurns > 0 ? u.invisible : false,
+        invisibleTurns: newInvTurns > 0 ? newInvTurns : undefined,
+        abilityDisabled: u.abilityDisabled ? Math.max(0, u.abilityDisabled - 1) : undefined
+      };
+    });
 
     setBattleStats(prev => ({ ...prev, turnsElapsed: prev.turnsElapsed + 1 }));
     playSound('turnChange');
@@ -1396,6 +1650,15 @@ export default function Game({
     }
   }, [timeLeft, isOnline, mode, winner, activeTeam, myTeam, handleEndTurn]);
 
+  const getAIDifficulty = useCallback(() => {
+    if (!campaignMissionId) return 1;
+    if (campaignMissionId === 'tutorial') return 0;
+    const match = campaignMissionId.match(/sector-(\d+)/);
+    if (!match) return 1;
+    const sector = parseInt(match[1]);
+    return Math.min(3, Math.floor(sector / 3));
+  }, [campaignMissionId]);
+
   const performAINextAction = useCallback(() => {
     const enemyUnits = units.filter(u => u.team === 'enemy' && u.ap > 0 && u.hp > 0);
     if (enemyUnits.length === 0) {
@@ -1406,6 +1669,7 @@ export default function Game({
     const enemy = enemyUnits[0];
     const playerUnits = units.filter(u => u.team === 'player' && u.hp > 0);
     const friendlies = units.filter(u => u.team === 'enemy' && u.id !== enemy.id && u.hp > 0);
+    const aiDifficulty = getAIDifficulty();
 
     // AI special ability activation triggers (Intelligent tactical actions)
     if (enemy.ap >= 1 && enemy.class.ability) {
@@ -1775,6 +2039,56 @@ export default function Game({
        }
     }
 
+    if (aiDifficulty >= 2 && enemy.ap >= 1 && enemy.class.secondAbility && !(enemy.abilityDisabled && enemy.abilityDisabled > 0) && Math.random() < 0.4) {
+      if (enemy.class.className === 'Heavy' && !enemy.fortified) {
+        setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: u.ap - 1, fortified: true } : u));
+        addLog(`[FORTIFY] Enemy Heavy is fortified — 50% damage reduction!`, 'ability');
+        return;
+      }
+      if (enemy.class.className === 'Assassin' && !enemy.invisible) {
+        setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: u.ap - 1, invisible: true, invisibleTurns: 2 } : u));
+        addLog(`[VANISH] Enemy Assassin vanished — invisible for 2 turns!`, 'ability');
+        return;
+      }
+      if (enemy.class.className === 'Phantom') {
+        const hackTarget = playerUnits.find(u => u.hp > 0 && !(u.abilityDisabled && u.abilityDisabled > 0) && (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 7);
+        if (hackTarget) {
+          setUnits(prev => prev.map(u => {
+            if (u.id === enemy.id) return { ...u, ap: u.ap - 1 };
+            if (u.id === hackTarget.id) return { ...u, abilityDisabled: 2 };
+            return u;
+          }));
+          addLog(`[HACK] Enemy Phantom hacked Blue ${hackTarget.class.className} — abilities disabled for 2 turns!`, 'ability');
+          return;
+        }
+      }
+      if (enemy.class.className === 'Sniper') {
+        const markTarget = playerUnits.find(u => u.hp > 0 && !u.markedForDeath && (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 10);
+        if (markTarget) {
+          setUnits(prev => prev.map(u => {
+            if (u.id === enemy.id) return { ...u, ap: u.ap - 1 };
+            if (u.id === markTarget.id) return { ...u, markedForDeath: true };
+            return u;
+          }));
+          addLog(`[DEAD EYE] Enemy Sniper marked Blue ${markTarget.class.className} for guaranteed hit!`, 'ability');
+          return;
+        }
+      }
+      if (enemy.class.className === 'Support') {
+        const allyNeedAP = friendlies.find(u => u.ap < 2 && (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 4);
+        if (allyNeedAP) {
+          setUnits(prev => prev.map(u => {
+            if (u.id === enemy.id) return { ...u, ap: u.ap - 1 };
+            const d = Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y);
+            if (d <= 4 && u.team === 'enemy' && u.hp > 0 && u.id !== enemy.id) return { ...u, ap: Math.min(3, u.ap + 1) };
+            return u;
+          }));
+          addLog(`[RALLY] Enemy Support rallied nearby allies — +1 AP to friendlies!`, 'ability');
+          return;
+        }
+      }
+    }
+
     if (playerUnits.length === 0) {
       handleEndTurn();
       return;
@@ -1792,14 +2106,16 @@ export default function Game({
        const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment, aiPen);
        if (dist <= enemy.class.stats.range && hasLos) {
           const { chance } = calculateHitChance(enemy, p, mapEnvironment);
-          let score = chance; // Factor in hit chance heavily
-          if (personality === 'Aggressive') score += -dist + (p.class.stats.maxHP - p.hp)*2; // Prefers wounded or close
-          else if (personality === 'Cautious') score += -p.class.stats.maxHP; // Prefers squishy
-          else if (personality === 'Tactical') score += -p.hp; // Kills lowest hp
-          else if (personality === 'Support') score += -dist - p.hp; 
-          
-          // Randomness for flaw
-          score += (Math.random() - 0.5) * 5;
+          let score = chance;
+          if (personality === 'Aggressive') score += -dist + (p.class.stats.maxHP - p.hp)*2;
+          else if (personality === 'Cautious') score += -p.class.stats.maxHP;
+          else if (personality === 'Tactical') score += -p.hp;
+          else if (personality === 'Support') score += -dist - p.hp;
+          if (aiDifficulty >= 2 && p.hp <= enemy.class.stats.damage) score += 50;
+          if (aiDifficulty >= 3 && p.class.className === 'Medic') score += 30;
+
+          const fuzz = aiDifficulty === 0 ? 20 : aiDifficulty === 1 ? 5 : 2;
+          score += (Math.random() - 0.5) * fuzz;
 
           if (score > bestTargetScore) {
              bestTargetScore = score;
@@ -1812,7 +2128,8 @@ export default function Game({
        const p = bestTarget;
        const targetFacing = getFacingDirection(enemy.x, enemy.y, p.x, p.y, enemy.facing);
        const { chance, isCovered } = calculateHitChance(enemy, p, mapEnvironment);
-       const isHit = Math.random() * 100 <= chance;
+       const difficultyAccMod = aiDifficulty === 0 ? -25 : aiDifficulty === 1 ? -10 : 0;
+       const isHit = Math.random() * 100 <= Math.max(10, chance + difficultyAccMod);
 
        if (isHit) {
          let effectiveDmg = (enemy.class.className === 'Assassin' && p.class.className === 'Heavy')
@@ -1822,6 +2139,7 @@ export default function Game({
            const wallsHit = countWallsPenetrated(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
            if (wallsHit > 0) effectiveDmg = Math.floor(effectiveDmg * 0.5);
          }
+         if (p.fortified) effectiveDmg = Math.floor(effectiveDmg * 0.5);
          setBattleStats(prev => ({ ...prev, damageTaken: prev.damageTaken + effectiveDmg }));
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
@@ -1958,7 +2276,7 @@ export default function Game({
     // Pass turn for this unit
     setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: 0 } : u));
     addLog(`[PASS] Enemy ${enemy.class.className} entered passive standby cycle.`, 'system');
-  }, [units, mapEnvironment, handleEndTurn, checkLineOfSight, addLog]);
+  }, [units, mapEnvironment, handleEndTurn, checkLineOfSight, addLog, getAIDifficulty]);
 
   const performAINextActionRef = React.useRef(performAINextAction);
   useEffect(() => {
@@ -2323,6 +2641,10 @@ export default function Game({
       if (pending2APMove && (pending2APMove.x !== x || pending2APMove.y !== y)) {
         setPending2APMove(null);
       }
+      if (isSecondAbilityActive && selectedUnit && selectedUnit.team === activeTeam) {
+         executeSecondAbility(x, y);
+         return;
+      }
       if (isAbilityActive && selectedUnit && selectedUnit.team === activeTeam) {
          if (isValidAbilityTarget(x, y)) {
             executeAbility(x, y);
@@ -2348,7 +2670,7 @@ export default function Game({
                const hasLos = checkLineOfSight(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment, sniperPen);
                if (dist <= unit.class.stats.range && hasLos && unit.ap >= 1) {
                   const { chance, isCovered } = calculateHitChance(unit, existingUnit, mapEnvironment);
-                  const isHit = Math.random() * 100 <= chance;
+                  const isHit = existingUnit.markedForDeath ? true : Math.random() * 100 <= chance;
                   const attackerColor = unit.team === 'player' ? 'Blue' : 'Purple';
                   const targetColor = existingUnit.team === 'player' ? 'Blue' : 'Purple';
                   
@@ -2362,6 +2684,8 @@ export default function Game({
                       const wallsHit = countWallsPenetrated(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment);
                       if (wallsHit > 0) effectiveDmg = Math.floor(effectiveDmg * 0.5);
                     }
+                    if (unit.invisible) effectiveDmg = effectiveDmg * 2;
+                    if (existingUnit.fortified) effectiveDmg = Math.floor(effectiveDmg * 0.5);
                     if (unit.team === (myTeam || 'player')) {
                       setBattleStats(prev => ({
                         ...prev,
@@ -2379,8 +2703,8 @@ export default function Game({
                     setTimeout(() => setShake(false), 200);
 
                     const newUnits = units.map(u => {
-                      if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                      if (u.id === existingUnit.id) return { ...u, hp: Math.max(0, u.hp - effectiveDmg) };
+                      if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const, invisible: false, invisibleTurns: undefined };
+                      if (u.id === existingUnit.id) return { ...u, hp: Math.max(0, u.hp - effectiveDmg), markedForDeath: undefined };
                       return u;
                     });
 
@@ -2558,12 +2882,15 @@ export default function Game({
 
            const tileType = mapEnvironment[y]?.[x]?.type;
            let hazardDmg = 0;
+           let hazardEffect: StatusEffect | null = null;
            if (tileType === 'fire') {
              hazardDmg = 15;
-             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 15 burn damage from fire at ${getCoord(x, y)}!`, 'combat');
+             hazardEffect = { type: 'burning', duration: 2 };
+             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 15 burn damage from fire at ${getCoord(x, y)} and is burning!`, 'combat');
            } else if (tileType === 'poison') {
              hazardDmg = 10;
-             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 10 toxic damage from poison at ${getCoord(x, y)}!`, 'combat');
+             hazardEffect = { type: 'poisoned', duration: 2 };
+             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 10 toxic damage from poison at ${getCoord(x, y)} and is poisoned!`, 'combat');
            }
            if (hazardDmg > 0) {
              const hazId = crypto.randomUUID();
@@ -2572,7 +2899,13 @@ export default function Game({
            }
 
            const finalUnitsAfterMove = hazardDmg > 0
-             ? newUnits.map(u => u.id === selectedUnitId ? { ...u, hp: Math.max(0, u.hp - hazardDmg) } : u)
+             ? newUnits.map(u => {
+                 if (u.id !== selectedUnitId) return u;
+                 const existing = u.statusEffects || [];
+                 const effects = hazardEffect && !existing.some(e => e.type === hazardEffect!.type)
+                   ? [...existing, hazardEffect] : existing;
+                 return { ...u, hp: Math.max(0, u.hp - hazardDmg), statusEffects: effects.length > 0 ? effects : undefined };
+               })
              : newUnits;
            if (hazardDmg > 0 && unit.hp - hazardDmg <= 0) {
              addLog(`[FATALITY] ${unitTeamColor} ${unit.class.className} perished from environmental hazard at ${getCoord(x, y)}.`, 'death');
@@ -2738,6 +3071,18 @@ export default function Game({
               {unitOnTile.class.ability && (
                 <div className="text-[9.5px] text-emerald-400 md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3 max-w-xs truncate" title={unitOnTile.class.ability.description}>
                   <span className="text-zinc-500 mr-1 font-bold">SPEC:</span> {unitOnTile.class.ability.name.toUpperCase()}
+                </div>
+              )}
+              {unitOnTile.statusEffects && unitOnTile.statusEffects.length > 0 && (
+                <div className="text-[9px] md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3 flex items-center gap-1">
+                  <span className="text-zinc-500 font-bold">STATUS:</span>
+                  {unitOnTile.statusEffects.map((e, i) => (
+                    <span key={i} className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${
+                      e.type === 'burning' ? 'bg-orange-500/20 text-orange-400' :
+                      e.type === 'poisoned' ? 'bg-lime-500/20 text-lime-400' :
+                      'bg-yellow-500/20 text-yellow-400'
+                    }`}>{e.type} ({e.duration})</span>
+                  ))}
                 </div>
               )}
               {attackContextLabel && (
@@ -3309,12 +3654,26 @@ export default function Game({
                    
                    {unitSpriteFrame}
                    
+                   {/* Status effect icons */}
+                   {mode === 'play' && unit.statusEffects && unit.statusEffects.length > 0 && (
+                      <div className="absolute top-0 left-0 flex gap-[1px] z-40 pointer-events-none">
+                        {unit.statusEffects.some(e => e.type === 'burning') && <div className="w-2.5 h-2.5 rounded-full bg-orange-500/90 border border-orange-300/50 animate-pulse" title="Burning" />}
+                        {unit.statusEffects.some(e => e.type === 'poisoned') && <div className="w-2.5 h-2.5 rounded-full bg-lime-500/90 border border-lime-300/50 animate-pulse" title="Poisoned" />}
+                        {unit.statusEffects.some(e => e.type === 'stunned') && <div className="w-2.5 h-2.5 rounded-full bg-yellow-400/90 border border-yellow-200/50 animate-pulse" title="Stunned" />}
+                      </div>
+                   )}
+                   {mode === 'play' && unit.fortified && (
+                      <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-blue-500/90 border border-blue-300/50 z-40 pointer-events-none" title="Fortified" />
+                   )}
+                   {mode === 'play' && unit.invisible && (
+                      <div className="absolute inset-0 bg-black/50 rounded z-20 pointer-events-none animate-pulse" />
+                   )}
                    {/* Unit Status Overlays (HP & AP) */}
                    {mode === 'play' && (
                       <div className="absolute bottom-0 inset-x-0 p-0.5 flex flex-col items-center gap-[1px] z-30 pointer-events-none bg-black/40 backdrop-blur-[1px] rounded-lg-b-sm">
                          {/* HP Bar */}
                          <div className="w-full h-1.5 bg-black/90 border border-black/90 rounded-lg-[1px] overflow-hidden flex relative">
-                            <div 
+                            <div
                                className={`h-full transition-all duration-300 ${unit.hp / unit.class.stats.maxHP > 0.5 ? 'bg-emerald-500' : unit.hp / unit.class.stats.maxHP > 0.25 ? 'bg-amber-400' : 'bg-purple-500'}`}
                                style={{ width: `${Math.max(0, (unit.hp / unit.class.stats.maxHP) * 100)}%` }}
                             />
@@ -3558,10 +3917,12 @@ export default function Game({
              }
           }
 
+          const sectorBonus = campaignMissionId?.startsWith('sector-') ? parseInt(campaignMissionId.split('-')[1]) : 0;
+          const hpBonus = Math.floor(sectorBonus * 5);
           currentUnits.push({
              id: crypto.randomUUID(),
              class: randClass,
-             x, y, hp: randClass.stats.maxHP, ap: 2, team: 'enemy', facing: 'down'
+             x, y, hp: randClass.stats.maxHP + hpBonus, ap: 2, team: 'enemy', facing: 'down'
           });
        }
     }
@@ -3753,7 +4114,10 @@ export default function Game({
   };
 
   return (
-    <div className="h-[100dvh] w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none">
+    <div className={`h-[100dvh] w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none ${colorblindMode ? 'colorblind-mode' : ''}`}>
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {logs.length > 0 ? logs[logs.length - 1].text : ''}
+      </div>
       {/* Subtle CRT Overlay */}
       <div className="pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.15)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_3px,4px_100%] mix-blend-overlay opacity-60"></div>
 
@@ -3960,6 +4324,23 @@ export default function Game({
               </button>
 
               <div className="w-[1px] h-6 bg-zinc-800 mx-1 hidden sm:block" />
+
+              <button
+                type="button"
+                onClick={() => {
+                  const data = JSON.stringify({ snapshots: turnSnapshots, map: selectedMapId, date: new Date().toISOString() });
+                  const blob = new Blob([data], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `replay-${new Date().toISOString().slice(0,10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="px-4 py-1.5 bg-emerald-950/45 hover:bg-emerald-900 border border-emerald-500/30 font-mono text-xs font-black uppercase tracking-wider text-emerald-400 rounded-lg transition-all active:scale-95 cursor-pointer"
+              >
+                <Download className="w-3 h-3 inline mr-1" /> SAVE REPLAY
+              </button>
 
               <button
                 type="button"
@@ -4196,6 +4577,18 @@ export default function Game({
               >
                 <Crosshair className="w-3.5 h-3.5" /> Targeting
               </button>
+              <button
+                type="button"
+                onClick={() => setColorblindMode(!colorblindMode)}
+                className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
+                  colorblindMode ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
+                }`}
+                title="Toggle colorblind-friendly colors"
+                aria-pressed={colorblindMode ? "true" : "false"}
+                aria-label={colorblindMode ? 'Disable colorblind mode' : 'Enable colorblind mode'}
+              >
+                <Activity className="w-3.5 h-3.5" /> A11y
+              </button>
             </div>
           </div>
 
@@ -4352,7 +4745,10 @@ export default function Game({
                 </div>
               )}
               {/* Aligned Coordinate Scales with Battlefield Grid */}
-              <div 
+              <div
+                role="application"
+                aria-label={`Tactical battlefield, ${GRID_SIZE} by ${GRID_SIZE}. ${activeTeam === 'player' ? 'Your turn' : 'Enemy turn'}. Turn ${turn}.`}
+                aria-roledescription="tactical game board"
                 onDoubleClick={handleGridDoubleClick}
                 onTouchStart={handleGridDoubleTap}
                 className={`@container shrink-0 touch-manipulation relative w-full flex items-center border rounded-lg p-2 overflow-x-auto animate-fade-in mt-1 select-none transition-all duration-300 ${
@@ -4632,8 +5028,26 @@ export default function Game({
                        }}
                        className={`pointer-events-auto px-6 py-2 sm:py-2.5 rounded-xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 w-full max-w-sm ${isAbilityActive ? 'bg-amber-400 text-zinc-950 border border-amber-300' : 'bg-sky-500 border border-sky-400 text-white animate-bounce shadow-[0_4px_12px_rgba(14,165,233,0.5)] active:scale-95 hover:bg-sky-400 cursor-pointer'}`}
                     >
-                       <Zap className="w-[4cqw] h-[4cqw] min-[600px]:w-4 min-[600px]:h-4" /> 
+                       <Zap className="w-[4cqw] h-[4cqw] min-[600px]:w-4 min-[600px]:h-4" />
                        {isAbilityActive ? 'CANCEL L-CLICK DEPLOYMENT' : `ACTIVATE [${selectedUnit.class.ability.name}]`}
+                    </button>
+                 </div>
+              )}
+
+              {/* SECOND ABILITY BUTTON (Level 3+) */}
+              {mode === 'play' && selectedUnitId && activeTeam === (myTeam || 'player') && selectedUnit && selectedUnit.team === activeTeam && selectedUnit.ap >= 1 && selectedUnit.class.secondAbility && !(selectedUnit.abilityDisabled && selectedUnit.abilityDisabled > 0) && (
+                 <div className="w-full shrink-0 flex justify-center mx-auto mt-1 pointer-events-none z-[80]">
+                    <button
+                       type="button"
+                       onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSecondAbilityActive(!isSecondAbilityActive);
+                          setIsAbilityActive(false);
+                       }}
+                       className={`pointer-events-auto px-6 py-2 sm:py-2.5 rounded-xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 w-full max-w-sm ${isSecondAbilityActive ? 'bg-fuchsia-400 text-zinc-950 border border-fuchsia-300' : 'bg-fuchsia-600 border border-fuchsia-500 text-white active:scale-95 hover:bg-fuchsia-500 cursor-pointer shadow-[0_4px_12px_rgba(192,38,211,0.4)]'}`}
+                    >
+                       <Zap className="w-[4cqw] h-[4cqw] min-[600px]:w-4 min-[600px]:h-4" />
+                       {isSecondAbilityActive ? 'CANCEL' : `[LV3] ${selectedUnit.class.secondAbility.name}`}
                     </button>
                  </div>
               )}

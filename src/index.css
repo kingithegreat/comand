@@ -358,6 +358,26 @@ html, body, #root {
   border: 1px solid rgba(39,39,42,0.4);
 }
 
+/* ===== COLORBLIND MODE ===== */
+.colorblind-mode {
+  --cb-ally: #4493f8;
+  --cb-enemy: #e6a700;
+}
+.colorblind-mode .selected-unit-blue {
+  animation: tactical-pulse-cb-blue 1.2s infinite ease-in-out;
+}
+.colorblind-mode .selected-unit-purple {
+  animation: tactical-pulse-cb-yellow 1.2s infinite ease-in-out;
+}
+@keyframes tactical-pulse-cb-blue {
+  0%, 100% { box-shadow: 0 0 6px rgba(68,147,248,0.3); border-color: rgba(68,147,248,0.5); }
+  50% { box-shadow: 0 0 18px rgba(68,147,248,0.6); border-color: rgba(68,147,248,0.9); }
+}
+@keyframes tactical-pulse-cb-yellow {
+  0%, 100% { box-shadow: 0 0 6px rgba(230,167,0,0.3); border-color: rgba(230,167,0,0.5); }
+  50% { box-shadow: 0 0 18px rgba(230,167,0,0.6); border-color: rgba(230,167,0,0.9); }
+}
+
 /* ===== MOBILE SAFE AREA ===== */
 #root {
   padding-top: env(safe-area-inset-top);

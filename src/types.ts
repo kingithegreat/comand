@@ -25,6 +25,12 @@ export interface CharacterClass {
   description: string;
   personality?: Personality;
   ability?: CharacterAbility;
+  secondAbility?: { name: string; description: string };
+}
+
+export interface StatusEffect {
+  type: 'burning' | 'poisoned' | 'stunned';
+  duration: number;
 }
 
 export interface Unit {
@@ -45,6 +51,12 @@ export interface Unit {
   healingDone?: number;
   abilitiesUsed?: number;
   apPenalty?: number;
+  statusEffects?: StatusEffect[];
+  fortified?: boolean;
+  invisible?: boolean;
+  invisibleTurns?: number;
+  markedForDeath?: boolean;
+  abilityDisabled?: number;
 }
 
 export interface GridCell {

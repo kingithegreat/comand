@@ -4,7 +4,8 @@ import { useAudio } from '../contexts/AudioContext';
 import {
   Target, Shield, HelpCircle, ArrowRight, Play, CheckCircle2, RotateCcw,
   MapPin, Plus, UserPlus, Zap, Crosshair, Heart, Hammer, Info, Award, ArrowLeft,
-  MousePointer, Footprints, Swords, Move
+  MousePointer, Footprints, Swords, Move, Flame, Skull, Globe, Map,
+  Users, Clock, Wifi, Eye, AlertTriangle, Sparkles
 } from 'lucide-react';
 import { CLASSES } from '../data';
 import { CharacterClass } from '../types';
@@ -28,6 +29,11 @@ type TutorialStep =
   | 'movement'
   | 'ability'
   | 'smog_tutorial'
+  | 'advanced_combat'
+  | 'abilities_deep'
+  | 'status_effects'
+  | 'multiplayer_basics'
+  | 'campaign_strategy'
   | 'completed';
 
 const MODULE_CLASSES = ['Assault', 'Sniper', 'Medic', 'Technician'];
@@ -42,6 +48,11 @@ const STEP_TITLES: Record<string, string> = {
   movement: 'Try Moving',
   ability: 'Use Your Ability',
   smog_tutorial: 'Advanced Tips',
+  advanced_combat: 'Advanced Combat',
+  abilities_deep: 'Abilities',
+  status_effects: 'Status Effects',
+  multiplayer_basics: 'Multiplayer',
+  campaign_strategy: 'Campaign',
   completed: 'Done!',
 };
 
@@ -194,6 +205,10 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
   const currentStepIndex = allSteps.indexOf(step);
   const isBasicsStep = currentStepIndex >= 0 && currentStepIndex <= 4;
 
+  const advancedSteps: TutorialStep[] = ['smog_tutorial', 'advanced_combat', 'abilities_deep', 'status_effects', 'multiplayer_basics', 'campaign_strategy'];
+  const advancedStepIndex = advancedSteps.indexOf(step);
+  const isAdvancedStep = advancedStepIndex >= 0;
+
   return (
     <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 bg-zinc-950/95 border border-zinc-800/50 rounded-2xl shadow-2xl relative font-mono text-zinc-300 select-none text-left">
       {/* Header */}
@@ -233,6 +248,33 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               {i < allSteps.length - 1 && <div className={`w-3 h-px ${i < currentStepIndex ? 'bg-emerald-500/40' : 'bg-zinc-800'}`} />}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Progress dots for advanced briefing steps */}
+      {isAdvancedStep && (
+        <div className="mb-6">
+          <p className="text-[9px] text-zinc-600 uppercase tracking-widest text-center mb-2 font-bold">Advanced Briefing</p>
+          <div className="flex items-center justify-center gap-2">
+            {advancedSteps.map((s, i) => (
+              <div key={s} className="flex items-center gap-2">
+                <button
+                  onClick={() => { if (i <= advancedStepIndex) setStep(s); }}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] font-bold uppercase transition-all ${
+                    step === s
+                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/40'
+                      : i < advancedStepIndex
+                        ? 'text-emerald-400 cursor-pointer hover:bg-emerald-500/10'
+                        : 'text-zinc-600'
+                  }`}
+                >
+                  {i < advancedStepIndex ? <CheckCircle2 className="w-3 h-3" /> : <span className="w-3 h-3 rounded-full border border-current flex items-center justify-center text-[7px]">{i+1}</span>}
+                  <span className="hidden sm:inline">{STEP_TITLES[s]}</span>
+                </button>
+                {i < advancedSteps.length - 1 && <div className={`w-3 h-px ${i < advancedStepIndex ? 'bg-emerald-500/40' : 'bg-zinc-800'}`} />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -747,14 +789,345 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
 
             <button
               onClick={() => {
-                setStep('completed');
-                safeSetItem('assassinUnlocked', 'true');
-                playSound('win');
+                setStep('advanced_combat');
+                playSound('click');
               }}
               className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black text-sm font-black uppercase tracking-wider rounded-xl cursor-pointer shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2"
             >
-              Got It! <ArrowRight className="w-4 h-4" />
+              Continue Briefing <ArrowRight className="w-4 h-4" />
             </button>
+          </motion.div>
+        )}
+
+        {/* ADVANCED COMBAT */}
+        {step === 'advanced_combat' && (
+          <motion.div
+            key="advanced_combat"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col gap-5 max-w-lg mx-auto"
+          >
+            <div className="bg-zinc-900/60 border border-zinc-800/50 p-5 rounded-xl space-y-4">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Crosshair className="w-5 h-5 text-rose-400" /> Advanced Combat Tactics
+              </h3>
+              <p className="text-xs text-amber-400 uppercase tracking-wider font-bold">// FIELD BRIEFING: COMBAT INTEL //</p>
+
+              <div className="space-y-3">
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-sky-400 flex items-center gap-1.5 mb-1.5">
+                    <Shield className="w-3.5 h-3.5" /> Cover Mechanics
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Positioning behind <span className="text-amber-400 font-bold">crates</span> is critical. When a unit stands adjacent to a crate, incoming enemy fire suffers a <span className="text-sky-400 font-bold">-20% accuracy penalty</span>. Always advance from cover to cover — an exposed soldier is a dead soldier.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-orange-400 flex items-center gap-1.5 mb-1.5">
+                    <Swords className="w-3.5 h-3.5" /> Flanking Bonuses
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Attacking an enemy from their <span className="text-orange-400 font-bold">side or behind</span> negates their cover entirely and grants a flanking accuracy bonus. Coordinate your squad to set up crossfires — pin from the front, strike from the flank.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5 mb-1.5">
+                    <Target className="w-3.5 h-3.5" /> Distance & Hit Chance
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Hit chance drops the farther you are from the target. At <span className="text-emerald-400 font-bold">close range (1-2 tiles): ~100%</span>. At <span className="text-amber-400 font-bold">medium range: ~70-80%</span>. At <span className="text-rose-400 font-bold">max range: ~50%</span>. Snipers suffer less penalty at distance than other classes.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-rose-500/5 border border-rose-500/20 rounded-lg p-3">
+                <p className="text-xs text-rose-300">
+                  <span className="font-bold">Commander's Note:</span> A 50% hit chance means you will miss half the time. Close the distance or use abilities to guarantee damage on priority targets.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('smog_tutorial')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('abilities_deep'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+                Next: Abilities <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ABILITIES DEEP DIVE */}
+        {step === 'abilities_deep' && (
+          <motion.div
+            key="abilities_deep"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col gap-5 max-w-lg mx-auto"
+          >
+            <div className="bg-zinc-900/60 border border-zinc-800/50 p-5 rounded-xl space-y-4">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-fuchsia-400" /> Unit Abilities
+              </h3>
+              <p className="text-xs text-amber-400 uppercase tracking-wider font-bold">// FIELD BRIEFING: SPECIAL OPERATIONS //</p>
+
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                Every unit has a <span className="text-fuchsia-400 font-bold">special ability</span> that costs <span className="text-amber-400 font-bold">1 AP</span> to use. Abilities are more powerful than basic attacks and can turn the tide of battle.
+              </p>
+
+              <div className="bg-fuchsia-500/5 border border-fuchsia-500/20 rounded-lg p-3">
+                <p className="text-xs text-fuchsia-300">
+                  <span className="font-bold">Level Up:</span> Units that reach <span className="font-bold text-white">Level 3</span> unlock an advanced version of their ability with enhanced effects. Veteran soldiers are worth protecting!
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Key Ability Examples</p>
+
+                <div className="flex items-center gap-3 bg-black/30 border border-zinc-800/30 rounded-lg p-3">
+                  <div className="w-9 h-9 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center justify-center shrink-0">
+                    <Heart className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">Medic — Field Heal</p>
+                    <p className="text-[10px] text-zinc-500">Restores a large amount of HP to an injured ally within range. At Level 3, heals nearby units too.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 bg-black/30 border border-zinc-800/30 rounded-lg p-3">
+                  <div className="w-9 h-9 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-center justify-center shrink-0">
+                    <Flame className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">Demoman — Frag Grenade</p>
+                    <p className="text-[10px] text-zinc-500">Lobs an explosive that deals area damage to all units in a blast radius. Destroys crates too!</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 bg-black/30 border border-zinc-800/30 rounded-lg p-3">
+                  <div className="w-9 h-9 bg-cyan-500/10 border border-cyan-500/30 rounded-lg flex items-center justify-center shrink-0">
+                    <Crosshair className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">Sniper — Piercing Round</p>
+                    <p className="text-[10px] text-zinc-500">A high-damage precision shot that ignores cover bonuses. Perfect for entrenched targets.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-xs text-amber-300">
+                  <span className="font-bold">Tip:</span> Abilities are not just attacks — Technicians can build cover, Medics can heal, and some classes buff nearby allies. Match your ability usage to the situation!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('advanced_combat')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('status_effects'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+                Next: Status Effects <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* STATUS EFFECTS */}
+        {step === 'status_effects' && (
+          <motion.div
+            key="status_effects"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col gap-5 max-w-lg mx-auto"
+          >
+            <div className="bg-zinc-900/60 border border-zinc-800/50 p-5 rounded-xl space-y-4">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-400" /> Status Effects
+              </h3>
+              <p className="text-xs text-amber-400 uppercase tracking-wider font-bold">// FIELD BRIEFING: HAZARD AWARENESS //</p>
+
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                Units can be afflicted by <span className="text-yellow-400 font-bold">status effects</span> from environmental hazards, enemy abilities, and special tiles. Knowing these effects is key to survival.
+              </p>
+
+              <div className="space-y-2">
+                <div className="bg-black/40 border border-orange-800/40 rounded-lg p-3.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-6 h-6 bg-orange-500/20 border border-orange-500/40 rounded flex items-center justify-center">
+                      <Flame className="w-3.5 h-3.5 text-orange-400" />
+                    </div>
+                    <h4 className="text-xs font-black text-orange-400">BURNING</h4>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Caused by <span className="text-orange-400 font-bold">fire tiles</span> and the <span className="text-white font-bold">Flamethrower</span> class ability. Burning units take <span className="text-orange-400 font-bold">damage each turn</span> and have reduced accuracy. Move off fire tiles to stop taking terrain damage.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-green-800/40 rounded-lg p-3.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-6 h-6 bg-green-500/20 border border-green-500/40 rounded flex items-center justify-center">
+                      <Skull className="w-3.5 h-3.5 text-green-400" />
+                    </div>
+                    <h4 className="text-xs font-black text-green-400">POISON</h4>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Caused by <span className="text-green-400 font-bold">toxic tiles</span> on certain maps. Poisoned units take <span className="text-green-400 font-bold">gradual damage over time</span> and their movement speed is reduced. Avoid lingering on toxic ground.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-yellow-800/40 rounded-lg p-3.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-6 h-6 bg-yellow-500/20 border border-yellow-500/40 rounded flex items-center justify-center">
+                      <Zap className="w-3.5 h-3.5 text-yellow-400" />
+                    </div>
+                    <h4 className="text-xs font-black text-yellow-400">STUN</h4>
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Caused by <span className="text-yellow-400 font-bold">certain abilities</span> like flashbangs and concussive blasts. Stunned units <span className="text-yellow-400 font-bold">lose 1 AP</span> on their next turn, severely limiting their options. Devastating when timed well.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3">
+                <p className="text-xs text-yellow-300">
+                  <span className="font-bold">Commander's Note:</span> Status effects stack with each other. A burning, poisoned unit in the open is practically out of the fight. Use environmental hazards to your advantage!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('abilities_deep')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('multiplayer_basics'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+                Next: Multiplayer <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* MULTIPLAYER BASICS */}
+        {step === 'multiplayer_basics' && (
+          <motion.div
+            key="multiplayer_basics"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col gap-5 max-w-lg mx-auto"
+          >
+            <div className="bg-zinc-900/60 border border-zinc-800/50 p-5 rounded-xl space-y-4">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Globe className="w-5 h-5 text-blue-400" /> Multiplayer Operations
+              </h3>
+              <p className="text-xs text-amber-400 uppercase tracking-wider font-bold">// FIELD BRIEFING: ONLINE DEPLOYMENT //</p>
+
+              <div className="space-y-3">
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-blue-400 flex items-center gap-1.5 mb-1.5">
+                    <Wifi className="w-3.5 h-3.5" /> Creating & Joining Matches
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    From the main menu, select <span className="text-white font-bold">Multiplayer</span> to create a new online room or join an existing one. Share your <span className="text-blue-400 font-bold">room code</span> with a friend so they can join your match. You can also browse open lobbies to find opponents.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-amber-400 flex items-center gap-1.5 mb-1.5">
+                    <Clock className="w-3.5 h-3.5" /> Turn Timer
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Online matches use a <span className="text-amber-400 font-bold">turn timer</span> to keep games moving. Each player has a limited time to complete all their moves for the turn. If the timer runs out, your turn ends automatically — plan your moves quickly!
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-emerald-400 flex items-center gap-1.5 mb-1.5">
+                    <Users className="w-3.5 h-3.5" /> PvP vs Co-op Mode
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    In <span className="text-rose-400 font-bold">PvP</span>, you fight against another player's squad — standard competitive play. In <span className="text-emerald-400 font-bold">Co-op mode</span>, you and a friend team up against AI enemies together, sharing the battlefield. Each player controls their own units and you must coordinate your strategy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+                <p className="text-xs text-blue-300">
+                  <span className="font-bold">Tip:</span> In co-op, communicate with your partner about target priority. Focused fire on a single enemy is far more effective than spreading damage across the field.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('status_effects')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('campaign_strategy'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+                Next: Campaign <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* CAMPAIGN STRATEGY */}
+        {step === 'campaign_strategy' && (
+          <motion.div
+            key="campaign_strategy"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col gap-5 max-w-lg mx-auto"
+          >
+            <div className="bg-zinc-900/60 border border-zinc-800/50 p-5 rounded-xl space-y-4">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Map className="w-5 h-5 text-amber-400" /> Campaign Strategy
+              </h3>
+              <p className="text-xs text-amber-400 uppercase tracking-wider font-bold">// FIELD BRIEFING: SECTOR OPERATIONS //</p>
+
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                The campaign consists of multiple <span className="text-amber-400 font-bold">sectors</span>, each with increasing difficulty. Here is what you need to know to survive the front line.
+              </p>
+
+              <div className="space-y-3">
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-cyan-400 flex items-center gap-1.5 mb-1.5">
+                    <Users className="w-3.5 h-3.5" /> Class Composition
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    A balanced squad is essential. Bring at least <span className="text-emerald-400 font-bold">1 Medic</span> for sustain, a <span className="text-cyan-400 font-bold">Sniper</span> for long-range threats, and frontline fighters to absorb damage. Pure damage squads crumble when attrition sets in across multi-battle sectors.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-zinc-400 flex items-center gap-1.5 mb-1.5">
+                    <Eye className="w-3.5 h-3.5" /> Smog & Visibility
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Some sectors are covered in thick <span className="text-zinc-300 font-bold">smog</span> that limits visibility range. In these missions, your units can only see a few tiles ahead. Snipers lose their range advantage — consider swapping them for close-range fighters like Assault or Assassin.
+                  </p>
+                </div>
+
+                <div className="bg-black/40 border border-zinc-800/40 rounded-lg p-3.5">
+                  <h4 className="text-xs font-black text-rose-400 flex items-center gap-1.5 mb-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Escalating Difficulty
+                  </h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Later sectors feature <span className="text-rose-400 font-bold">smarter AI</span> that uses cover, flanks aggressively, and focuses fire on your weakest units. Enemy squads also gain more diverse class compositions. Do not underestimate later missions — they will punish poor positioning.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-xs text-amber-300">
+                  <span className="font-bold">Commander's Note:</span> Losing a campaign battle does not end the war. Regroup, adjust your squad composition, and try a different approach. Each sector rewards successful completion with progression bonuses.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('multiplayer_basics')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('completed'); safeSetItem('assassinUnlocked', 'true'); playSound('win'); }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+                Complete Briefing <Award className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -773,7 +1146,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             <div className="space-y-2 max-w-md mx-auto">
               <h2 className="text-xl font-black text-white">You're Ready!</h2>
               <p className="text-sm text-zinc-400 leading-relaxed">
-                You know the basics: <span className="text-amber-400 font-bold">AP</span>, <span className="text-emerald-400 font-bold">movement</span>, <span className="text-rose-400 font-bold">attacking</span>, and <span className="text-sky-400 font-bold">cover</span>. Time to build your squad and fight!
+                You know the basics: <span className="text-amber-400 font-bold">AP</span>, <span className="text-emerald-400 font-bold">movement</span>, <span className="text-rose-400 font-bold">attacking</span>, <span className="text-sky-400 font-bold">cover</span>, <span className="text-fuchsia-400 font-bold">abilities</span>, and <span className="text-yellow-400 font-bold">status effects</span>. Time to build your squad and fight!
               </p>
             </div>
 
@@ -783,8 +1156,11 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                 <li className="flex items-start gap-2"><span className="text-amber-400 font-bold shrink-0">•</span> Each unit gets 2 AP per turn</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-400 font-bold shrink-0">•</span> Move costs 1-2 AP, attack costs 1 AP</li>
                 <li className="flex items-start gap-2"><span className="text-sky-400 font-bold shrink-0">•</span> Hide behind crates for -20% enemy accuracy</li>
+                <li className="flex items-start gap-2"><span className="text-orange-400 font-bold shrink-0">•</span> Flank enemies to negate their cover</li>
+                <li className="flex items-start gap-2"><span className="text-fuchsia-400 font-bold shrink-0">•</span> Abilities cost 1 AP — advanced abilities unlock at Level 3</li>
+                <li className="flex items-start gap-2"><span className="text-yellow-400 font-bold shrink-0">•</span> Watch for burning, poison, and stun effects</li>
                 <li className="flex items-start gap-2"><span className="text-rose-400 font-bold shrink-0">•</span> Eliminate all 4 enemy units to win</li>
-                <li className="flex items-start gap-2"><span className="text-fuchsia-400 font-bold shrink-0">•</span> There are {CLASSES.length} classes — experiment with different squads!</li>
+                <li className="flex items-start gap-2"><span className="text-blue-400 font-bold shrink-0">•</span> There are {CLASSES.length} classes — experiment with different squads!</li>
               </ul>
             </div>
 

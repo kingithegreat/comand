@@ -13,6 +13,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 10,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Dead Eye",
+      description: "Mark a target for guaranteed hit on next attack. Costs 1 AP."
     }
   },
   {
@@ -27,6 +31,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 6,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Cluster Bomb",
+      description: "Launch 3 smaller explosives dealing 25 damage each in separate 1-tile radius areas within range 6. Costs 1 AP."
     }
   },
   {
@@ -41,6 +49,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 5,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Flashbang",
+      description: "Stun all enemies within 2 tiles of target location for 1 turn, reducing their accuracy by 30%. Costs 1 AP."
     }
   },
   {
@@ -54,6 +66,10 @@ export const CLASSES: CharacterClass[] = [
       description: "Activates tactical defensive field: repairs self for 50 HP (1 AP).",
       apCost: 1,
       type: "self"
+    },
+    secondAbility: {
+      name: "Fortify",
+      description: "Become immobile for 1 turn but gain 50% damage reduction and taunt nearby enemies. Costs 1 AP."
     }
   },
   {
@@ -68,6 +84,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 3,
       type: "heal"
+    },
+    secondAbility: {
+      name: "Revive Stim",
+      description: "Revive a fallen ally at the Medic's position with 40% HP. Costs 2 AP."
     }
   },
   {
@@ -81,6 +101,10 @@ export const CLASSES: CharacterClass[] = [
       description: "Unleash extreme physical output: heals self for 20 HP and grants +1 AP back (1 AP).",
       apCost: 1,
       type: "self"
+    },
+    secondAbility: {
+      name: "Smoke Bomb",
+      description: "Deploy smoke in a 2-tile radius, blocking line of sight through the area for 2 turns. Costs 1 AP."
     }
   },
   {
@@ -95,6 +119,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 1,
       type: "deploy"
+    },
+    secondAbility: {
+      name: "Turret Deploy",
+      description: "Place an automated turret on an adjacent tile that deals 15 damage to the nearest enemy each turn. Costs 1 AP."
     }
   },
   {
@@ -109,6 +137,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 5,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Rally Cry",
+      description: "All friendly units within 4 tiles gain +1 AP this turn. Costs 1 AP."
     }
   },
   {
@@ -122,6 +154,10 @@ export const CLASSES: CharacterClass[] = [
       description: "Engages reflex screens and reloads shotgun: restores 35 HP (1 AP).",
       apCost: 1,
       type: "self"
+    },
+    secondAbility: {
+      name: "Breaching Round",
+      description: "Destroy all crates and barrels in a 2-tile radius of target, dealing 40 damage to enemies caught in the blast. Costs 1 AP."
     }
   },
   {
@@ -136,6 +172,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 2,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Napalm Strike",
+      description: "Set a 3x3 area on fire, converting floor tiles to fire tiles for 3 turns. Costs 1 AP."
     }
   },
   {
@@ -150,6 +190,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 1,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Vanish",
+      description: "Become invisible for 2 turns. While invisible, next attack deals double damage. Costs 1 AP."
     }
   },
   {
@@ -164,6 +208,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 3,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "System Hack",
+      description: "Disable target enemy's ability for 2 turns and reveal their position through smog. Costs 1 AP."
     }
   },
   {
@@ -178,6 +226,10 @@ export const CLASSES: CharacterClass[] = [
       apCost: 1,
       range: 3,
       type: "offensive"
+    },
+    secondAbility: {
+      name: "Earthquake Slam",
+      description: "Deal 30 damage and stun all enemies within 2 tiles for 1 turn. Costs 1 AP."
     }
   },
 ];
