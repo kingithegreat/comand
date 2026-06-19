@@ -1057,7 +1057,9 @@ export default function Game({
           selectedUnit.class.className === 'Demoman' ? (demoHits * 40) :
           selectedUnit.class.className === 'Sniper' ? 45 :
           selectedUnit.class.className === 'Assault' ? 25 :
-          selectedUnit.class.className === 'Support' ? 20 : 0
+          selectedUnit.class.className === 'Support' ? 20 :
+          selectedUnit.class.className === 'Phantom' ? 15 :
+          selectedUnit.class.className === 'Vanguard' ? 45 : 0
         )
       }));
     }
@@ -1218,7 +1220,7 @@ export default function Game({
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
       setShake(true);
       setTimeout(() => setShake(false), 200);
-      
+
       if (isSupport) {
         addLog(`[SUPPRESS] ${attackerColor} Support delivered Disruptor Matrix automatic suppress at ${targetColor} ${targetUnit?.class.className}: Dealt 20 damage, drained 1 AP!`, 'combat');
         if (targetUnit && targetUnit.hp - 20 <= 0) {
@@ -1229,6 +1231,55 @@ export default function Game({
         if (targetUnit && targetUnit.hp - 25 <= 0) {
           addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} neutralized during tactical sweep.`, 'death');
         }
+      }
+    }
+    else if (selectedUnit.class.className === 'Phantom') {
+      newUnits = newUnits.map(u => {
+        if (targetUnit && u.id === targetUnit.id) {
+          return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1) };
+        }
+        return u;
+      });
+      const damageId = crypto.randomUUID();
+      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: 15 }]);
+      setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+      setShake(true);
+      setTimeout(() => setShake(false), 200);
+      addLog(`[EMP] ${attackerColor} Phantom discharged EMP Pulse at ${targetColor} ${targetUnit?.class.className}: Dealt 15 damage, drained 1 AP!`, 'combat');
+      if (targetUnit && targetUnit.hp - 15 <= 0) {
+        addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} systems overloaded by electromagnetic surge.`, 'death');
+      }
+    }
+    else if (selectedUnit.class.className === 'Vanguard') {
+      const damage = 45;
+      const dx = x - selectedUnit.x;
+      const dy = y - selectedUnit.y;
+      const pushX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+      const pushY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+      const newX = x + pushX;
+      const newY = y + pushY;
+      const canPush = newX >= 0 && newX < 15 && newY >= 0 && newY < 15 &&
+        mapEnvironment[newY]?.[newX]?.type === 'floor' &&
+        !units.some(u => u.x === newX && u.y === newY && u.hp > 0 && u.id !== targetUnit?.id);
+
+      newUnits = newUnits.map(u => {
+        if (targetUnit && u.id === targetUnit.id) {
+          return {
+            ...u,
+            hp: Math.max(0, u.hp - damage),
+            ...(canPush ? { x: newX, y: newY } : {})
+          };
+        }
+        return u;
+      });
+      const damageId = crypto.randomUUID();
+      setDamageTexts(prev => [...prev, { id: damageId, x, y, amount: damage }]);
+      setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+      setShake(true);
+      setTimeout(() => setShake(false), 200);
+      addLog(`[CHARGE] ${attackerColor} Vanguard launched Kinetic Charge at ${targetColor} ${targetUnit?.class.className} for ${damage} damage${canPush ? ', knocking them back!' : '!'}`, 'combat');
+      if (targetUnit && targetUnit.hp - damage <= 0) {
+        addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} crushed by kinetic impact.`, 'death');
       }
     }
 
@@ -1621,7 +1672,6 @@ export default function Game({
           }
        }
        else if (enemy.class.className === 'Technician') {
-          // Find a valid adjacent tile that is floor and has no unit to deploy cover protection crate
           let foundTile: {x: number, y: number} | null = null;
           const dirs = [{x: 1, y: 0}, {x: -1, y: 0}, {x: 0, y: 1}, {x: 0, y: -1}];
           for (const dir of dirs) {
@@ -1647,6 +1697,80 @@ export default function Game({
                updateDoc(doc(db, 'matches', onlineMatch.id), { gridEnv: JSON.stringify(updatedMap) });
              }
              addLog(`[CONSTRUCT] Enemy Technician deployed localized cargo shielding cover at sector ${getCoord(tx, ty)}.`, 'ability');
+             return;
+          }
+       }
+       else if (enemy.class.className === 'Phantom') {
+          const target = playerUnits.find(u =>
+             u.hp > 0 &&
+             (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 7 &&
+             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment)
+          );
+          if (target) {
+             const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
+             const effectId = crypto.randomUUID();
+             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: 15 }]);
+             setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+             setShake(true);
+             setTimeout(() => setShake(false), 200);
+
+             setUnits(prev => prev.map(u => {
+                if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1) };
+                return u;
+             }));
+             setTimeout(() => {
+                setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
+             }, 800);
+
+             addLog(`[EMP] Enemy Phantom discharged EMP Pulse at Blue ${target.class.className}: Dealt 15 damage, drained 1 AP!`, 'combat');
+             if (target.hp - 15 <= 0) {
+                addLog(`[FATALITY] Blue ${target.class.className} systems overloaded by electromagnetic surge.`, 'death');
+             }
+             return;
+          }
+       }
+       else if (enemy.class.className === 'Vanguard') {
+          const target = playerUnits.find(u =>
+             u.hp > 0 &&
+             (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 3 &&
+             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment)
+          );
+          if (target) {
+             const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
+             const dx = target.x - enemy.x;
+             const dy = target.y - enemy.y;
+             const pushX = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+             const pushY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
+             const newX = target.x + pushX;
+             const newY = target.y + pushY;
+             const canPush = newX >= 0 && newX < GRID_SIZE && newY >= 0 && newY < GRID_SIZE &&
+               mapEnvironment[newY]?.[newX]?.type === 'floor' &&
+               !units.some(u => u.x === newX && u.y === newY && u.hp > 0 && u.id !== target.id);
+
+             const effectId = crypto.randomUUID();
+             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: 45 }]);
+             setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+             setShake(true);
+             setTimeout(() => setShake(false), 200);
+
+             setUnits(prev => prev.map(u => {
+                if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+                if (u.id === target.id) return {
+                  ...u,
+                  hp: Math.max(0, u.hp - 45),
+                  ...(canPush ? { x: newX, y: newY } : {})
+                };
+                return u;
+             }));
+             setTimeout(() => {
+                setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
+             }, 800);
+
+             addLog(`[CHARGE] Enemy Vanguard launched Kinetic Charge at Blue ${target.class.className} for 45 damage${canPush ? ', knocking them back!' : '!'}`, 'combat');
+             if (target.hp - 45 <= 0) {
+                addLog(`[FATALITY] Blue ${target.class.className} crushed by kinetic impact.`, 'death');
+             }
              return;
           }
        }

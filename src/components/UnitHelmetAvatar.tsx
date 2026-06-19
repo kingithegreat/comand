@@ -1,16 +1,18 @@
 import React from 'react';
-import { 
-  Crosshair, 
-  Zap, 
-  Target, 
-  Bomb, 
-  ShieldAlert, 
-  Locate, 
-  Activity, 
-  Wrench, 
-  Flame, 
+import {
+  Crosshair,
+  Zap,
+  Target,
+  Bomb,
+  ShieldAlert,
+  Locate,
+  Activity,
+  Wrench,
+  Flame,
   HeartPulse,
-  User
+  User,
+  Wifi,
+  ShieldPlus
 } from 'lucide-react';
 
 interface UnitHelmetAvatarProps {
@@ -35,6 +37,8 @@ export default function UnitHelmetAvatar({ className = "w-10 h-10", classNameVal
       case 'Technician': return <Wrench {...props} />;
       case 'Flamethrower': return <Flame {...props} />;
       case 'Medic': return <HeartPulse {...props} />;
+      case 'Phantom': return <Wifi {...props} />;
+      case 'Vanguard': return <ShieldPlus {...props} />;
       default: return <User {...props} />;
     }
   };

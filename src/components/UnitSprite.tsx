@@ -10,7 +10,9 @@ import {
   Wrench,
   Flame,
   HeartPulse,
-  User
+  User,
+  Wifi,
+  ShieldPlus
 } from 'lucide-react';
 
 interface UnitSpriteProps {
@@ -45,6 +47,8 @@ export default function UnitSprite({
       case 'Technician': return <Wrench {...props} />;
       case 'Flamethrower': return <Flame {...props} />;
       case 'Medic': return <HeartPulse {...props} />;
+      case 'Phantom': return <Wifi {...props} />;
+      case 'Vanguard': return <ShieldPlus {...props} />;
       default: return <User {...props} />;
     }
   };

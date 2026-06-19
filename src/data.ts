@@ -152,4 +152,32 @@ export const CLASSES: CharacterClass[] = [
       type: "offensive"
     }
   },
+  {
+    className: "Phantom",
+    archetype: "Support",
+    description: "EMP warfare specialist with holographic decoy systems. Disrupts enemy electronics and drains action points at range.",
+    stats: { maxHP: 80, damage: 22, range: 7, mobility: 5, accuracy: 88 },
+    personality: 'Tactical',
+    ability: {
+      name: "EMP Pulse",
+      description: "Emits a localized electromagnetic blast: deals 15 damage and drains 1 AP from all enemies within 3 tiles (1 AP).",
+      apCost: 1,
+      range: 3,
+      type: "offensive"
+    }
+  },
+  {
+    className: "Vanguard",
+    archetype: "Assault",
+    description: "Heavily armored frontline breacher with a kinetic shield. Pushes through enemy lines and absorbs punishment.",
+    stats: { maxHP: 140, damage: 32, range: 4, mobility: 4, accuracy: 82 },
+    personality: 'Aggressive',
+    ability: {
+      name: "Kinetic Charge",
+      description: "Charges forward dealing 45 damage and pushing the target back 1 tile (1 AP).",
+      apCost: 1,
+      range: 3,
+      type: "offensive"
+    }
+  },
 ];

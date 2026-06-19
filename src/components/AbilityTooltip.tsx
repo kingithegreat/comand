@@ -100,6 +100,22 @@ const getTacticalSpecs = (className: string, ability: CharacterAbility): Tactica
         detailedPerk: 'Releases catastrophic heat. Bypasses cover multipliers.',
         intensity: 'High',
       };
+    case 'Phantom':
+      return {
+        cooldown: '1 Turn',
+        damageOrHeal: '15 EMP DMG + AP Drain',
+        targetType: 'Hostile Unit (7 Range)',
+        detailedPerk: 'Emits electromagnetic pulse dealing damage and draining 1 AP.',
+        intensity: 'Medium',
+      };
+    case 'Vanguard':
+      return {
+        cooldown: '1 Turn',
+        damageOrHeal: '45 Kinetic DMG',
+        targetType: 'Hostile Unit (3 Range)',
+        detailedPerk: 'Charges target dealing heavy damage and pushing them back 1 tile.',
+        intensity: 'High',
+      };
     default:
       return {
         cooldown: '1 Turn',

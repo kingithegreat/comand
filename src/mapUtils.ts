@@ -689,7 +689,73 @@ export const MAPS: MapPreset[] = [
       "X_____________C",
       "CXXXXXXXXXXXXXX"
     ]
-  }
+  },
+  {
+    id: "dead_drop",
+    name: "Dead Drop",
+    description: "An asymmetric extraction zone with scattered debris, tight corners, and a wide-open kill box in the center.",
+    layout: [
+      "_C_____C_____C_",
+      "__XXX_____XXX__",
+      "___X_C___C_X___",
+      "_X_____________",
+      "_X__C_XXX_C__X_",
+      "___XX_____XX___",
+      "_C_X___C___X_C_",
+      "_______________",
+      "_C_X___C___X_C_",
+      "___XX_____XX___",
+      "_X__C_XXX_C__X_",
+      "_____________X_",
+      "___X_C___C_X___",
+      "__XXX_____XXX__",
+      "_C_____C_____C_"
+    ]
+  },
+  {
+    id: "twin_spires",
+    name: "Twin Spires",
+    description: "Two mirrored tower structures connected by exposed catwalks. High risk, high reward positioning.",
+    layout: [
+      "_______________",
+      "__XXXXX_XXXXX__",
+      "__X_C_X_X_C_X__",
+      "__X___X_X___X__",
+      "__XXX_X_X_XXX__",
+      "______X_X______",
+      "_C__C_____C__C_",
+      "_______________",
+      "_C__C_____C__C_",
+      "______X_X______",
+      "__XXX_X_X_XXX__",
+      "__X___X_X___X__",
+      "__X_C_X_X_C_X__",
+      "__XXXXX_XXXXX__",
+      "_______________"
+    ]
+  },
+  {
+    id: "reactor_core",
+    name: "Reactor Core",
+    description: "A volatile central reactor surrounded by blast shielding. One wrong move and you're in the open.",
+    layout: [
+      "C_C_________C_C",
+      "_X___________X_",
+      "C___XXXXXXX___C",
+      "___XX_____XX___",
+      "___X__C_C__X___",
+      "___X_C___C_X___",
+      "__XX___X___XX__",
+      "__X___XCX___X__",
+      "__XX___X___XX__",
+      "___X_C___C_X___",
+      "___X__C_C__X___",
+      "___XX_____XX___",
+      "C___XXXXXXX___C",
+      "_X___________X_",
+      "C_C_________C_C"
+    ]
+  },
 ];
 
 export const generateMap = (layout?: string[]): GridMap => {
