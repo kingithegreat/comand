@@ -2,80 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Globe, Lock, Play, ShieldAlert, Navigation, Star, SearchX, Loader2, RotateCcw } from 'lucide-react';
 import { useAudio } from '../contexts/AudioContext';
 import { safeGetItem, safeSetItem } from '../lib/storage';
-
-export const BASE_REGIONS = [
-  {
-    id: 'tutorial',
-    name: 'Battle Academy',
-    desc: 'Welcome, Commander. Earth is gone. The remnant fleets have scattered. Before we can mount a counter-offensive to reclaim our home, you must prove you can lead a squad. This is a basic simulation.',
-    objective: 'Complete training and familiarize yourself with combat mechanics.',
-    conditions: 'Controlled simulation environment. Holographic targets.',
-  },
-  {
-    id: 'sector-1',
-    name: 'Outpost Delta',
-    desc: 'You passed the trials. Our intel shows a small recon detachment of the Supreme Tactical AI has landed on a resource planet on the fringes of Sector 1. Take them out before they can alert the fleet.',
-    reward: 'Unlock Class: Heavy',
-    objective: 'Eliminate all hostile forces established at Outpost Delta.',
-    conditions: 'Standard visual range. Enemy utilizing recon classes.',
-  },
-  {
-    id: 'sector-2',
-    name: 'Neon District',
-    desc: 'The scouts were a diversion. We tracked their signal to an abandoned urban mining colony. It is heavily polluted. The enemy is using the smog as cover to harvest the reactors.',
-    objective: 'Clear the sector of hostile presence to protect the reactor.',
-    conditions: 'Smog Cover Active: Targeting visibility reduced. Expect close-quarters engagement.',
-  },
-  {
-    id: 'sector-3',
-    name: 'The Citadel',
-    desc: 'With the reactor secure, we have enough power to breach their forward operating base. This citadel is heavily fortified and serves as their local command hub.',
-    objective: 'Breach the fortress and secure the zone.',
-    conditions: 'Heavily fortified. Enemy squad size increased (+1 unit).',
-  },
-  {
-    id: 'sector-4',
-    name: 'Frozen Tundra',
-    desc: 'We extracted data from the Citadel. It points to a massive cryo-storage facility on the ice world of Kaelen. The enemy is guarding something critical in the deep freeze. Do not let them hold it.',
-    objective: 'Survive the assault and eliminate all targets.',
-    conditions: 'Extreme cold. Enemy relies heavily on durable classes.',
-  },
-  {
-    id: 'sector-5',
-    name: 'Jungle Canopy',
-    desc: 'The data retrieved from Kaelen contained the coordinates to their stealth research outpost hidden beneath the dense canopy of Veridia. Expect ambushes.',
-    objective: 'Root out the elite hostile squads hidden in the canopy.',
-    conditions: 'Smog Cover Active: Thick jungle canopy limits sight lines.',
-  },
-  {
-    id: 'sector-6',
-    name: 'Volcanic Ridge',
-    desc: 'They are constructing a dreadnought using the geothermal vents of this volcanic ridge. We must strike now before the ship launches. The enemy has deployed heavy ordinance to defend the construction.',
-    objective: 'Overcome the heavy ordinance team.',
-    conditions: 'Heat distortions and elite enemy classes present.',
-  },
-  {
-    id: 'sector-7',
-    name: 'Desert Ruin',
-    desc: 'Our forces are spread thin. The Supreme AI has sent assassins to a neutral diplomatic ruin to wipe out our allies. Drop in and intercept them.',
-    objective: 'Secure the ruins against high-lethality operatives.',
-    conditions: 'Smog Cover Active: Airborne sand limits vision. Assassins highly probable.',
-  },
-  {
-    id: 'sector-8',
-    name: 'Oceanic Platform',
-    desc: 'The enemy fleet is rallying at this offshore command rig. If we take it down, we severe their communication network entirely, clearing the path to their command.',
-    objective: 'Neutralize the command rig garrison.',
-    conditions: 'Isolated platform. Standard visual range. Elite enemy presence.',
-  },
-  {
-    id: 'sector-9',
-    name: 'Orbital Command',
-    desc: 'This is it, Commander. The Supreme Tactical AI core is aboard the Orbital Command station. We are throwing everything at them. If we win here, the war is won.',
-    objective: 'Dismantle the supreme tactical AI forces.',
-    conditions: 'Smog Cover Active: Artificial smoke deployed. Peak enemy threat level.',
-  }
-];
+import { BASE_REGIONS } from '../campaignData';
+export { BASE_REGIONS };
 
 export default function CampaignMode({ onBack, onStartMission }: { onBack: () => void, onStartMission?: (missionId: string) => void }) {
   const { playSound } = useAudio();

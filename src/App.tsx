@@ -1,27 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion } from 'firebase/firestore';
 import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import Game from './components/Game';
-import TutorialMode from './components/TutorialMode';
-import CampaignMode, { BASE_REGIONS } from './components/CampaignMode';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
-import CommanderLeaderboard from './components/CommanderLeaderboard';
-import MatchHistory from './components/MatchHistory';
-import DailyChallenges from './components/DailyChallenges';
-import CosmeticShop from './components/CosmeticShop';
-import SeasonPass from './components/SeasonPass';
-import PlayerStats from './components/PlayerStats';
 import { PlayerProgression, getDefaultProgression, getDailyChallenges, calculateEloChange, getMatchRewards, BOARD_THEMES, SEASON_REWARDS, DailyChallenge } from './progression';
-import FriendList from './components/FriendList';
 import { useAudio } from './contexts/AudioContext';
 import { getCharacterLevelInfo, getBoostedStats } from './logic';
 import { CHEMISTRIES, ChemistryDuo } from './chemistries';
 import { AbilityTooltip } from './components/AbilityTooltip';
+import { BASE_REGIONS } from './campaignData';
+
+const Game = lazy(() => import('./components/Game'));
+const TutorialMode = lazy(() => import('./components/TutorialMode'));
+const CampaignMode = lazy(() => import('./components/CampaignMode'));
+const CommanderLeaderboard = lazy(() => import('./components/CommanderLeaderboard'));
+const MatchHistory = lazy(() => import('./components/MatchHistory'));
+const DailyChallenges = lazy(() => import('./components/DailyChallenges'));
+const CosmeticShop = lazy(() => import('./components/CosmeticShop'));
+const SeasonPass = lazy(() => import('./components/SeasonPass'));
+const PlayerStats = lazy(() => import('./components/PlayerStats'));
+const FriendList = lazy(() => import('./components/FriendList'));
 
 export default function App() {
   const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | null>(null);
@@ -529,9 +531,11 @@ export default function App() {
     }
   };
 
+  const LazyFallback = <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mr-3" /><span>LOADING MODULE...</span></div>;
+
   // Render Game Component if we selected a mode
   if (gameMode === 'local_ai' || gameMode === 'local_p2p') {
-    return <Game 
+    return <Suspense fallback={LazyFallback}><Game
       key={`game-${gameMode}-${campaignMissionId || 'freeplay'}`}
       campaignMissionId={campaignMissionId} 
       gameMode={gameMode} 
@@ -563,22 +567,26 @@ export default function App() {
       onChallengeProgress={updateChallengeProgress}
       boardTheme={progression.activeTheme}
       playerElo={progression.elo}
-    />;
+    /></Suspense>;
   }
 
   if (gameMode === 'tutorial') {
     return (
+      <Suspense fallback={LazyFallback}>
       <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
         <TutorialMode onBack={() => setGameMode(null)} />
       </div>
+      </Suspense>
     );
   }
 
   if (gameMode === 'campaign') {
     return (
+      <Suspense fallback={LazyFallback}>
       <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
         <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} />
       </div>
+      </Suspense>
     );
   }
 
@@ -904,6 +912,7 @@ export default function App() {
     }
 
     return (
+       <Suspense fallback={LazyFallback}>
        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
          <Game
            gameMode={gameMode as 'online' | 'online_coop'}
@@ -918,6 +927,7 @@ export default function App() {
            playerElo={progression.elo}
          />
        </div>
+       </Suspense>
     );
   }
 
@@ -1635,6 +1645,7 @@ export default function App() {
            ))}
          </div>
 
+         <Suspense fallback={<div className="flex items-center justify-center py-8 text-zinc-500 font-mono text-xs"><Loader2 className="w-5 h-5 animate-spin text-amber-500 mr-2" />LOADING...</div>}>
          {menuTab === 'play' && (
            <>
              {user && <PlayerStats progression={progression} />}
@@ -1662,6 +1673,7 @@ export default function App() {
              onEquip={handleEquipTheme}
            />
          )}
+         </Suspense>
       </div>
     </div>
   );

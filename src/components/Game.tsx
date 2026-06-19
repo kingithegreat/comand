@@ -21,7 +21,7 @@ import MatchChat from './MatchChat';
 import { useAudio } from '../contexts/AudioContext';
 import { PostBattleSummary } from './PostBattleSummary';
 import { safeGetItem, safeSetItem } from '../lib/storage';
-import { BASE_REGIONS } from './CampaignMode';
+import { BASE_REGIONS } from '../campaignData';
 
 const GRID_SIZE = 15;
 
