@@ -1315,11 +1315,10 @@ export default function Game({
   const handleEndTurn = useCallback(() => {
     const nextTeam = activeTeam === 'player' ? 'enemy' : 'player';
     const nextTurn = activeTeam === 'enemy' ? turn + 1 : turn;
-    
-    // For local or if we are emitting this
+
     const updatedUnits = units.map(u => ({
       ...u,
-      ap: 2
+      ap: u.team === nextTeam ? 2 : u.ap
     }));
 
     addLog(`[CYCLE] Terminating ${activeTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'} action cycle. Rotating control to ${nextTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'}. Turn ${nextTurn} active.`, 'system');
@@ -1840,7 +1839,8 @@ export default function Game({
         if (mode === 'play') {
           const pAlive = newUnits.filter(u => u.team === 'player').length > 0;
           const eAlive = newUnits.filter(u => u.team === 'enemy').length > 0;
-          if (!pAlive) { newWinner = 'enemy'; newStatus = 'finished'; }
+          if (!pAlive && !eAlive) { newWinner = activeTeam === 'player' ? 'enemy' : 'player'; newStatus = 'finished'; }
+          else if (!pAlive) { newWinner = 'enemy'; newStatus = 'finished'; }
           else if (!eAlive) { newWinner = 'player'; newStatus = 'finished'; }
         }
 
