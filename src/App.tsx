@@ -77,7 +77,22 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('tc_progression', JSON.stringify(progression));
-  }, [progression]);
+    if (user) {
+      updateDoc(doc(db, 'users', user.uid), { progression }).catch(() => {});
+    }
+  }, [progression, user]);
+
+  useEffect(() => {
+    if (user && dbProfile?.progression) {
+      const cloud = dbProfile.progression as PlayerProgression;
+      setProgression(prev => {
+        if (cloud.totalMatches > prev.totalMatches) {
+          return { ...getDefaultProgression(), ...cloud };
+        }
+        return prev;
+      });
+    }
+  }, [user, dbProfile?.progression]);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];

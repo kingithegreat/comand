@@ -789,7 +789,7 @@ export default function Game({
                            const effectId = crypto.randomUUID();
                            setDamageTexts(prev => [...prev, { id: effectId, x: ru.x, y: ru.y, amount: -increase }]);
                            setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
-                           playSound('select');
+                           playSound('heal');
                            addLog(`[HEAL] ${ru.team === 'player' ? 'Blue' : 'Purple'} ${ru.class.className} healed for ${increase} HP.`, 'ability');
                          }
                          if (lu.x !== ru.x || lu.y !== ru.y) {
@@ -1029,6 +1029,7 @@ export default function Game({
     const effectId = crypto.randomUUID();
     setDamageTexts(prev => [...prev, { id: effectId, x: selectedUnit.x, y: selectedUnit.y, amount: -healedAmount }]);
     setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+    playSound('heal');
 
     setUnits(newUnits);
     if (isOnline) {
@@ -1097,7 +1098,8 @@ export default function Game({
       setDamageTexts(prev => [...prev, { id: effectId, x, y, amount: -55 }]);
       setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
       addLog(`[HEAL] ${attackerColor} Medic discharged Nanite Resuscitation onto ${attackerColor} ${targetUnit?.class.className} (+55 HP) at ${getCoord(x, y)}.`, 'ability');
-    } 
+      playSound('heal');
+    }
     else if (selectedUnit.class.className === 'Flamethrower') {
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
@@ -1228,6 +1230,11 @@ export default function Game({
           addLog(`[FATALITY] ${targetColor} ${targetUnit.class.className} neutralized during tactical sweep.`, 'death');
         }
       }
+    }
+
+    if (selectedUnit.class.className !== 'Medic') {
+      playSound('ability');
+      setTimeout(() => playSound('damage'), 120);
     }
 
     setIsAbilityActive(false);
