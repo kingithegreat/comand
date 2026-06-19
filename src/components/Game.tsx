@@ -1173,7 +1173,7 @@ export default function Game({
       const damage = isSupport ? 20 : 25;
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - damage), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
+          return { ...u, hp: Math.max(0, u.hp - damage), ap: Math.max(0, u.ap - 1), apPenalty: Math.min(1, (u.apPenalty || 0) + 1) };
         }
         return u;
       });
@@ -1199,7 +1199,7 @@ export default function Game({
     else if (selectedUnit.class.className === 'Phantom') {
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
+          return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: Math.min(1, (u.apPenalty || 0) + 1) };
         }
         return u;
       });
@@ -1428,18 +1428,18 @@ export default function Game({
       const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
       if (dist > 4) return;
       let newMap = mapEnvironment.map(row => row.map(c => ({ ...c })));
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
           const nx = x + dx, ny = y + dy;
           if (ny >= 0 && ny < 15 && nx >= 0 && nx < 15 && newMap[ny][nx].type === 'floor') {
-            newMap[ny][nx] = { ...newMap[ny][nx], type: 'fire' };
+            newMap[ny][nx] = { ...newMap[ny][nx], type: 'poison' };
           }
         }
       }
       setMapEnvironment(newMap);
       newUnits = newUnits.map(u => u.id === selectedUnit.id ? { ...u, ap: u.ap - 1 } : u);
       playSound('explosion');
-      addLog(`[SMOKE BOMB] ${attackerColor} Scout deployed smoke at ${String.fromCharCode(65+x)}${y+1} — area obscured!`, 'ability');
+      addLog(`[SMOKE BOMB] ${attackerColor} Scout deployed toxic smoke at ${String.fromCharCode(65+x)}${y+1} — area denied!`, 'ability');
     } else if (selectedUnit.class.className === 'Technician') {
       const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
       if (dist > 5) return;
@@ -1578,9 +1578,10 @@ export default function Game({
         }
       }
       const newInvTurns = (u.invisibleTurns || 0) > 0 ? u.invisibleTurns! - 1 : 0;
+      const decayedPenalty = u.team === nextTeam ? Math.max(0, (u.apPenalty || 0) - 1) : u.apPenalty;
       return {
         ...u, hp: newHp, ap: newAp,
-        apPenalty: u.apPenalty,
+        apPenalty: decayedPenalty || undefined,
         statusEffects: newEffects.length > 0 ? newEffects : undefined,
         fortified: u.team === nextTeam ? false : u.fortified,
         invisible: newInvTurns > 0 ? u.invisible : false,
@@ -1858,7 +1859,7 @@ export default function Game({
              
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 25), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 25), ap: Math.max(0, u.ap - 1), apPenalty: Math.min(1, (u.apPenalty || 0) + 1) };
                 return u;
              }));
              setTimeout(() => {
@@ -1888,7 +1889,7 @@ export default function Game({
              
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 20), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 20), ap: Math.max(0, u.ap - 1), apPenalty: Math.min(1, (u.apPenalty || 0) + 1) };
                 return u;
              }));
              setTimeout(() => {
@@ -1947,7 +1948,7 @@ export default function Game({
 
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: Math.min(1, (u.apPenalty || 0) + 1) };
                 return u;
              }));
              setTimeout(() => {

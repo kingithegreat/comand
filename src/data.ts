@@ -94,7 +94,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Scout",
     archetype: "Short Range",
     description: "Sleek reconnaissance agent with glowing cyan visors. Excels at high-speed scouting and flanking. Passive: Visor detects Assassins in Smog up to 4 tiles away.",
-    stats: { maxHP: 75, damage: 20, range: 5, mobility: 7, accuracy: 90 },
+    stats: { maxHP: 75, damage: 25, range: 5, mobility: 7, accuracy: 90 },
     personality: 'Aggressive',
     ability: {
       name: "Adrenaline Sprint",
@@ -129,7 +129,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Support",
     archetype: "Support",
     description: "Fires rapid automated suppression bursts to secure key lanes and lock down enemy flanking routes.",
-    stats: { maxHP: 125, damage: 25, range: 8, mobility: 4, accuracy: 85 },
+    stats: { maxHP: 120, damage: 25, range: 6, mobility: 4, accuracy: 85 },
     personality: 'Support',
     ability: {
       name: "Disruptor Matrix",
@@ -200,7 +200,7 @@ export const CLASSES: CharacterClass[] = [
     className: "Phantom",
     archetype: "Support",
     description: "EMP warfare specialist with holographic decoy systems. Disrupts enemy electronics and drains action points at range.",
-    stats: { maxHP: 80, damage: 22, range: 7, mobility: 5, accuracy: 88 },
+    stats: { maxHP: 90, damage: 22, range: 7, mobility: 5, accuracy: 88 },
     personality: 'Tactical',
     ability: {
       name: "EMP Pulse",
