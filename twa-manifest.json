@@ -1,0 +1,38 @@
+{
+  "packageId": "com.tacticalcommand.app",
+  "host": "gen-lang-client-0969027846.web.app",
+  "name": "Tactical Command",
+  "launcherName": "COMAND",
+  "display": "standalone",
+  "themeColor": "#0ea5e9",
+  "navigationColor": "#09090b",
+  "navigationColorDark": "#09090b",
+  "navigationDividerColor": "#09090b",
+  "navigationDividerColorDark": "#09090b",
+  "backgroundColor": "#09090b",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.svg",
+  "maskableIconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.svg",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "tacticalcommand.keystore",
+    "alias": "tacticalcommand"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://gen-lang-client-0969027846.web.app/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependency": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://gen-lang-client-0969027846.web.app/",
+  "minSdkVersion": 19,
+  "orientation": "default"
+}
