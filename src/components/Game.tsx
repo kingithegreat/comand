@@ -194,6 +194,7 @@ export default function Game({
   smogMode,
   squadSize = 4,
   campaignMissionId,
+  campaignDifficulty = 1,
   onNextMission,
   customLayout,
   onMatchComplete,
@@ -209,6 +210,7 @@ export default function Game({
   smogMode?: boolean,
   squadSize?: number,
   campaignMissionId?: string | null,
+  campaignDifficulty?: number,
   onNextMission?: () => void,
   customLayout?: string[],
   key?: string,
@@ -340,6 +342,10 @@ export default function Game({
     setPending2APMove(null);
   }, [selectedUnitId, turn, activeTeam]);
   const [damageTexts, setDamageTexts] = useState<{id: string, x: number, y: number, amount: number}[]>([]);
+  const [hitEffects, setHitEffects] = useState<{id: string, x: number, y: number, type: 'hit'|'miss'|'death'}[]>([]);
+  const [slidingUnits, setSlidingUnits] = useState<Map<string, {dx: number, dy: number}>>(new Map());
+  const [dyingUnits, setDyingUnits] = useState<Set<string>>(new Set());
+  const [muzzleFlashes, setMuzzleFlashes] = useState<{id: string, x: number, y: number}[]>([]);
   const [shake, setShake] = useState(false);
   const [winner, setWinner] = useState<'player' | 'enemy' | null>(null);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
@@ -458,6 +464,30 @@ export default function Game({
     }, 4500);
     return () => clearTimeout(timer);
   }, [killFeed]);
+
+  const triggerHitEffect = useCallback((x: number, y: number, type: 'hit'|'miss'|'death') => {
+    const id = crypto.randomUUID();
+    setHitEffects(prev => [...prev, { id, x, y, type }]);
+    setTimeout(() => setHitEffects(prev => prev.filter(e => e.id !== id)), type === 'death' ? 700 : 450);
+  }, []);
+
+  const triggerMuzzleFlash = useCallback((x: number, y: number) => {
+    const id = crypto.randomUUID();
+    setMuzzleFlashes(prev => [...prev, { id, x, y }]);
+    setTimeout(() => setMuzzleFlashes(prev => prev.filter(m => m.id !== id)), 300);
+  }, []);
+
+  const triggerSlide = useCallback((unitId: string, fromX: number, fromY: number, toX: number, toY: number) => {
+    const dx = fromX - toX;
+    const dy = fromY - toY;
+    setSlidingUnits(prev => new Map(prev).set(unitId, { dx, dy }));
+    setTimeout(() => setSlidingUnits(prev => { const m = new Map(prev); m.delete(unitId); return m; }), 350);
+  }, []);
+
+  const triggerDeath = useCallback((unitId: string) => {
+    setDyingUnits(prev => new Set(prev).add(unitId));
+    setTimeout(() => setDyingUnits(prev => { const s = new Set(prev); s.delete(unitId); return s; }), 700);
+  }, []);
 
   // Clear undo state on turn change or attack
   useEffect(() => {
@@ -1841,13 +1871,16 @@ export default function Game({
   }, [timeLeft, isOnline, mode, winner, activeTeam, myTeam, handleEndTurn]);
 
   const getAIDifficulty = useCallback(() => {
-    if (!campaignMissionId) return 1;
+    if (!campaignMissionId) return campaignDifficulty;
     if (campaignMissionId === 'tutorial') return 0;
     const match = campaignMissionId.match(/sector-(\d+)/);
-    if (!match) return 1;
+    if (!match) return campaignDifficulty;
     const sector = parseInt(match[1]);
-    return Math.min(3, Math.floor(sector / 3));
-  }, [campaignMissionId]);
+    const baseDifficulty = Math.min(3, Math.floor(sector / 3));
+    if (campaignDifficulty === 0) return Math.max(0, baseDifficulty - 1);
+    if (campaignDifficulty === 2) return Math.min(3, baseDifficulty + 1);
+    return baseDifficulty;
+  }, [campaignMissionId, campaignDifficulty]);
 
   const performAINextAction = useCallback(() => {
     const enemyUnits = units.filter(u => u.team === 'enemy' && u.ap > 0 && u.hp > 0);
@@ -2340,12 +2373,20 @@ export default function Game({
          setBattleStats(prev => ({ ...prev, damageTaken: prev.damageTaken + effectiveDmg }));
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
+         triggerMuzzleFlash(enemy.x, enemy.y);
+         triggerHitEffect(p.x, p.y, 'hit');
          const damageId = crypto.randomUUID();
          setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: effectiveDmg }]);
          setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
 
          setShake(true);
          setTimeout(() => setShake(false), 200);
+
+         const remHp = p.hp - effectiveDmg;
+         if (remHp <= 0) {
+           triggerDeath(p.id);
+           triggerHitEffect(p.x, p.y, 'death');
+         }
 
          setUnits(prev => prev.map(u => {
             if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
@@ -2357,7 +2398,6 @@ export default function Game({
             setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
          }, 800);
 
-         const remHp = p.hp - effectiveDmg;
          const aiCoverMsg = coverLevel === 'full' ? ' (You had full cover — 25% damage reduced)' : coverLevel === 'half' ? ' (You had half cover)' : '';
          addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${effectiveDmg} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).${aiCoverMsg}`, 'combat');
          if (remHp <= 0) {
@@ -2366,9 +2406,11 @@ export default function Game({
        } else {
          playSound('attack');
          setTimeout(() => playSound('miss'), 150);
-         const damageId = crypto.randomUUID();
-         setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: 0 }]);
-         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
+         triggerMuzzleFlash(enemy.x, enemy.y);
+         triggerHitEffect(p.x, p.y, 'miss');
+         const damageId2 = crypto.randomUUID();
+         setDamageTexts(prev => [...prev, { id: damageId2, x: p.x, y: p.y, amount: 0 }]);
+         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId2)), 1000);
 
          setUnits(prev => prev.map(u => {
             if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
@@ -2432,7 +2474,8 @@ export default function Game({
 
        if (bestTile && bestTileScore > currentScore + 0.5) {
           const moveFacing = getFacingDirection(enemy.x, enemy.y, bestTile.x, bestTile.y, enemy.facing);
-          setUnits(prev => prev.map(u => 
+          triggerSlide(enemy.id, enemy.x, enemy.y, bestTile.x, bestTile.y);
+          setUnits(prev => prev.map(u =>
             u.id === enemy.id ? { ...u, x: bestTile.x, y: bestTile.y, ap: u.ap - bestTile.apCost, facing: moveFacing } : u
           ));
           addLog(`[MANEUVER] Enemy ${enemy.class.className} advanced to quadrant ${getCoord(bestTile.x, bestTile.y)} (used ${bestTile.apCost} AP).`, 'info');
@@ -2897,11 +2940,19 @@ export default function Game({
                     }
                     playSound('attack');
                     setTimeout(() => playSound('damage'), 150);
+                    triggerMuzzleFlash(unit.x, unit.y);
+                    triggerHitEffect(existingUnit.x, existingUnit.y, 'hit');
                     const damageId = crypto.randomUUID();
                     setDamageTexts(prev => [...prev, { id: damageId, x: existingUnit.x, y: existingUnit.y, amount: effectiveDmg }]);
                     setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
                     setShake(true);
                     setTimeout(() => setShake(false), 200);
+
+                    const relHP = existingUnit.hp - effectiveDmg;
+                    if (relHP <= 0) {
+                      triggerDeath(existingUnit.id);
+                      triggerHitEffect(existingUnit.x, existingUnit.y, 'death');
+                    }
 
                     const newUnits = units.map(u => {
                       if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const, invisible: false, invisibleTurns: undefined };
@@ -2919,7 +2970,6 @@ export default function Game({
                       });
                     }, 800);
 
-                    const relHP = existingUnit.hp - effectiveDmg;
                     const coverMsg = coverLevel === 'full' ? ' (Target behind full cover — 25% damage reduced)' : coverLevel === 'half' ? ' (Target behind half cover)' : '';
                     addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${effectiveDmg} damage!${coverMsg}`, 'combat');
                     if (relHP <= 0) {
@@ -2939,6 +2989,8 @@ export default function Game({
                     }
                     playSound('attack');
                     setTimeout(() => playSound('miss'), 150);
+                    triggerMuzzleFlash(unit.x, unit.y);
+                    triggerHitEffect(existingUnit.x, existingUnit.y, 'miss');
                     const effectId = crypto.randomUUID();
                     setDamageTexts(prev => [...prev, { id: effectId, x: existingUnit.x, y: existingUnit.y, amount: 0 }]);
                     setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
@@ -3074,8 +3126,8 @@ export default function Game({
            }
            
            setPending2APMove(null);
-           // Store pre-move state for undo
            setLastMoveState({ unitId: unit.id, x: unit.x, y: unit.y, ap: unit.ap, facing: unit.facing });
+           triggerSlide(unit.id, unit.x, unit.y, x, y);
            const moveFacing = getFacingDirection(unit.x, unit.y, x, y, unit.facing);
            const newUnits = units.map(u =>
              u.id === selectedUnitId
@@ -3846,21 +3898,30 @@ export default function Game({
             const isPlayerTeam = unit.team === 'player';
             const isHovered = hoveredTile?.x === unit.x && hoveredTile?.y === unit.y;
 
+            const slideData = slidingUnits.get(unit.id);
+            const isDying = dyingUnits.has(unit.id);
+
             const unitSpriteFrame = (
-              <div className="w-full h-full p-1 flex items-center justify-center relative overflow-visible select-none pointer-events-none">
-                <UnitSprite 
-                  classVal={unit.class.className} 
-                  team={unit.team} 
+              <div
+                className={`w-full h-full p-1 flex items-center justify-center relative overflow-visible select-none pointer-events-none ${slideData ? 'animate-unit-slide' : ''} ${isDying ? 'animate-death' : ''}`}
+                style={slideData ? {
+                  '--slide-dx': slideData.dx,
+                  '--slide-dy': slideData.dy,
+                } as React.CSSProperties : undefined}
+              >
+                <UnitSprite
+                  classVal={unit.class.className}
+                  team={unit.team}
                   facing={unit.facing || (isPlayerTeam ? 'right' : 'left')}
                   pose={unit.pose || 'idle'}
-                  className="w-full h-full drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] filter transition-transform duration-300 pointer-events-none" 
+                  className="w-full h-full drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] filter transition-transform duration-300 pointer-events-none"
                 />
               </div>
             );
 
             content = (
               <>
-                <div 
+                <div
                   id={`unit-card-${unit.id}`}
                   className={`absolute inset-0 flex flex-col justify-center items-center transition-all duration-300 z-10 ${targetOverlayClass} ${deathClass}`}
                 >
@@ -3975,6 +4036,14 @@ export default function Game({
             {overlayClass && <div className={`absolute inset-0 ${overlayClass} z-0`}></div>}
             {cell.type === 'wall' && <div className="absolute inset-0 opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMSIvPgo8L3N2Zz4=')]"></div>}
             
+            {hitEffects.filter(e => e.x === x && e.y === y).map(e => (
+              <div key={e.id} className={`absolute inset-0 z-40 pointer-events-none rounded-md ${e.type === 'hit' ? 'animate-hit-flash' : e.type === 'miss' ? 'animate-miss-flash' : 'animate-hit-flash'}`} />
+            ))}
+            {muzzleFlashes.filter(m => m.x === x && m.y === y).map(m => (
+              <div key={m.id} className="absolute inset-0 z-45 flex items-center justify-center pointer-events-none">
+                <div className="w-3 h-3 rounded-full bg-yellow-300/90 animate-muzzle-flash" />
+              </div>
+            ))}
             {damageTexts.filter(dt => dt.x === x && dt.y === y).map(dt => {
                let displayText = `-${dt.amount}`;
                let colorClass = 'text-purple-500';
@@ -5420,15 +5489,15 @@ export default function Game({
               {/* TACTICAL CONTROL BAR: Undo, Overwatch, Danger Zone, Keyboard Hints */}
               {mode === 'play' && activeTeam === (myTeam || 'player') && (
                 <div className="w-full shrink-0 flex justify-center mx-auto mt-1 z-[70]">
-                  <div className="flex flex-wrap items-center gap-1.5 max-w-lg">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-1.5 max-w-lg">
                     {/* Undo Move */}
                     {lastMoveState && (
                       <button
                         type="button"
                         onClick={handleUndoMove}
-                        className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-950/30 text-amber-400 font-mono text-[9px] uppercase tracking-wider hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3 py-2 sm:py-1.5 rounded-lg border border-amber-500/40 bg-amber-950/30 text-amber-400 font-mono text-[10px] sm:text-[9px] uppercase tracking-wider hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
                       >
-                        <Undo2 className="w-3 h-3" /> UNDO [Z]
+                        <Undo2 className="w-3.5 h-3.5 sm:w-3 sm:h-3" /> UNDO
                       </button>
                     )}
                     {/* Overwatch */}
@@ -5436,28 +5505,30 @@ export default function Game({
                       <button
                         type="button"
                         onClick={handleSetOverwatch}
-                        className="px-3 py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-400 font-mono text-[9px] uppercase tracking-wider hover:bg-cyan-500/20 transition-all cursor-pointer flex items-center gap-1.5"
+                        className="px-3 py-2 sm:py-1.5 rounded-lg border border-cyan-500/40 bg-cyan-950/30 text-cyan-400 font-mono text-[10px] sm:text-[9px] uppercase tracking-wider hover:bg-cyan-500/20 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
                       >
-                        <Crosshair className="w-3 h-3" /> OVERWATCH
+                        <Crosshair className="w-3.5 h-3.5 sm:w-3 sm:h-3" /> OVERWATCH
                       </button>
                     )}
                     {/* Danger Zone Toggle */}
                     <button
                       type="button"
                       onClick={() => setShowDangerZone(!showDangerZone)}
-                      className={`px-3 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${showDangerZone ? 'border-red-500/50 bg-red-950/40 text-red-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
+                      className={`px-3 py-2 sm:py-1.5 rounded-lg border font-mono text-[10px] sm:text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${showDangerZone ? 'border-red-500/50 bg-red-950/40 text-red-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
                     >
-                      {showDangerZone ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                      {showDangerZone ? 'HIDE THREATS [D]' : 'SHOW THREATS [D]'}
+                      {showDangerZone ? <EyeOff className="w-3.5 h-3.5 sm:w-3 sm:h-3" /> : <Eye className="w-3.5 h-3.5 sm:w-3 sm:h-3" />}
+                      <span className="hidden sm:inline">{showDangerZone ? 'HIDE THREATS [D]' : 'SHOW THREATS [D]'}</span>
+                      <span className="sm:hidden">{showDangerZone ? 'THREATS' : 'THREATS'}</span>
                     </button>
                     {/* Isometric View Toggle */}
                     <button
                       type="button"
                       onClick={() => setIsIsometric(prev => { const next = !prev; safeSetItem('tc_isometric', String(next)); return next; })}
-                      className={`px-3 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${isIsometric ? 'border-cyan-500/50 bg-cyan-950/40 text-cyan-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
+                      className={`px-3 py-2 sm:py-1.5 rounded-lg border font-mono text-[10px] sm:text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${isIsometric ? 'border-cyan-500/50 bg-cyan-950/40 text-cyan-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
                     >
-                      <Grid className="w-3 h-3" />
-                      {isIsometric ? '2D VIEW [V]' : '3D VIEW [V]'}
+                      <Grid className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                      <span className="hidden sm:inline">{isIsometric ? '2D VIEW [V]' : '3D VIEW [V]'}</span>
+                      <span className="sm:hidden">{isIsometric ? '2D' : '3D'}</span>
                     </button>
                     {/* Keyboard hints */}
                     <div className="hidden sm:flex items-center gap-1 text-[7px] font-mono text-zinc-600 ml-1">

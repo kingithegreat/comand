@@ -25,7 +25,7 @@ function processRegions(completedIds: string[]) {
   });
 }
 
-export default function CampaignMode({ onBack, onStartMission }: { onBack: () => void, onStartMission?: (missionId: string) => void }) {
+export default function CampaignMode({ onBack, onStartMission, difficulty = 1, onDifficultyChange }: { onBack: () => void, onStartMission?: (missionId: string) => void, difficulty?: number, onDifficultyChange?: (d: number) => void }) {
   const { playSound } = useAudio();
   const [regions, setRegions] = useState<any[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<any>(null);
@@ -183,7 +183,32 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
         
         {/* Region Map */}
         <div className="w-full sm:w-2/3 border-b sm:border-b-0 sm:border-r border-zinc-800 border-opacity-50 p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 sm:overflow-y-auto relative bg-zinc-950 shrink-0 sm:shrink">
-           <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1 sm:mb-2 sticky top-0 bg-zinc-950 z-10 py-1">Select Tactical Theater</p>
+           <div className="flex items-center justify-between sticky top-0 bg-zinc-950 z-10 py-1">
+             <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Select Tactical Theater</p>
+             <div className="flex items-center gap-1">
+               <span className="text-[8px] text-zinc-600 uppercase tracking-wider mr-1 font-bold">Difficulty</span>
+               {[
+                 { label: 'EASY', value: 0, color: 'emerald' },
+                 { label: 'NORMAL', value: 1, color: 'amber' },
+                 { label: 'HARD', value: 2, color: 'red' },
+               ].map(d => (
+                 <button
+                   key={d.value}
+                   type="button"
+                   onClick={() => { playSound('click'); onDifficultyChange?.(d.value); }}
+                   className={`px-2 py-1 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer border active:scale-95 ${
+                     difficulty === d.value
+                       ? d.color === 'emerald' ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'
+                         : d.color === 'amber' ? 'bg-amber-500/20 border-amber-500/60 text-amber-400'
+                         : 'bg-red-500/20 border-red-500/60 text-red-400'
+                       : 'bg-zinc-900/50 border-zinc-700/30 text-zinc-600 hover:text-zinc-400'
+                   }`}
+                 >
+                   {d.label}
+                 </button>
+               ))}
+             </div>
+           </div>
            {regions.map((r, i) => {
              const isAct2Start = i === 10;
              const isSelected = selectedRegion.id === r.id;
@@ -251,12 +276,14 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
 
            {(() => {
              const sectorMatch = selectedRegion.id.match(/sector-(\d+)/);
-             const difficulty = sectorMatch ? Math.min(3, Math.floor(parseInt(sectorMatch[1]) / 3)) : 0;
+             const baseDiff = sectorMatch ? Math.min(3, Math.floor(parseInt(sectorMatch[1]) / 3)) : 0;
+             const effectiveDiff = difficulty === 0 ? Math.max(0, baseDiff - 1) : difficulty === 2 ? Math.min(3, baseDiff + 1) : baseDiff;
              const labels = ['Recruit', 'Trained', 'Veteran', 'Commander'];
              const colors = ['text-emerald-400 border-emerald-500/30 bg-emerald-500/10', 'text-amber-400 border-amber-500/30 bg-amber-500/10', 'text-orange-400 border-orange-500/30 bg-orange-500/10', 'text-rose-400 border-rose-500/30 bg-rose-500/10'];
+             const diffLabel = difficulty === 0 ? 'EASY' : difficulty === 2 ? 'HARD' : '';
              return (
-               <div className={`text-[9px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg border mb-3 shrink-0 ${colors[difficulty]}`}>
-                 {'★'.repeat(difficulty + 1)} {labels[difficulty]} Difficulty
+               <div className={`text-[9px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg border mb-3 shrink-0 ${colors[effectiveDiff]}`}>
+                 {'★'.repeat(effectiveDiff + 1)} {labels[effectiveDiff]}{diffLabel ? ` (${diffLabel})` : ''}
                </div>
              );
            })()}

@@ -378,6 +378,66 @@ html, body, #root {
   50% { box-shadow: 0 0 18px rgba(230,167,0,0.6); border-color: rgba(230,167,0,0.9); }
 }
 
+/* ===== UNIT MOVEMENT SLIDE ===== */
+@keyframes unit-slide-in {
+  from {
+    transform: translate(
+      calc(var(--slide-dx, 0) * 100%),
+      calc(var(--slide-dy, 0) * 100%)
+    );
+  }
+  to { transform: translate(0, 0); }
+}
+.animate-unit-slide {
+  animation: unit-slide-in 0.3s ease-out forwards;
+}
+
+/* ===== COMBAT HIT FLASH ===== */
+@keyframes hit-flash {
+  0% { opacity: 0; }
+  15% { opacity: 0.7; }
+  40% { opacity: 0.3; }
+  60% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+.animate-hit-flash {
+  animation: hit-flash 0.4s ease-out forwards;
+  background: radial-gradient(circle, rgba(239,68,68,0.6) 0%, rgba(239,68,68,0) 70%);
+}
+
+/* ===== COMBAT MISS EFFECT ===== */
+@keyframes miss-flash {
+  0% { opacity: 0; }
+  20% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+.animate-miss-flash {
+  animation: miss-flash 0.3s ease-out forwards;
+  background: radial-gradient(circle, rgba(161,161,170,0.4) 0%, rgba(161,161,170,0) 70%);
+}
+
+/* ===== UNIT DEATH EFFECT ===== */
+@keyframes death-dissolve {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  20% { transform: scale(1.15); opacity: 1; filter: brightness(2) saturate(0); }
+  50% { transform: scale(1.1); opacity: 0.6; filter: brightness(1.5) saturate(0); }
+  100% { transform: scale(0.5); opacity: 0; filter: brightness(3) saturate(0); }
+}
+.animate-death {
+  animation: death-dissolve 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ===== MUZZLE FLASH ===== */
+@keyframes muzzle-flash {
+  0% { transform: scale(0.3); opacity: 1; }
+  30% { transform: scale(1.2); opacity: 0.8; }
+  100% { transform: scale(0.5); opacity: 0; }
+}
+.animate-muzzle-flash {
+  animation: muzzle-flash 0.25s ease-out forwards;
+}
+
 /* ===== MOBILE SAFE AREA ===== */
 #root {
   padding-top: env(safe-area-inset-top);
@@ -396,5 +456,8 @@ html, body, #root {
 @media (hover: none) and (pointer: coarse) {
   button {
     min-height: 36px;
+  }
+  .grid > div {
+    min-height: 20px;
   }
 }

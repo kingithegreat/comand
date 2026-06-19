@@ -30,6 +30,9 @@ export default function App() {
   const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | 'map_editor' | null>(null);
   const [customLayout, setCustomLayout] = useState<string[] | null>(null);
   const [campaignMissionId, setCampaignMissionId] = useState<string | null>(null);
+  const [campaignDifficulty, setCampaignDifficulty] = useState<number>(() => {
+    try { const v = localStorage.getItem('tc_campaign_difficulty'); return v ? parseInt(v) : 1; } catch { return 1; }
+  });
   const [user, loading] = useAuthState(auth);
   const [dbProfile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
   const [localProfile, setLocalProfile] = useState<any>(() => {
@@ -618,6 +621,7 @@ export default function App() {
     return <Suspense fallback={LazyFallback}><Game
       key={`game-${gameMode}-${campaignMissionId || 'freeplay'}-${customLayout ? 'custom' : 'std'}`}
       campaignMissionId={campaignMissionId}
+      campaignDifficulty={campaignDifficulty}
       gameMode={gameMode}
       customLayout={customLayout || undefined}
       onBack={() => {
@@ -680,7 +684,7 @@ export default function App() {
     return (
       <Suspense fallback={LazyFallback}>
       <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
-        <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} />
+        <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} difficulty={campaignDifficulty} onDifficultyChange={(d) => { setCampaignDifficulty(d); try { localStorage.setItem('tc_campaign_difficulty', String(d)); } catch {} }} />
       </div>
       </Suspense>
     );
