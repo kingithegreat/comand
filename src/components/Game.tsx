@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, ShieldAlert, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal, Wind, Flag, MessageSquare, Save, Download, Undo2, Eye, EyeOff, Keyboard } from 'lucide-react';
+import { Shield, ShieldAlert, Target, Activity, Move, PlusCircle, RotateCcw, ChevronRight, Crosshair, Users, Zap, Flame, Rocket, Car, Truck, Radar, Terminal, Wind, Flag, MessageSquare, Save, Download, Undo2, Eye, EyeOff, Keyboard, Grid } from 'lucide-react';
 import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell, TurnSnapshot, StatusEffect } from '../types';
@@ -433,6 +433,9 @@ export default function Game({
 
   // Feature: Minimap
   const [showMinimap, setShowMinimap] = useState(true);
+  const [isIsometric, setIsIsometric] = useState(() => {
+    try { return safeGetItem('tc_isometric') === 'true'; } catch { return false; }
+  });
 
   // Feature: Camera Follow AI
   const [aiHighlightTile, setAiHighlightTile] = useState<{ x: number; y: number } | null>(null);
@@ -1123,6 +1126,8 @@ export default function Game({
         handleUndoMove();
       } else if (key === 'd') {
         setShowDangerZone(prev => !prev);
+      } else if (key === 'v') {
+        setIsIsometric(prev => { const next = !prev; safeSetItem('tc_isometric', String(next)); return next; });
       }
     };
     window.addEventListener('keydown', handler);
@@ -3951,6 +3956,11 @@ export default function Game({
             }}
             onMouseLeave={() => { setHoveredTile(null); setTooltipUnit(null); }}
             className={`w-full pt-[100%] relative transition-all cursor-pointer rounded-md group ${bgClass} ${borderClass} ${losClass}`}
+            style={isIsometric ? {
+              transformStyle: 'preserve-3d',
+              transform: cell.type === 'wall' ? 'translateZ(18px)' : (cell.type === 'crate' || cell.type === 'barrel') ? 'translateZ(10px)' : unit ? 'translateZ(4px)' : undefined,
+              boxShadow: cell.type === 'wall' ? '0 18px 8px -4px rgba(0,0,0,0.7), 0 0 0 1px rgba(168,85,247,0.3)' : (cell.type === 'crate' || cell.type === 'barrel') ? '0 10px 6px -3px rgba(0,0,0,0.6)' : unit ? '0 4px 4px -2px rgba(0,0,0,0.5)' : undefined,
+            } : undefined}
           >
             {backgroundDecor}
             {cellDecoration}
@@ -5095,7 +5105,9 @@ export default function Game({
                 aria-roledescription="tactical game board"
                 onDoubleClick={handleGridDoubleClick}
                 onTouchStart={handleGridDoubleTap}
-                className={`@container shrink-0 touch-manipulation relative w-full flex items-center border rounded-lg p-2 overflow-x-auto animate-fade-in mt-1 select-none transition-all duration-300 ${
+                className={`@container shrink-0 touch-manipulation relative w-full flex items-center border rounded-lg p-2 animate-fade-in mt-1 select-none transition-all duration-300 ${
+                  isIsometric ? 'overflow-visible' : 'overflow-x-auto'
+                } ${
                   zoomLevel === 140 ? 'justify-start cursor-zoom-out' : 'justify-center cursor-zoom-in'
                 } ${(() => {
                   const t = BOARD_THEMES.find(th => th.id === boardTheme);
@@ -5126,7 +5138,7 @@ export default function Game({
                 >
                   {/* Column labels scale (A-O) */}
                   <div
-                    className="hidden sm:grid gap-[1px] w-full mb-1 shrink-0"
+                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
@@ -5142,7 +5154,7 @@ export default function Game({
 
                   <div className="flex w-full items-stretch">
                     {/* Row labels vertical column (01-15) */}
-                    <div className="hidden sm:flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
+                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5151,12 +5163,21 @@ export default function Game({
                     </div>
 
                     {/* Actual battlefield grid */}
-                    <div className="flex-1 relative">
-                      <div 
-                        className={`grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg overflow-hidden @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''}`}
-                        style={{ 
+                    <div className="flex-1 relative" style={isIsometric ? { perspective: '1200px', perspectiveOrigin: '50% 50%' } : undefined}>
+                      <div
+                        className={`grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''} ${isIsometric ? 'overflow-visible' : 'overflow-hidden'}`}
+                        style={{
                           gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                          backgroundColor: '#1b2015'
+                          backgroundColor: '#1b2015',
+                          ...(isIsometric ? {
+                            transform: 'rotateX(55deg) rotateZ(-45deg) scale(0.75)',
+                            transformStyle: 'preserve-3d',
+                            transformOrigin: '50% 50%',
+                            transition: 'transform 0.5s ease-in-out',
+                          } : {
+                            transform: 'none',
+                            transition: 'transform 0.5s ease-in-out',
+                          })
                         }}
                       >
                         {renderGrid()}
@@ -5164,7 +5185,7 @@ export default function Game({
                     </div>
 
                     {/* Right Row labels vertical column (01-15) */}
-                    <div className="hidden sm:flex flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0">
+                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5175,7 +5196,7 @@ export default function Game({
 
                   {/* Bottom Column labels scale (A-O) */}
                   <div
-                    className="hidden sm:grid gap-[1px] w-full mt-1 shrink-0"
+                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
@@ -5428,6 +5449,15 @@ export default function Game({
                     >
                       {showDangerZone ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                       {showDangerZone ? 'HIDE THREATS [D]' : 'SHOW THREATS [D]'}
+                    </button>
+                    {/* Isometric View Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setIsIsometric(prev => { const next = !prev; safeSetItem('tc_isometric', String(next)); return next; })}
+                      className={`px-3 py-1.5 rounded-lg border font-mono text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${isIsometric ? 'border-cyan-500/50 bg-cyan-950/40 text-cyan-400' : 'border-zinc-700/50 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      <Grid className="w-3 h-3" />
+                      {isIsometric ? '2D VIEW [V]' : '3D VIEW [V]'}
                     </button>
                     {/* Keyboard hints */}
                     <div className="hidden sm:flex items-center gap-1 text-[7px] font-mono text-zinc-600 ml-1">
