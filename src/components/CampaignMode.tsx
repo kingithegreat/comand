@@ -3,14 +3,34 @@ import { ArrowLeft, Globe, Lock, Play, ShieldAlert, Navigation, Star, SearchX, L
 import { useAudio } from '../contexts/AudioContext';
 import { safeGetItem, safeSetItem } from '../lib/storage';
 import { BASE_REGIONS } from '../campaignData';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 export { BASE_REGIONS };
+
+function processRegions(completedIds: string[]) {
+  return BASE_REGIONS.map((r, index) => {
+    const isCompleted = completedIds.includes(r.id);
+    let status = 'locked';
+    if (isCompleted) {
+      status = 'completed';
+    } else if (index === 0 || index === 1) {
+      status = 'available';
+    } else {
+      const prevRegion = BASE_REGIONS[index - 1];
+      if (completedIds.includes(prevRegion.id)) {
+        status = 'available';
+      }
+    }
+    return { ...r, status };
+  });
+}
 
 export default function CampaignMode({ onBack, onStartMission }: { onBack: () => void, onStartMission?: (missionId: string) => void }) {
   const { playSound } = useAudio();
   const [regions, setRegions] = useState<any[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<any>(null);
   const [lockedAnim, setLockedAnim] = useState<string | null>(null);
-  
+
   // Tactical Loading Simulation
   const [loadingMission, setLoadingMission] = useState<boolean>(false);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
@@ -18,27 +38,43 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
   const [showBriefing, setShowBriefing] = useState<boolean>(false);
 
   useEffect(() => {
-    // Determine status for each region
-    const processed = BASE_REGIONS.map((r, index) => {
-      const isCompleted = safeGetItem(`campaign_${r.id}_completed`) === 'true';
-      let status = 'locked';
-      if (isCompleted) {
-        status = 'completed';
-      } else if (index === 0 || index === 1) { 
-        status = 'available';
-      } else {
-        const prevRegion = BASE_REGIONS[index - 1];
-        if (safeGetItem(`campaign_${prevRegion.id}_completed`) === 'true') {
-          status = 'available';
-        }
-      }
-      return { ...r, status };
-    });
-    setRegions(processed);
-    
-    // Auto-select first available or last completed
-    const firstAvailable = processed.find(r => r.status === 'available') || processed[0];
+    const localCompleted = BASE_REGIONS
+      .filter(r => safeGetItem(`campaign_${r.id}_completed`) === 'true')
+      .map(r => r.id);
+
+    const localProcessed = processRegions(localCompleted);
+    setRegions(localProcessed);
+    const firstAvailable = localProcessed.find(r => r.status === 'available') || localProcessed[0];
     setSelectedRegion(firstAvailable);
+
+    const user = auth.currentUser;
+    if (user) {
+      getDoc(doc(db, 'stats', user.uid)).then(snap => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const cloudCompleted: string[] = data.campaignCompleted || [];
+          const merged = [...new Set([...localCompleted, ...cloudCompleted])];
+          merged.forEach(id => safeSetItem(`campaign_${id}_completed`, 'true'));
+          const updated = processRegions(merged);
+          setRegions(updated);
+          const first = updated.find(r => r.status === 'available') || updated[0];
+          setSelectedRegion(first);
+          if (merged.length > cloudCompleted.length) {
+            setDoc(doc(db, 'stats', user.uid), {
+              campaignSectors: merged.length,
+              campaignCompleted: merged
+            }, { merge: true }).catch(() => {});
+          }
+        } else if (localCompleted.length > 0) {
+          setDoc(doc(db, 'stats', user.uid), {
+            userId: user.uid,
+            displayName: user.displayName || 'Commander',
+            campaignSectors: localCompleted.length,
+            campaignCompleted: localCompleted
+          }, { merge: true }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   const handleLaunch = () => {
@@ -121,9 +157,10 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
             <button 
                onClick={() => {
                   if (confirm('Are you sure you want to completely reset the campaign progression?')) {
-                     safeSetItem('campaign_tutorial_completed', 'false');
-                     for (let i = 1; i <= 9; i++) {
-                       safeSetItem(`campaign_sector-${i}_completed`, 'false');
+                     BASE_REGIONS.forEach(r => safeSetItem(`campaign_${r.id}_completed`, 'false'));
+                     const user = auth.currentUser;
+                     if (user) {
+                       setDoc(doc(db, 'stats', user.uid), { campaignSectors: 0, campaignCompleted: [] }, { merge: true }).catch(() => {});
                      }
                      window.location.reload();
                   }

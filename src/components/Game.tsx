@@ -356,20 +356,15 @@ export default function Game({
   useEffect(() => {
     if (winner === 'player' && gameMode === 'local_ai' && campaignMissionId) {
       safeSetItem(`campaign_${campaignMissionId}_completed`, 'true');
-      
-      let completedCount = 0;
-      if (safeGetItem(`campaign_tutorial_completed`) === 'true') completedCount++;
-      for (let i = 1; i <= 9; i++) {
-        if (safeGetItem(`campaign_sector-${i}_completed`) === 'true') {
-           completedCount++;
-        }
-      }
-      
+
+      const completedIds = BASE_REGIONS.map(r => r.id).filter(id => safeGetItem(`campaign_${id}_completed`) === 'true');
+
       if (auth.currentUser) {
         setDoc(doc(db, 'stats', auth.currentUser.uid), {
            userId: auth.currentUser.uid,
            displayName: auth.currentUser.displayName || 'Commander',
-           campaignSectors: completedCount
+           campaignSectors: completedIds.length,
+           campaignCompleted: completedIds
         }, { merge: true }).catch(err => console.error("Error updating campaign stats", err));
       }
     }
@@ -938,7 +933,8 @@ export default function Game({
         return true;
       }
       if (!unitAtTile || unitAtTile.team === selectedUnit.team) return false;
-      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+      const pen = selectedUnit.class.className === 'Sniper' ? 1 : 0;
+      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment, pen);
       if (!hasLos) return false;
       return true;
     }
@@ -1504,7 +1500,7 @@ export default function Game({
           const target = playerUnits.find(u =>
              u.hp > 0 &&
              (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 10 &&
-             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment)
+             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment, 1)
           );
           if (target) {
              const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
@@ -1783,7 +1779,8 @@ export default function Game({
 
     for (const p of playerUnits) {
        const dist = Math.abs(enemy.x - p.x) + Math.abs(enemy.y - p.y);
-       const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
+       const aiPen = enemy.class.className === 'Sniper' ? 1 : 0;
+       const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment, aiPen);
        if (dist <= enemy.class.stats.range && hasLos) {
           const { chance } = calculateHitChance(enemy, p, mapEnvironment);
           let score = chance; // Factor in hit chance heavily
@@ -1913,13 +1910,15 @@ export default function Game({
        }
     }
 
-    // 3. Try to destroy adjacent crate blocking LOS
+    // 3. Try to destroy crate blocking LOS (within firing range)
     if (enemy.ap >= 1) {
-      const adjDirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
-      for (const dir of adjDirs) {
-        const cx = enemy.x + dir.x;
-        const cy = enemy.y + dir.y;
-        if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE && mapEnvironment[cy]?.[cx]?.type === 'crate') {
+      const range = enemy.class.stats.range;
+      for (let cy = 0; cy < GRID_SIZE; cy++) {
+        for (let cx = 0; cx < GRID_SIZE; cx++) {
+          if (mapEnvironment[cy]?.[cx]?.type !== 'crate') continue;
+          const dist = Math.abs(enemy.x - cx) + Math.abs(enemy.y - cy);
+          if (dist > range) continue;
+          if (!checkLineOfSight(enemy.x, enemy.y, cx, cy, mapEnvironment)) continue;
           const testMap = mapEnvironment.map((row, ry) =>
             row.map((c, colx) => colx === cx && ry === cy ? { ...c, type: 'floor' as const } : c)
           );
@@ -1929,15 +1928,12 @@ export default function Game({
             return !hasLosBefore && hasLosAfter;
           });
           if (crateBlocksLos) {
-            const updatedMap = mapEnvironment.map((row, ry) =>
-              row.map((c, colx) => colx === cx && ry === cy ? { ...c, type: 'floor' as const } : c)
-            );
-            setMapEnvironment(updatedMap);
+            setMapEnvironment(testMap);
             setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: u.ap - 1 } : u));
             playSound('destroy');
             addLog(`[DEMOLISH] Enemy ${enemy.class.className} destroyed crate cover at ${getCoord(cx, cy)}.`, 'combat');
             if (isOnline && onlineMatch?.id) {
-              updateDoc(doc(db, 'matches', onlineMatch.id), { gridEnv: JSON.stringify(updatedMap) });
+              updateDoc(doc(db, 'matches', onlineMatch.id), { gridEnv: JSON.stringify(testMap) });
             }
             return;
           }
@@ -2208,7 +2204,7 @@ export default function Game({
     if (!isOnline && gameMode === 'local_ai' && mode === 'play' && activeTeam === 'enemy') return; // Block player input during AI turn
     if (isOnline && myTeam && mode === 'play' && activeTeam !== myTeam) return; // Block out of turn
 
-    const existingUnitIndex = units.findIndex(u => u.x === x && u.y === y);
+    const existingUnitIndex = units.findIndex(u => u.x === x && u.y === y && u.hp > 0);
     let existingUnit = existingUnitIndex >= 0 ? units[existingUnitIndex] : null;
 
     if (mode === 'play' && isSmogActive && existingUnit) {
@@ -2334,7 +2330,8 @@ export default function Game({
             const unit = units.find(u => u.id === selectedUnitId);
             if (unit && unit.team === activeTeam) {
                const dist = Math.abs(unit.x - existingUnit.x) + Math.abs(unit.y - existingUnit.y);
-               const hasLos = checkLineOfSight(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment);
+               const sniperPen = unit.class.className === 'Sniper' ? 1 : 0;
+               const hasLos = checkLineOfSight(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment, sniperPen);
                if (dist <= unit.class.stats.range && hasLos && unit.ap >= 1) {
                   const { chance, isCovered } = calculateHitChance(unit, existingUnit, mapEnvironment);
                   const isHit = Math.random() * 100 <= chance;
@@ -2440,7 +2437,8 @@ export default function Game({
          const cell = mapEnvironment[y]?.[x];
          if (unit && unit.team === activeTeam && unit.ap >= 1 && cell?.type === 'crate') {
            const dist = Math.abs(unit.x - x) + Math.abs(unit.y - y);
-           if (dist <= 1) {
+           const hasLos = checkLineOfSight(unit.x, unit.y, x, y, mapEnvironment);
+           if (dist <= unit.class.stats.range && hasLos) {
              const updatedMap = mapEnvironment.map((row, ry) =>
                row.map((c, cx) => cx === x && ry === y ? { ...c, type: 'floor' as const } : c)
              );
@@ -2671,7 +2669,8 @@ export default function Game({
     let attackContextLabel = "";
     if (selectedUnit && unitOnTile && unitOnTile.team !== selectedUnit.team && mode === 'play' && selectedUnit.team === activeTeam) {
       const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
-      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+      const uPen = selectedUnit.class.className === 'Sniper' ? 1 : 0;
+      const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment, uPen);
       const inRange = dist <= selectedUnit.class.stats.range;
       if (inRange && hasLos && selectedUnit.ap >= 1) {
         const { chance } = calculateHitChance(selectedUnit, unitOnTile, mapEnvironment);
@@ -2756,7 +2755,8 @@ export default function Game({
       const dist = Math.abs(u.x - x) + Math.abs(u.y - y);
       const sightRange = Math.max(5, u.class.stats.range + 1);
       if (dist > sightRange) return false;
-      return checkLineOfSight(u.x, u.y, x, y, mapEnvironment);
+      const vPen = u.class.className === 'Sniper' ? 1 : 0;
+      return checkLineOfSight(u.x, u.y, x, y, mapEnvironment, vPen);
     });
   };
 
@@ -2916,9 +2916,9 @@ export default function Game({
 
         if (cell.type === 'wall') {
           bgClass = 'bg-zinc-950 relative overflow-hidden';
-          borderClass = 'border-purple-500/90 border-[1.5px] shadow-[0_0_10px_rgba(168,85,247,0.3)] z-5';
+          borderClass = 'border-purple-500/90 border-[1.5px] shadow-[0_0_10px_rgba(168,85,247,0.3)] z-[5]';
           cellDecoration = (
-            <div className="absolute inset-0 bg-[#160d0e] flex flex-col items-center justify-center border border-red-650 shadow-[inset_0_0_12px_rgba(220,38,38,0.5)] z-5">
+            <div className="absolute inset-0 bg-[#160d0e] flex flex-col items-center justify-center border border-red-600 shadow-[inset_0_0_12px_rgba(220,38,38,0.5)] z-[5]">
               {/* Tactical diagonal stripes at the top and bottom */}
               <div className="absolute inset-x-0 top-0 h-[3.5px] warning-stripes-red opacity-[0.75]"></div>
               <div className="absolute inset-x-0 bottom-0 h-[3.5px] warning-stripes-red opacity-[0.75]"></div>
@@ -2937,9 +2937,9 @@ export default function Game({
           );
         } else if (cell.type === 'crate') {
           bgClass = 'bg-[#1b1208] relative';
-          borderClass = 'border-amber-550 border-[1.5px] shadow-[0_0_8px_rgba(245,158,11,0.25)] z-5';
+          borderClass = 'border-amber-500 border-[1.5px] shadow-[0_0_8px_rgba(245,158,11,0.25)]';
           cellDecoration = (
-            <div className="absolute inset-1 bg-[#1a1106] border-2 border-amber-500/90 flex flex-col items-center justify-center rounded-lg-[2px] shadow-md shadow-black/95 z-5">
+            <div className="absolute inset-1 bg-[#1a1106] border-2 border-amber-500/90 flex flex-col items-center justify-center rounded-[2px] shadow-md shadow-black/95 z-[5] pointer-events-none">
               {/* Metal rivet-like corner frames */}
               <div className="absolute top-0.5 left-0.5 w-[3.5px] h-[3.5px] border-t border-l border-amber-400" />
               <div className="absolute top-0.5 right-0.5 w-[3.5px] h-[3.5px] border-t border-r border-amber-400" />
@@ -3051,7 +3051,7 @@ export default function Game({
               const isPendingCurrent = pending2APMove && pending2APMove.x === x && pending2APMove.y === y && pending2APMove.unitId === selectedUnit.id;
 
               if (isPendingCurrent) {
-                overlayClass = 'bg-purple-500/25 border-2 border-purple-500 hover:bg-purple-500/45 animate-pulse cursor-pointer shadow-[inset_0_0_12px_rgba(168,85,247,0.5)] z-5';
+                overlayClass = 'bg-purple-500/25 border-2 border-purple-500 hover:bg-purple-500/45 animate-pulse cursor-pointer shadow-[inset_0_0_12px_rgba(168,85,247,0.5)] z-[5]';
                 cellDecoration = (
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 animate-fade-in">
                     <div className="absolute inset-0 warning-stripes-red opacity-15" />
@@ -3061,7 +3061,7 @@ export default function Game({
                   </div>
                 );
               } else if (reachableObj.apCost === 1) {
-                overlayClass = 'bg-sky-500/15 border-2 border-sky-400/40 hover:bg-sky-400/25 cursor-cell shadow-[inset_0_0_6px_rgba(56,189,248,0.25)] z-5';
+                overlayClass = 'bg-sky-500/15 border-2 border-sky-400/40 hover:bg-sky-400/25 cursor-cell shadow-[inset_0_0_6px_rgba(56,189,248,0.25)] z-[5]';
                 cellDecoration = (
                   <div className="absolute bottom-[3px] right-[3px] z-10 select-none pointer-events-none">
                     <span className="px-1 py-0.5 rounded-lg text-[1.8cqw] font-mono font-black border leading-none tracking-tighter uppercase bg-sky-950/90 border-sky-500/50 text-sky-400 shadow-sm font-semibold">
@@ -3070,10 +3070,10 @@ export default function Game({
                   </div>
                 );
               } else {
-                overlayClass = 'bg-amber-500/15 border-2 border-amber-400/40 hover:bg-amber-400/25 cursor-cell shadow-[inset_0_0_8px_rgba(245,158,11,0.25)] z-5';
+                overlayClass = 'bg-amber-500/15 border-2 border-amber-400/40 hover:bg-amber-400/25 cursor-cell shadow-[inset_0_0_8px_rgba(245,158,11,0.25)] z-[5]';
                 cellDecoration = (
                   <div className="absolute bottom-[3px] right-[3px] z-10 select-none pointer-events-none">
-                    <span className="px-1 py-0.5 rounded-lg text-[1.8cqw] font-mono font-black border leading-none tracking-tighter uppercase bg-amber-950/90 border-amber-550/50 text-amber-400 shadow-sm animate-pulse font-semibold">
+                    <span className="px-1 py-0.5 rounded-lg text-[1.8cqw] font-mono font-black border leading-none tracking-tighter uppercase bg-amber-950/90 border-amber-500/50 text-amber-400 shadow-sm animate-pulse font-semibold">
                       2 AP
                     </span>
                   </div>
@@ -3082,9 +3082,10 @@ export default function Game({
            } else if (unit && unit.team !== activeTeam && unit.hp > 0 && selectedUnit.ap >= 1) {
               const dist = Math.abs(selectedUnit.x - x) + Math.abs(selectedUnit.y - y);
               if (dist <= selectedUnit.class.stats.range) {
-                 const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+                 const sPen = selectedUnit.class.className === 'Sniper' ? 1 : 0;
+                 const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment, sPen);
                  if (hasLos) {
-                    overlayClass = 'bg-purple-500/20 border-2 border-purple-500/50 hover:bg-purple-500/35 cursor-crosshair shadow-[inset_0_0_8px_rgba(168,85,247,0.3)] z-5';
+                    overlayClass = 'bg-purple-500/20 border-2 border-purple-500/50 hover:bg-purple-500/35 cursor-crosshair shadow-[inset_0_0_8px_rgba(168,85,247,0.3)] z-[5]';
                  }
               }
            }
@@ -3096,7 +3097,7 @@ export default function Game({
            const inRange = ability.range !== undefined ? dist <= ability.range : false;
            
            if (isValidAbilityTarget(x, y)) {
-              overlayClass = 'bg-yellow-500/30 border-2 border-yellow-400/80 cursor-crosshair shadow-[inset_0_0_12px_rgba(234,179,8,0.5)] animate-pulse z-5';
+              overlayClass = 'bg-yellow-500/30 border-2 border-yellow-400/80 cursor-crosshair shadow-[inset_0_0_12px_rgba(234,179,8,0.5)] animate-pulse z-[5]';
            } else if (inRange && ability.type !== 'self') {
               overlayClass = 'bg-yellow-500/10 border border-yellow-500/20 z-1 pointer-events-none';
            }
@@ -3116,7 +3117,8 @@ export default function Game({
         let losClass = '';
         let hitChanceInfo = null;
         if (mode === 'play' && selectedUnit && selectedUnit.team === activeTeam && hoveredTile?.x === x && hoveredTile?.y === y && unit && unit.team !== activeTeam) {
-           const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment);
+           const hPen = selectedUnit.class.className === 'Sniper' ? 1 : 0;
+           const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment, hPen);
            if (hasLos) {
              losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10';
              const { chance } = calculateHitChance(selectedUnit, unit, mapEnvironment);
@@ -3231,7 +3233,8 @@ export default function Game({
 
             if (targetableBySelected) {
                const dist = Math.abs(selectedUnit.x - unit.x) + Math.abs(selectedUnit.y - unit.y);
-               const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, unit.x, unit.y, mapEnvironment);
+               const tPen = selectedUnit.class.className === 'Sniper' ? 1 : 0;
+               const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, unit.x, unit.y, mapEnvironment, tPen);
                const inRange = dist <= selectedUnit.class.stats.range;
                
                if (inRange && hasLos && selectedUnit.ap >= 1) {
@@ -3320,6 +3323,7 @@ export default function Game({
             className={`w-full pt-[100%] relative transition-all cursor-pointer rounded-md group ${bgClass} ${borderClass} ${losClass}`}
           >
             {backgroundDecor}
+            {cellDecoration}
             {content}
             {cellCoord}
             {rangeEnvelopeOverlay}

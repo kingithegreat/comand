@@ -120,30 +120,33 @@ export const checkLineOfSight = (
   y1: number,
   x2: number,
   y2: number,
-  map: GridCell[][]
+  map: GridCell[][],
+  wallPenetration: number = 0
 ): boolean => {
   let dx = Math.abs(x2 - x1);
   let dy = -Math.abs(y2 - y1);
   let sx = x1 < x2 ? 1 : -1;
   let sy = y1 < y2 ? 1 : -1;
   let err = dx + dy;
+  let wallsPenetrated = 0;
 
   let cx = x1;
   let cy = y1;
 
   while (true) {
     if (cx === x2 && cy === y2) break;
-    
+
     if (cx !== x1 || cy !== y1) {
        if (cy < 0 || cy >= map.length || cx < 0 || cx >= (map[0]?.length ?? 0)) {
           return false;
        }
-       if (map[cy][cx].type === "wall") {
-          return false;
+       const tileType = map[cy][cx].type;
+       if (tileType === "wall") {
+          wallsPenetrated++;
+          if (wallsPenetrated > wallPenetration) return false;
        }
        if (cx !== x2 || cy !== y2) {
-         const midType = map[cy][cx].type;
-         if (midType === "crate" || midType === "barrel") {
+         if (tileType === "crate" || tileType === "barrel") {
             return false;
          }
        }
@@ -156,7 +159,11 @@ export const checkLineOfSight = (
       const t1 = map[cy]?.[cx + sx]?.type;
       const t2 = map[cy + sy]?.[cx]?.type;
       const isBlocking = (t: string | undefined) => t === 'wall' || t === 'crate' || t === 'barrel';
-      if (isBlocking(t1) && isBlocking(t2)) return false;
+      if (isBlocking(t1) && isBlocking(t2)) {
+        const wallCount = (t1 === 'wall' ? 1 : 0) + (t2 === 'wall' ? 1 : 0);
+        if (wallsPenetrated + wallCount > wallPenetration) return false;
+        wallsPenetrated += wallCount;
+      }
     }
     if (stepX) {
       err += dy;
