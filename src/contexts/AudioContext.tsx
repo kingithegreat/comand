@@ -48,39 +48,223 @@ const createCompressor = (ctx: AudioContext): DynamicsCompressorNode => {
 };
 
 export type SoundEffect = 'click' | 'select' | 'move' | 'attack' | 'damage' | 'deploy' | 'win' | 'lose' | 'heal' | 'ability' | 'critical' | 'error';
+export type MusicTrack = 'menu' | 'battle' | 'none';
+
+let musicNodes: { oscs: OscillatorNode[]; gains: GainNode[]; sources: AudioBufferSourceNode[]; master: GainNode | null; interval: ReturnType<typeof setInterval> | null } = {
+  oscs: [], gains: [], sources: [], master: null, interval: null
+};
 
 interface AudioContextType {
   soundEnabled: boolean;
+  musicEnabled: boolean;
   toggleSound: () => void;
+  toggleMusic: () => void;
   playSound: (effect: SoundEffect) => void;
+  startMusic: (track: MusicTrack) => void;
+  stopMusic: () => void;
 }
 
 const defaultContextValue: AudioContextType = {
   soundEnabled: false,
+  musicEnabled: false,
   toggleSound: () => {},
+  toggleMusic: () => {},
   playSound: () => {},
+  startMusic: () => {},
+  stopMusic: () => {},
 };
 
 const SoundContext = createContext<AudioContextType>(defaultContextValue);
 
 export const useAudio = () => useContext(SoundContext);
 
+const stopMusicNodes = () => {
+  musicNodes.oscs.forEach(o => { try { o.stop(); o.disconnect(); } catch (_) {} });
+  musicNodes.sources.forEach(s => { try { s.stop(); s.disconnect(); } catch (_) {} });
+  musicNodes.gains.forEach(g => { try { g.disconnect(); } catch (_) {} });
+  if (musicNodes.master) { try { musicNodes.master.disconnect(); } catch (_) {} }
+  if (musicNodes.interval) clearInterval(musicNodes.interval);
+  musicNodes = { oscs: [], gains: [], sources: [], master: null, interval: null };
+};
+
+const playMenuMusic = (ctx: AudioContext) => {
+  stopMusicNodes();
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.06, ctx.currentTime);
+  master.connect(ctx.destination);
+  musicNodes.master = master;
+
+  const chords = [
+    [130.81, 164.81, 196.00],
+    [110.00, 138.59, 164.81],
+    [116.54, 146.83, 174.61],
+    [123.47, 155.56, 196.00],
+  ];
+
+  let chordIdx = 0;
+  const playChord = () => {
+    const now = ctx.currentTime;
+    chords[chordIdx % chords.length].forEach(freq => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.3, now + 0.8);
+      gain.gain.linearRampToValueAtTime(0, now + 3.8);
+      osc.connect(gain);
+      gain.connect(master);
+      osc.start(now);
+      osc.stop(now + 4);
+      musicNodes.oscs.push(osc);
+      musicNodes.gains.push(gain);
+    });
+
+    const pad = ctx.createOscillator();
+    const padGain = ctx.createGain();
+    pad.type = 'sine';
+    pad.frequency.setValueAtTime(chords[chordIdx % chords.length][0] * 0.5, ctx.currentTime);
+    padGain.gain.setValueAtTime(0, ctx.currentTime);
+    padGain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 1);
+    padGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 3.8);
+    pad.connect(padGain);
+    padGain.connect(master);
+    pad.start(ctx.currentTime);
+    pad.stop(ctx.currentTime + 4);
+    musicNodes.oscs.push(pad);
+    musicNodes.gains.push(padGain);
+
+    chordIdx++;
+  };
+
+  playChord();
+  musicNodes.interval = setInterval(playChord, 4000);
+};
+
+const playBattleMusic = (ctx: AudioContext) => {
+  stopMusicNodes();
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.05, ctx.currentTime);
+  master.connect(ctx.destination);
+  musicNodes.master = master;
+
+  const bassNotes = [55, 58.27, 51.91, 49];
+  let beatIdx = 0;
+
+  const playBeat = () => {
+    const now = ctx.currentTime;
+    const bassFreq = bassNotes[Math.floor(beatIdx / 4) % bassNotes.length];
+
+    const kick = ctx.createOscillator();
+    const kickGain = ctx.createGain();
+    kick.type = 'sine';
+    kick.frequency.setValueAtTime(90, now);
+    kick.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+    kickGain.gain.setValueAtTime(0.5, now);
+    kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    kick.connect(kickGain);
+    kickGain.connect(master);
+    kick.start(now);
+    kick.stop(now + 0.2);
+    musicNodes.oscs.push(kick);
+    musicNodes.gains.push(kickGain);
+
+    if (beatIdx % 2 === 1) {
+      const hihat = ctx.createBufferSource();
+      hihat.buffer = getNoiseBuffer(ctx);
+      const hihatHp = ctx.createBiquadFilter();
+      hihatHp.type = 'highpass';
+      hihatHp.frequency.setValueAtTime(8000, now);
+      const hihatGain = ctx.createGain();
+      hihatGain.gain.setValueAtTime(0.08, now);
+      hihatGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      hihat.connect(hihatHp);
+      hihatHp.connect(hihatGain);
+      hihatGain.connect(master);
+      hihat.start(now);
+      hihat.stop(now + 0.05);
+      musicNodes.sources.push(hihat);
+      musicNodes.gains.push(hihatGain);
+    }
+
+    const bass = ctx.createOscillator();
+    const bassGain = ctx.createGain();
+    bass.type = 'sawtooth';
+    bass.frequency.setValueAtTime(bassFreq, now);
+    const bassFilter = ctx.createBiquadFilter();
+    bassFilter.type = 'lowpass';
+    bassFilter.frequency.setValueAtTime(200, now);
+    bassGain.gain.setValueAtTime(0.25, now);
+    bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    bass.connect(bassFilter);
+    bassFilter.connect(bassGain);
+    bassGain.connect(master);
+    bass.start(now);
+    bass.stop(now + 0.4);
+    musicNodes.oscs.push(bass);
+    musicNodes.gains.push(bassGain);
+
+    if (beatIdx % 8 === 0) {
+      const melodyNotes = [220, 261.63, 293.66, 246.94, 220, 196, 174.61, 196];
+      const note = melodyNotes[Math.floor(beatIdx / 8) % melodyNotes.length];
+      const mel = ctx.createOscillator();
+      const melGain = ctx.createGain();
+      mel.type = 'triangle';
+      mel.frequency.setValueAtTime(note, now);
+      mel.frequency.linearRampToValueAtTime(note * 1.01, now + 1.5);
+      melGain.gain.setValueAtTime(0, now);
+      melGain.gain.linearRampToValueAtTime(0.15, now + 0.2);
+      melGain.gain.linearRampToValueAtTime(0, now + 1.8);
+      mel.connect(melGain);
+      melGain.connect(master);
+      mel.start(now);
+      mel.stop(now + 2);
+      musicNodes.oscs.push(mel);
+      musicNodes.gains.push(melGain);
+    }
+
+    beatIdx++;
+  };
+
+  playBeat();
+  musicNodes.interval = setInterval(playBeat, 500);
+};
+
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     const saved = safeGetItem('soundEnabled');
     return saved === 'true';
   });
+  const [musicEnabled, setMusicEnabled] = useState<boolean>(() => {
+    const saved = safeGetItem('musicEnabled');
+    return saved === 'true';
+  });
+  const [currentTrack, setCurrentTrack] = useState<MusicTrack>('none');
 
   useEffect(() => {
     safeSetItem('soundEnabled', soundEnabled.toString());
-    if (soundEnabled && !audioCtx) {
+    if ((soundEnabled || musicEnabled) && !audioCtx) {
       try {
         audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       } catch (e) {
         console.warn('Web Audio API is not supported in this browser', e);
       }
     }
-  }, [soundEnabled]);
+  }, [soundEnabled, musicEnabled]);
+
+  useEffect(() => {
+    safeSetItem('musicEnabled', musicEnabled.toString());
+    if (!musicEnabled || !audioCtx) {
+      stopMusicNodes();
+      return;
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(console.warn);
+    }
+    if (currentTrack === 'menu') playMenuMusic(audioCtx);
+    else if (currentTrack === 'battle') playBattleMusic(audioCtx);
+    return () => { stopMusicNodes(); };
+  }, [musicEnabled, currentTrack]);
 
   const toggleSound = () => {
     setSoundEnabled(prev => {
@@ -90,6 +274,26 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return next;
     });
+  };
+
+  const toggleMusic = () => {
+    setMusicEnabled(prev => {
+      const next = !prev;
+      safeSetItem('musicEnabled', next.toString());
+      if (next && audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(console.warn);
+      }
+      return next;
+    });
+  };
+
+  const startMusic = (track: MusicTrack) => {
+    setCurrentTrack(track);
+  };
+
+  const stopMusic = () => {
+    setCurrentTrack('none');
+    stopMusicNodes();
   };
 
   const playSynthesizedSound = (effect: SoundEffect) => {
@@ -739,7 +943,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <SoundContext.Provider value={{ soundEnabled, toggleSound, playSound }}>
+    <SoundContext.Provider value={{ soundEnabled, musicEnabled, toggleSound, toggleMusic, playSound, startMusic, stopMusic }}>
       {children}
     </SoundContext.Provider>
   );

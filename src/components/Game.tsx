@@ -3120,7 +3120,7 @@ export default function Game({
              </div>
           )}
         </div>
-        <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
+        <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-5 md:grid-cols-10 gap-1.5 sm:gap-2">
           {CLASSES.filter(c => {
             if (c.className !== 'Assassin') return true;
             return safeGetItem('assassinUnlocked') === 'true';
@@ -3165,11 +3165,11 @@ export default function Game({
                     className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-[#10140c]/85 border border-[#3e4835]/50 shrink-0" 
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-0.5 w-full text-[6.5px] xs:text-[8px] sm:text-[9.5px] uppercase font-black leading-tight mb-0.5">
+                    <div className="flex items-center justify-between gap-0.5 w-full text-[8px] sm:text-[9.5px] uppercase font-black leading-tight mb-0.5">
                       <span className="truncate">{c.className}</span>
                       {getArchetypeIcon(c.archetype, 'w-2.5 h-2.5 opacity-90 shrink-0')}
                     </div>
-                    <div className="flex justify-between gap-0.5 w-full text-[5.5px] xs:text-[7.5px] sm:text-[8.5px] font-black leading-none text-zinc-400">
+                    <div className="flex justify-between gap-0.5 w-full text-[7px] sm:text-[8.5px] font-black leading-none text-zinc-400">
                       <span className="text-emerald-450">{c.stats.maxHP}H</span>
                       <span className="text-amber-450">{c.stats.damage}A</span>
                       <span className="text-sky-350">{c.stats.range}R</span>
@@ -4064,12 +4064,12 @@ export default function Game({
                   }}
                 >
                   {/* Column labels scale (A-O) */}
-                  <div 
-                    className="grid gap-[1px] w-full mb-1 shrink-0" 
-                    style={{ 
-                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
-                      paddingLeft: '24px', // width of left row labels column (20px) + gap space (4px)
-                      paddingRight: '24px' // width of right row labels column (20px) + gap space (4px)
+                  <div
+                    className="hidden sm:grid gap-[1px] w-full mb-1 shrink-0"
+                    style={{
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                      paddingLeft: '24px',
+                      paddingRight: '24px'
                     }}
                   >
                     {Array.from({ length: GRID_SIZE }).map((_, i) => (
@@ -4081,7 +4081,7 @@ export default function Game({
 
                   <div className="flex w-full items-stretch">
                     {/* Row labels vertical column (01-15) */}
-                    <div className="flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
+                    <div className="hidden sm:flex flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0">
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -4103,7 +4103,7 @@ export default function Game({
                     </div>
 
                     {/* Right Row labels vertical column (01-15) */}
-                    <div className="flex flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0">
+                    <div className="hidden sm:flex flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0">
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -4113,10 +4113,10 @@ export default function Game({
                   </div>
 
                   {/* Bottom Column labels scale (A-O) */}
-                  <div 
-                    className="grid gap-[1px] w-full mt-1 shrink-0" 
-                    style={{ 
-                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`, 
+                  <div
+                    className="hidden sm:grid gap-[1px] w-full mt-1 shrink-0"
+                    style={{
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
                       paddingRight: '24px'
                     }}

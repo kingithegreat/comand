@@ -40,7 +40,7 @@ export default function App() {
   });
   
   const profile = user ? dbProfile : localProfile;
-  const { soundEnabled, toggleSound, playSound } = useAudio();
+  const { soundEnabled, musicEnabled, toggleSound, toggleMusic, playSound, startMusic, stopMusic } = useAudio();
   
   const [displayNameInput, setDisplayNameInput] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
@@ -545,6 +545,16 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!gameMode) {
+      startMusic('menu');
+    } else if (gameMode === 'local_ai' || gameMode === 'local_p2p' || gameMode === 'online' || gameMode === 'online_coop') {
+      startMusic('battle');
+    } else {
+      stopMusic();
+    }
+  }, [gameMode]);
+
   const LazyFallback = <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mr-3" /><span>LOADING MODULE...</span></div>;
 
   // Render Game Component if we selected a mode
@@ -977,13 +987,24 @@ export default function App() {
       <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
          {/* Hero Header */}
          <div className="text-center space-y-4 pb-4 border-b border-zinc-800/30 relative">
-           <button
-             onClick={toggleSound}
-             className="absolute right-0 top-0 p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 text-zinc-500 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 backdrop-blur-sm"
-             title={soundEnabled ? "Disable Audio" : "Enable Audio"}
-           >
-             {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-           </button>
+           <div className="absolute right-0 top-0 flex gap-1.5">
+             <button
+               type="button"
+               onClick={toggleMusic}
+               className={`p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${musicEnabled ? 'text-fuchsia-400 border-fuchsia-500/50 bg-fuchsia-500/5' : 'text-zinc-500 hover:text-fuchsia-400 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/5'}`}
+               title={musicEnabled ? "Disable Music" : "Enable Music"}
+             >
+               <Activity className="w-5 h-5" />
+             </button>
+             <button
+               type="button"
+               onClick={toggleSound}
+               className={`p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${soundEnabled ? 'text-amber-400 border-amber-500/50 bg-amber-500/5' : 'text-zinc-500 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/5'}`}
+               title={soundEnabled ? "Disable SFX" : "Enable SFX"}
+             >
+               {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+             </button>
+           </div>
            <div className="w-20 h-20 bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-700/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.1),0_0_60px_rgba(251,191,36,0.05)] mx-auto relative group">
               <div className="absolute inset-0 rounded-2xl bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <Target className="w-9 h-9 text-amber-500/40 absolute scale-110 blur-sm animate-pulse" />

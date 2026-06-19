@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="24" fill="#09090b"/>
+  <rect x="12" y="12" width="168" height="168" rx="16" fill="none" stroke="#0ea5e9" stroke-width="2" opacity="0.3"/>
+  <!-- Crosshair -->
+  <circle cx="96" cy="88" r="32" fill="none" stroke="#0ea5e9" stroke-width="3"/>
+  <circle cx="96" cy="88" r="8" fill="#0ea5e9"/>
+  <line x1="96" y1="50" x2="96" y2="68" stroke="#0ea5e9" stroke-width="3"/>
+  <line x1="96" y1="108" x2="96" y2="126" stroke="#0ea5e9" stroke-width="3"/>
+  <line x1="58" y1="88" x2="76" y2="88" stroke="#0ea5e9" stroke-width="3"/>
+  <line x1="116" y1="88" x2="134" y2="88" stroke="#0ea5e9" stroke-width="3"/>
+  <!-- Text -->
+  <text x="96" y="158" text-anchor="middle" fill="#e4e4e7" font-family="monospace" font-size="18" font-weight="800" letter-spacing="4">COMAND</text>
+</svg>
