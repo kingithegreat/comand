@@ -188,6 +188,36 @@ export function getMatchRewards(won: boolean, survivalRate: number, turn: number
   return { credits, seasonXP };
 }
 
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  condition: (p: PlayerProgression) => boolean;
+}
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: 'first_blood', name: 'First Blood', description: 'Win your first match', icon: '⚔', condition: p => p.wins >= 1 },
+  { id: 'veteran', name: 'Veteran', description: 'Play 10 matches', icon: '🎖', condition: p => p.totalMatches >= 10 },
+  { id: 'commander', name: 'Commander', description: 'Win 10 matches', icon: '⭐', condition: p => p.wins >= 10 },
+  { id: 'warlord', name: 'Warlord', description: 'Win 25 matches', icon: '👑', condition: p => p.wins >= 25 },
+  { id: 'streak_3', name: 'Hot Streak', description: 'Win 3 matches in a row', icon: '🔥', condition: p => p.bestWinStreak >= 3 },
+  { id: 'streak_5', name: 'Unstoppable', description: 'Win 5 matches in a row', icon: '💥', condition: p => p.bestWinStreak >= 5 },
+  { id: 'streak_10', name: 'Legendary', description: 'Win 10 matches in a row', icon: '🏆', condition: p => p.bestWinStreak >= 10 },
+  { id: 'elo_1200', name: 'Rising Star', description: 'Reach 1200 ELO', icon: '📈', condition: p => p.elo >= 1200 },
+  { id: 'elo_1500', name: 'Elite Tactician', description: 'Reach 1500 ELO', icon: '🎯', condition: p => p.elo >= 1500 },
+  { id: 'elo_2000', name: 'Grandmaster', description: 'Reach 2000 ELO', icon: '💎', condition: p => p.elo >= 2000 },
+  { id: 'rich', name: 'War Profiteer', description: 'Earn 500 credits', icon: '💰', condition: p => p.credits >= 500 },
+  { id: 'collector', name: 'Collector', description: 'Unlock 3 board themes', icon: '🎨', condition: p => p.unlockedThemes.length >= 3 },
+  { id: 'season_5', name: 'Season Warrior', description: 'Reach season level 5', icon: '🌟', condition: p => p.seasonLevel >= 5 },
+  { id: 'grinder', name: 'Grinder', description: 'Play 50 matches', icon: '⚙', condition: p => p.totalMatches >= 50 },
+  { id: 'centurion', name: 'Centurion', description: 'Play 100 matches', icon: '🛡', condition: p => p.totalMatches >= 100 },
+];
+
+export function getUnlockedAchievements(p: PlayerProgression): Achievement[] {
+  return ACHIEVEMENTS.filter(a => a.condition(p));
+}
+
 export function getDefaultProgression(): PlayerProgression {
   return {
     elo: 1000,

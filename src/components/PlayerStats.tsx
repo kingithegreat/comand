@@ -1,6 +1,6 @@
 import React from 'react';
-import { TrendingUp, Coins, Flame, Trophy } from 'lucide-react';
-import { PlayerProgression, getEloRank } from '../progression';
+import { TrendingUp, Coins, Flame, Trophy, Award } from 'lucide-react';
+import { PlayerProgression, getEloRank, ACHIEVEMENTS, getUnlockedAchievements } from '../progression';
 
 interface PlayerStatsProps {
   progression: PlayerProgression;
@@ -55,6 +55,36 @@ export default function PlayerStats({ progression }: PlayerStatsProps) {
         <span>{progression.totalMatches} matches played</span>
         <span>W {progression.wins} / L {progression.losses}</span>
         <span>Best streak: {progression.bestWinStreak}</span>
+      </div>
+
+      <div className="mt-4 border-t border-zinc-800/30 pt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Award className="w-4 h-4 text-amber-400" />
+          <h3 className="text-[11px] font-black text-zinc-200 tracking-wider uppercase">
+            Achievements ({getUnlockedAchievements(progression).length}/{ACHIEVEMENTS.length})
+          </h3>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {ACHIEVEMENTS.map(a => {
+            const unlocked = a.condition(progression);
+            return (
+              <div
+                key={a.id}
+                className={`rounded-lg p-2 text-center border transition-all ${
+                  unlocked
+                    ? 'bg-amber-500/10 border-amber-500/30'
+                    : 'bg-zinc-800/20 border-zinc-700/20 opacity-40'
+                }`}
+                title={`${a.name}: ${a.description}`}
+              >
+                <div className="text-lg">{a.icon}</div>
+                <div className={`text-[7px] font-bold uppercase tracking-wider mt-1 ${unlocked ? 'text-amber-400' : 'text-zinc-600'}`}>
+                  {a.name}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

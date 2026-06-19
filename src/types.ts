@@ -50,7 +50,7 @@ export interface Unit {
 export interface GridCell {
   x: number;
   y: number;
-  type: 'floor' | 'wall' | 'crate';
+  type: 'floor' | 'wall' | 'crate' | 'fire' | 'poison' | 'barrel';
 }
 
 export type GridMap = GridCell[][];

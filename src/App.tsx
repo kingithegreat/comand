@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
@@ -24,9 +24,11 @@ const CosmeticShop = lazy(() => import('./components/CosmeticShop'));
 const SeasonPass = lazy(() => import('./components/SeasonPass'));
 const PlayerStats = lazy(() => import('./components/PlayerStats'));
 const FriendList = lazy(() => import('./components/FriendList'));
+const MapEditor = lazy(() => import('./components/MapEditor'));
 
 export default function App() {
-  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | null>(null);
+  const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | 'map_editor' | null>(null);
+  const [customLayout, setCustomLayout] = useState<string[] | null>(null);
   const [campaignMissionId, setCampaignMissionId] = useState<string | null>(null);
   const [user, loading] = useAuthState(auth);
   const [dbProfile, profileLoading] = useDocumentData(user ? doc(db, 'users', user.uid) : null);
@@ -52,6 +54,9 @@ export default function App() {
     return params.get('room')?.toUpperCase() || '';
   });
   const [onlineMatchId, setOnlineMatchId] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchTime, setSearchTime] = useState(0);
+  const searchIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const [matchData, matchLoading] = useDocumentData(
     onlineMatchId ? doc(db, 'matches', onlineMatchId) : null
   );
@@ -473,40 +478,65 @@ export default function App() {
     }
   };
 
+  const cancelSearch = () => {
+    setIsSearching(false);
+    setSearchTime(0);
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+      searchIntervalRef.current = null;
+    }
+  };
+
   const quickMatch = async () => {
     if (!user) return;
-    try {
-      // Look for open public match
+    setIsSearching(true);
+    setSearchTime(0);
+
+    searchIntervalRef.current = setInterval(() => {
+      setSearchTime(prev => prev + 1);
+    }, 1000);
+
+    const tryFind = async (): Promise<boolean> => {
       const matchesRef = collection(db, 'matches');
       const q = query(
-        matchesRef, 
-        where('status', '==', 'waiting'), 
+        matchesRef,
+        where('status', '==', 'waiting'),
         where('isPublic', '==', true),
         limit(5)
       );
       const querySnapshot = await getDocs(q);
-      
-      let foundMatch = null;
+
       for (const matchDoc of querySnapshot.docs) {
         const data = matchDoc.data();
         if (data.hostId !== user.uid) {
-          foundMatch = { id: matchDoc.id, ...data };
-          break;
+          await updateDoc(doc(db, 'matches', matchDoc.id), { guestId: user.uid });
+          setOnlineMatchId(matchDoc.id);
+          setGameMode(data.isCoop ? 'online_coop' : 'online');
+          cancelSearch();
+          return true;
         }
       }
+      return false;
+    };
 
-      if (foundMatch) {
-        const matchRef = doc(db, 'matches', foundMatch.id);
-        await updateDoc(matchRef, {
-           guestId: user.uid
-        });
-        setOnlineMatchId(foundMatch.id);
-        setGameMode(foundMatch.isCoop ? 'online_coop' : 'online');
-      } else {
-        // Create new public match if none found
-        await createRoom(true);
-      }
+    try {
+      const found = await tryFind();
+      if (found) return;
+
+      await createRoom(true);
+
+      let retries = 0;
+      const pollInterval = setInterval(async () => {
+        retries++;
+        if (retries > 30) {
+          clearInterval(pollInterval);
+          cancelSearch();
+          return;
+        }
+      }, 3000);
+
     } catch(err: any) {
+      cancelSearch();
       alert("Failed to find or create quick match.");
       console.error(err);
     }
@@ -560,16 +590,18 @@ export default function App() {
   // Render Game Component if we selected a mode
   if (gameMode === 'local_ai' || gameMode === 'local_p2p') {
     return <Suspense fallback={LazyFallback}><Game
-      key={`game-${gameMode}-${campaignMissionId || 'freeplay'}`}
-      campaignMissionId={campaignMissionId} 
-      gameMode={gameMode} 
-      onBack={() => { 
+      key={`game-${gameMode}-${campaignMissionId || 'freeplay'}-${customLayout ? 'custom' : 'std'}`}
+      campaignMissionId={campaignMissionId}
+      gameMode={gameMode}
+      customLayout={customLayout || undefined}
+      onBack={() => {
         if (campaignMissionId) {
           setGameMode('campaign');
           setCampaignMissionId(null);
         } else {
-          setGameMode(null); 
+          setGameMode(null);
           setCampaignMissionId(null);
+          setCustomLayout(null);
         }
       }} 
       onNextMission={() => {
@@ -592,6 +624,20 @@ export default function App() {
       boardTheme={progression.activeTheme}
       playerElo={progression.elo}
     /></Suspense>;
+  }
+
+  if (gameMode === 'map_editor') {
+    return (
+      <Suspense fallback={LazyFallback}>
+        <MapEditor
+          onBack={() => setGameMode(null)}
+          onPlayMap={(layout) => {
+            setCustomLayout(layout);
+            setGameMode('local_ai');
+          }}
+        />
+      </Suspense>
+    );
   }
 
   if (gameMode === 'tutorial') {
@@ -1163,6 +1209,25 @@ export default function App() {
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-purple-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
+            <button
+              onClick={() => setGameMode('map_editor')}
+              className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-rose-500/20 hover:border-rose-400/50 bg-gradient-to-br from-rose-950/20 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(244,63,94,0.1)] transform hover:-translate-y-0.5 md:col-span-2"
+            >
+               <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+               <div className="relative z-10 flex flex-col gap-3">
+                 <div className="flex items-center gap-3">
+                   <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center group-hover:bg-rose-500/15 group-hover:border-rose-400/40 transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(244,63,94,0.2)]">
+                     <Grid className="w-6 h-6 text-rose-400 group-hover:scale-110 transition-transform duration-300" />
+                   </div>
+                   <div>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase flex items-center gap-2">MAP EDITOR <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-black text-[8px] px-1.5 font-black py-0.5 rounded-md leading-none">NEW</span></h3>
+                     <p className="text-[10px] text-rose-500/60 font-mono uppercase tracking-wider">Custom Battlefields</p>
+                   </div>
+                 </div>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Design your own tactical maps with walls, crates, fire zones, poison, and explosive barrels. Play or share your creations.</p>
+               </div>
+               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-rose-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
+            </button>
          </div>
 
          {/* Online Section */}
@@ -1244,9 +1309,18 @@ export default function App() {
                            </button>
                         </div>
                         <div className="grid grid-cols-1 gap-4">
-                           <button onClick={quickMatch} className="w-full py-3 bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-bold border border-emerald-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2">
-                             <Zap className="w-5 h-5" /> QUICK MATCH
-                           </button>
+                           {isSearching ? (
+                             <div className="w-full py-3 bg-amber-500/10 border border-amber-500/40 rounded-lg text-center">
+                               <div className="flex items-center justify-center gap-2 text-amber-400 font-bold text-sm uppercase tracking-wider animate-pulse">
+                                 <Zap className="w-5 h-5" /> SEARCHING... {searchTime}s
+                               </div>
+                               <button type="button" onClick={cancelSearch} className="mt-2 text-xs text-red-400 hover:text-red-300 uppercase font-bold cursor-pointer">CANCEL</button>
+                             </div>
+                           ) : (
+                             <button type="button" onClick={quickMatch} className="w-full py-3 bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-bold border border-emerald-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2">
+                               <Zap className="w-5 h-5" /> QUICK MATCH
+                             </button>
+                           )}
                         </div>
                         <form onSubmit={joinRoom} className="flex gap-2 w-full h-11">
                            <input 

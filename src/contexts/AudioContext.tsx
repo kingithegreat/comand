@@ -47,7 +47,7 @@ const createCompressor = (ctx: AudioContext): DynamicsCompressorNode => {
   return comp;
 };
 
-export type SoundEffect = 'click' | 'select' | 'move' | 'attack' | 'damage' | 'deploy' | 'win' | 'lose' | 'heal' | 'ability' | 'critical' | 'error';
+export type SoundEffect = 'click' | 'select' | 'move' | 'attack' | 'damage' | 'deploy' | 'win' | 'lose' | 'heal' | 'ability' | 'critical' | 'error' | 'destroy';
 export type MusicTrack = 'menu' | 'battle' | 'none';
 
 let musicNodes: { oscs: OscillatorNode[]; gains: GainNode[]; sources: AudioBufferSourceNode[]; master: GainNode | null; interval: ReturnType<typeof setInterval> | null } = {
@@ -929,6 +929,36 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         osc.stop(now + 0.1);
         osc2.start(now + 0.12);
         osc2.stop(now + 0.25);
+        break;
+      }
+
+      case 'destroy': {
+        const noise = ctx.createBufferSource();
+        noise.buffer = getNoiseBuffer(ctx);
+        const noiseGain = ctx.createGain();
+        const noiseBand = ctx.createBiquadFilter();
+        noiseBand.type = 'bandpass';
+        noiseBand.frequency.setValueAtTime(800, now);
+        noiseBand.Q.setValueAtTime(0.5, now);
+        noiseGain.gain.setValueAtTime(0.3, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        noise.connect(noiseBand);
+        noiseBand.connect(noiseGain);
+        noiseGain.connect(ctx.destination);
+        noise.start(now);
+        noise.stop(now + 0.3);
+
+        const thud = ctx.createOscillator();
+        const thudGain = ctx.createGain();
+        thud.type = 'sine';
+        thud.frequency.setValueAtTime(120, now);
+        thud.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+        thudGain.gain.setValueAtTime(0.25, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        thud.connect(thudGain);
+        thudGain.connect(ctx.destination);
+        thud.start(now);
+        thud.stop(now + 0.2);
         break;
       }
     }

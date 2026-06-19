@@ -48,7 +48,8 @@ export const getReachableTiles = (
         if (nx >= 0 && ny >= 0 && nx < gridWidth && ny < gridHeight) {
           const key = `${nx},${ny}`;
           // Check if wall
-          if (!visited.has(key) && map[ny][nx].type !== "wall" && map[ny][nx].type !== "crate") {
+          const tileType = map[ny][nx].type;
+          if (!visited.has(key) && tileType !== "wall" && tileType !== "crate" && tileType !== "barrel") {
             // Also need to allow passing through friends, but here it's simplified.
             visited.add(key);
             queue.push({ x: nx, y: ny, dist: dist + 1 });
@@ -89,7 +90,7 @@ export const calculateHitChance = (
     const nx = target.x + n.dx;
     const ny = target.y + n.dy;
     if (nx >= 0 && ny >= 0 && nx < map[0].length && ny < map.length) {
-      if (map[ny][nx].type === 'crate') {
+      if (map[ny][nx].type === 'crate' || map[ny][nx].type === 'barrel') {
         // Is this crate between attacker and target?
         const distAttackerToCrate = Math.abs(attacker.x - nx) + Math.abs(attacker.y - ny);
         if (distAttackerToCrate < dist) {
@@ -141,7 +142,8 @@ export const checkLineOfSight = (
           return false;
        }
        if (cx !== x2 || cy !== y2) {
-         if (map[cy][cx].type === "crate") {
+         const midType = map[cy][cx].type;
+         if (midType === "crate" || midType === "barrel") {
             return false;
          }
        }

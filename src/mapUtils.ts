@@ -756,6 +756,50 @@ export const MAPS: MapPreset[] = [
       "C_C_________C_C"
     ]
   },
+  {
+    id: "inferno_pit",
+    name: "Inferno Pit",
+    description: "A volatile facility with fire zones that burn units passing through and explosive barrels that detonate when shot.",
+    layout: [
+      "_______________",
+      "_XX_C_____C_XX_",
+      "_XX___FFF___XX_",
+      "___C_______C___",
+      "____B_____B____",
+      "__FF___XXX___FF",
+      "__F____X_X____F",
+      "_______BCB_____",
+      "__F____X_X____F",
+      "__FF___XXX___FF",
+      "____B_____B____",
+      "___C_______C___",
+      "_XX___FFF___XX_",
+      "_XX_C_____C_XX_",
+      "_______________"
+    ]
+  },
+  {
+    id: "toxic_wastes",
+    name: "Toxic Wastes",
+    description: "An abandoned chemical plant leaking poison that saps health from any unit that steps through contaminated zones.",
+    layout: [
+      "_______________",
+      "__C_PP___PP_C__",
+      "____P_____P____",
+      "_XX_P_C_C_P_XX_",
+      "___PP_____PP___",
+      "__C___B_B___C__",
+      "_____XXXXX_____",
+      "__PP_X_C_X_PP__",
+      "_____XXXXX_____",
+      "__C___B_B___C__",
+      "___PP_____PP___",
+      "_XX_P_C_C_P_XX_",
+      "____P_____P____",
+      "__C_PP___PP_C__",
+      "_______________"
+    ]
+  },
 ];
 
 export const generateMap = (layout?: string[]): GridMap => {
@@ -765,9 +809,12 @@ export const generateMap = (layout?: string[]): GridMap => {
     const row: GridCell[] = [];
     for (let x = 0; x < 15; x++) {
       const char = finalLayout[y]?.[x] || '_';
-      let type: 'floor' | 'wall' | 'crate' = 'floor';
+      let type: GridCell['type'] = 'floor';
       if (char === 'X') type = 'wall';
       else if (char === 'C') type = 'crate';
+      else if (char === 'F') type = 'fire';
+      else if (char === 'P') type = 'poison';
+      else if (char === 'B') type = 'barrel';
       row.push({ x, y, type });
     }
     map.push(row);

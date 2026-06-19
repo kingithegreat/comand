@@ -195,6 +195,7 @@ export default function Game({
   squadSize = 4,
   campaignMissionId,
   onNextMission,
+  customLayout,
   onMatchComplete,
   onChallengeProgress,
   boardTheme,
@@ -209,6 +210,7 @@ export default function Game({
   squadSize?: number,
   campaignMissionId?: string | null,
   onNextMission?: () => void,
+  customLayout?: string[],
   key?: string,
   onMatchComplete?: (won: boolean, survivalRate: number, turn: number) => void,
   onChallengeProgress?: (type: string, amount: number) => void,
@@ -930,8 +932,12 @@ export default function Game({
 
   useEffect(() => {
     if (!isOnline && mapEnvironment.length === 0) {
-      const preset = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
-      setMapEnvironment(generateMap(preset.layout));
+      if (customLayout) {
+        setMapEnvironment(generateMap(customLayout));
+      } else {
+        const preset = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
+        setMapEnvironment(generateMap(preset.layout));
+      }
     } else if (isOnline && isHost && mapEnvironment.length === 0 && !onlineMatch?.gridEnv) {
       const preset = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
       const generated = generateMap(preset.layout);
@@ -1919,6 +1925,34 @@ export default function Game({
        }
     }
 
+    // 3. Try to destroy adjacent crate blocking LOS
+    if (enemy.ap >= 1) {
+      const adjDirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+      for (const dir of adjDirs) {
+        const cx = enemy.x + dir.x;
+        const cy = enemy.y + dir.y;
+        if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE && mapEnvironment[cy]?.[cx]?.type === 'crate') {
+          const crateBlocksLos = playerUnits.some(p => {
+            const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
+            return !hasLos;
+          });
+          if (crateBlocksLos) {
+            const updatedMap = mapEnvironment.map((row, ry) =>
+              row.map((c, colx) => colx === cx && ry === cy ? { ...c, type: 'floor' as const } : c)
+            );
+            setMapEnvironment(updatedMap);
+            setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: u.ap - 1 } : u));
+            playSound('destroy');
+            addLog(`[DEMOLISH] Enemy ${enemy.class.className} destroyed crate cover at ${getCoord(cx, cy)}.`, 'combat');
+            if (isOnline && onlineMatch?.id) {
+              updateDoc(doc(db, 'matches', onlineMatch.id), { gridEnv: JSON.stringify(updatedMap) });
+            }
+            return;
+          }
+        }
+      }
+    }
+
     // Pass turn for this unit
     setUnits(prev => prev.map(u => u.id === enemy.id ? { ...u, ap: 0 } : u));
     addLog(`[PASS] Enemy ${enemy.class.className} entered passive standby cycle.`, 'system');
@@ -2421,12 +2455,55 @@ export default function Game({
              setUnits(newUnits);
              const teamColor = unit.team === 'player' ? 'Blue' : 'Purple';
              addLog(`[DEMOLISH] ${teamColor} ${unit.class.className} destroyed crate cover at ${getCoord(x, y)}.`, 'combat');
-             playSound('damage');
+             playSound('destroy');
              setShake(true);
              setTimeout(() => setShake(false), 200);
              const effectId = crypto.randomUUID();
              setDamageTexts(prev => [...prev, { id: effectId, x, y, amount: 0 }]);
              setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+             if (isOnline && onlineMatch?.id) {
+               updateDoc(doc(db, 'matches', onlineMatch.id), {
+                 units: JSON.stringify(newUnits),
+                 gridEnv: JSON.stringify(updatedMap),
+                 turn: turnRef.current,
+                 activeTeam: activeTeamRef.current
+               });
+             }
+             if (unit.ap - 1 <= 0) setSelectedUnitId(null);
+             return;
+           }
+         }
+         if (unit && unit.team === activeTeam && unit.ap >= 1 && cell?.type === 'barrel') {
+           const dist = Math.abs(unit.x - x) + Math.abs(unit.y - y);
+           const hasLos = checkLineOfSight(unit.x, unit.y, x, y, mapEnvironment);
+           if (dist <= unit.class.stats.range && hasLos) {
+             const updatedMap = mapEnvironment.map((row, ry) =>
+               row.map((c, cx) => cx === x && ry === y ? { ...c, type: 'floor' as const } : c)
+             );
+             setMapEnvironment(updatedMap);
+             const blastUnits = units.filter(u =>
+               u.hp > 0 && Math.abs(u.x - x) <= 1 && Math.abs(u.y - y) <= 1
+             );
+             let newUnits = units.map(u => {
+               if (u.id === unit.id) return { ...u, ap: u.ap - 1 };
+               if (blastUnits.some(bu => bu.id === u.id)) return { ...u, hp: Math.max(0, u.hp - 30) };
+               return u;
+             });
+             blastUnits.forEach(bu => {
+               const dmgId = crypto.randomUUID();
+               setDamageTexts(prev => [...prev, { id: dmgId, x: bu.x, y: bu.y, amount: 30 }]);
+               setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== dmgId)), 1000);
+               if (bu.hp - 30 <= 0) {
+                 const bColor = bu.team === 'player' ? 'Blue' : 'Purple';
+                 addLog(`[FATALITY] ${bColor} ${bu.class.className} caught in barrel explosion at ${getCoord(x, y)}.`, 'death');
+               }
+             });
+             setUnits(newUnits);
+             setShake(true);
+             setTimeout(() => setShake(false), 300);
+             playSound('destroy');
+             const teamColor = unit.team === 'player' ? 'Blue' : 'Purple';
+             addLog(`[DETONATE] ${teamColor} ${unit.class.className} detonated explosive barrel at ${getCoord(x, y)} dealing 30 blast damage!`, 'combat');
              if (isOnline && onlineMatch?.id) {
                updateDoc(doc(db, 'matches', onlineMatch.id), {
                  units: JSON.stringify(newUnits),
@@ -2461,13 +2538,33 @@ export default function Game({
            const unitTeamColor = unit.team === 'player' ? 'Blue' : 'Purple';
            addLog(`[MANEUVER] ${unitTeamColor} ${unit.class.className} advanced to quadrant ${getCoord(x, y)} (used ${reachableObj.apCost} AP).`, 'info');
            playSound('move');
+
+           const tileType = mapEnvironment[y]?.[x]?.type;
+           let hazardDmg = 0;
+           if (tileType === 'fire') {
+             hazardDmg = 15;
+             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 15 burn damage from fire at ${getCoord(x, y)}!`, 'combat');
+           } else if (tileType === 'poison') {
+             hazardDmg = 10;
+             addLog(`[HAZARD] ${unitTeamColor} ${unit.class.className} took 10 toxic damage from poison at ${getCoord(x, y)}!`, 'combat');
+           }
+           if (hazardDmg > 0) {
+             const hazId = crypto.randomUUID();
+             setDamageTexts(prev => [...prev, { id: hazId, x, y, amount: hazardDmg }]);
+             setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== hazId)), 1000);
+           }
+
+           const finalUnitsAfterMove = hazardDmg > 0
+             ? newUnits.map(u => u.id === selectedUnitId ? { ...u, hp: Math.max(0, u.hp - hazardDmg) } : u)
+             : newUnits;
+
            const remainingAp = unit.ap - reachableObj.apCost;
            if (remainingAp <= 0) {
              setSelectedUnitId(null);
            }
-           setUnits(newUnits);
+           setUnits(finalUnitsAfterMove);
            if (isOnline) {
-             updateOnlineState(newUnits, turnRef.current, activeTeamRef.current);
+             updateOnlineState(finalUnitsAfterMove, turnRef.current, activeTeamRef.current);
            }
             // State updated locally above
          }
@@ -2851,6 +2948,43 @@ export default function Game({
                 <>
                   <span className="text-[2.8cqw] text-amber-400 font-mono tracking-tighter leading-none font-black uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">CARGO</span>
                   <span className="text-[1.6cqw] text-amber-500/90 font-mono mt-0.5 font-black">C-904</span>
+                </>
+              )}
+            </div>
+          );
+        } else if (cell.type === 'fire') {
+          bgClass = 'bg-[#1a0800] relative';
+          borderClass = 'border-orange-500/50 border-[1.5px] shadow-[0_0_8px_rgba(249,115,22,0.3)]';
+          cellDecoration = (
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+              <div className="w-3 h-3 bg-orange-500/60 rounded-full animate-pulse shadow-[0_0_12px_rgba(249,115,22,0.8)]" />
+              <div className="absolute inset-0 bg-gradient-to-t from-orange-600/20 to-transparent" />
+              {mode === 'deploy' && (
+                <span className="absolute text-[2.2cqw] text-orange-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(249,115,22,0.5)]">FIRE</span>
+              )}
+            </div>
+          );
+        } else if (cell.type === 'poison') {
+          bgClass = 'bg-[#040a00] relative';
+          borderClass = 'border-lime-500/40 border-[1.5px] shadow-[0_0_8px_rgba(132,204,22,0.2)]';
+          cellDecoration = (
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+              <div className="w-3 h-3 bg-lime-500/40 rounded-full animate-pulse shadow-[0_0_10px_rgba(132,204,22,0.6)]" style={{ animationDuration: '3s' }} />
+              <div className="absolute inset-0 bg-gradient-to-t from-lime-600/15 to-transparent" />
+              {mode === 'deploy' && (
+                <span className="absolute text-[2.2cqw] text-lime-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(132,204,22,0.5)]">TOXIC</span>
+              )}
+            </div>
+          );
+        } else if (cell.type === 'barrel') {
+          bgClass = 'bg-[#1a0a00] relative';
+          borderClass = 'border-red-500/60 border-[1.5px] shadow-[0_0_10px_rgba(239,68,68,0.3)]';
+          cellDecoration = (
+            <div className="absolute inset-1 bg-[#1a0600] border-2 border-red-500/70 flex flex-col items-center justify-center rounded-sm shadow-md shadow-black/95">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.9)]" />
+              {mode === 'deploy' && (
+                <>
+                  <span className="text-[2.2cqw] text-red-400 font-mono font-black uppercase mt-0.5">TNT</span>
                 </>
               )}
             </div>
