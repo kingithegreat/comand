@@ -239,26 +239,60 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
         <div className="w-full sm:w-1/3 bg-zinc-900 bg-opacity-80 p-4 sm:p-6 flex flex-col items-center relative sm:overflow-y-auto shrink-0 sm:shrink min-h-[50vh] sm:min-h-0">
            <Navigation className="w-8 h-8 sm:w-12 sm:h-12 text-zinc-700 mb-2 sm:mb-4 shrink-0" />
            <h3 className="text-lg sm:text-xl font-bold uppercase text-center mb-1 sm:mb-2 tracking-widest text-zinc-300 shrink-0">{selectedRegion.name}</h3>
-           <p className="text-[10px] sm:text-xs text-zinc-400 text-center mb-4 sm:mb-8 px-2 sm:px-4 leading-relaxed shrink-0">{selectedRegion.desc}</p>
+
+           {(() => {
+             const sectorMatch = selectedRegion.id.match(/sector-(\d+)/);
+             const difficulty = sectorMatch ? Math.min(3, Math.floor(parseInt(sectorMatch[1]) / 3)) : 0;
+             const labels = ['Recruit', 'Trained', 'Veteran', 'Commander'];
+             const colors = ['text-emerald-400 border-emerald-500/30 bg-emerald-500/10', 'text-amber-400 border-amber-500/30 bg-amber-500/10', 'text-orange-400 border-orange-500/30 bg-orange-500/10', 'text-rose-400 border-rose-500/30 bg-rose-500/10'];
+             return (
+               <div className={`text-[9px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg border mb-3 shrink-0 ${colors[difficulty]}`}>
+                 {'★'.repeat(difficulty + 1)} {labels[difficulty]} Difficulty
+               </div>
+             );
+           })()}
+
+           <p className="text-[10px] sm:text-xs text-zinc-400 text-center mb-3 sm:mb-5 px-2 sm:px-4 leading-relaxed shrink-0">{selectedRegion.desc}</p>
+
+           {selectedRegion.conditions && (
+             <div className="w-full bg-amber-950/15 border border-amber-900/40 p-2.5 sm:p-3 rounded-lg mb-3 text-center shrink-0">
+                <div className="text-[8px] sm:text-[9px] uppercase font-bold text-amber-500/80 tracking-widest mb-1">Conditions</div>
+                <div className="text-[10px] sm:text-xs text-amber-300/70 font-mono">{selectedRegion.conditions}</div>
+             </div>
+           )}
 
            {selectedRegion.reward && (
-             <div className="w-full bg-emerald-950/20 border border-emerald-900/50 p-3 sm:p-4 rounded-lg mb-4 sm:mb-8 text-center flex flex-col items-center gap-1 sm:gap-2 shrink-0">
+             <div className="w-full bg-emerald-950/20 border border-emerald-900/50 p-3 sm:p-4 rounded-lg mb-3 sm:mb-5 text-center flex flex-col items-center gap-1 sm:gap-2 shrink-0">
                 <Star className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
                 <div className="text-[9px] sm:text-[10px] uppercase font-bold text-emerald-400 tracking-widest">Intel Reward Assessed</div>
                 <div className="text-xs sm:text-sm font-black text-zinc-300 uppercase">{selectedRegion.reward}</div>
              </div>
            )}
 
+           {selectedRegion.enemyClasses && (
+             <div className="w-full bg-rose-950/15 border border-rose-900/40 p-2.5 sm:p-3 rounded-lg mb-3 shrink-0">
+                <div className="text-[8px] sm:text-[9px] uppercase font-bold text-rose-500/70 tracking-widest mb-2 text-center">Expected Hostiles</div>
+                <div className="flex flex-wrap gap-1 justify-center">
+                  {[...new Set(selectedRegion.enemyClasses)].map((cn: string) => (
+                    <span key={cn} className="bg-rose-950/40 border border-rose-800/30 text-rose-400/80 text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded">
+                      {cn}
+                    </span>
+                  ))}
+                </div>
+             </div>
+           )}
+
            <div className="mt-auto w-full pt-4 shrink-0 sticky bottom-0 bg-zinc-900 bg-opacity-80 z-10 pb-2">
               {selectedRegion.status === 'available' || selectedRegion.status === 'completed' ? (
-                 <button 
+                 <button
+                   type="button"
                    onClick={handleLaunch}
                    className="w-full py-3 sm:py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs sm:text-sm tracking-widest rounded transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(251,191,36,0.3)] hover:-translate-y-0.5"
                  >
                    <Play className="w-4 h-4 sm:w-5 sm:h-5" /> {selectedRegion.status === 'completed' ? 'Re-Infiltrate Sector' : 'Infiltrate Sector'}
                  </button>
               ) : (
-                 <button disabled className="w-full py-3 sm:py-4 bg-zinc-900 text-zinc-600 font-black uppercase text-xs sm:text-sm tracking-widest rounded border border-zinc-800 cursor-not-allowed flex items-center justify-center gap-2">
+                 <button type="button" disabled className="w-full py-3 sm:py-4 bg-zinc-900 text-zinc-600 font-black uppercase text-xs sm:text-sm tracking-widest rounded border border-zinc-800 cursor-not-allowed flex items-center justify-center gap-2">
                    <SearchX className="w-4 h-4 sm:w-5 sm:h-5" /> Sector Locked
                  </button>
               )}

@@ -230,12 +230,12 @@ export default function Game({
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>(() => {
     if (campaignMissionId) {
-       if (campaignMissionId === 'tutorial') return MAPS[0].id;
-       const match = campaignMissionId.match(/sector-(\d+)/);
-       if (match) {
-          const num = parseInt(match[1]);
-          return MAPS[num]?.id || MAPS[0].id;
+       const region = BASE_REGIONS.find(r => r.id === campaignMissionId);
+       if (region && (region as any).mapId) {
+          const mapExists = MAPS.find(m => m.id === (region as any).mapId);
+          if (mapExists) return (region as any).mapId;
        }
+       return MAPS[0].id;
     }
     return 'sector_alpha';
   });
@@ -694,10 +694,17 @@ export default function Game({
                   setUnits(recalculateSquadStats(remoteUnits));
                } else {
                   const myTeamName = myTeam || 'player';
-                  const myLocalUnits = unitsRef.current.filter(u => u.team === myTeamName);
-                  const opponentRemoteUnits = remoteUnits.filter((u: any) => u.team !== myTeamName);
+                  let myLocalUnits: Unit[];
+                  let otherRemoteUnits: any[];
+                  if (gameMode === 'online_coop') {
+                    myLocalUnits = unitsRef.current.filter(u => u.ownerId === userId);
+                    otherRemoteUnits = remoteUnits.filter((u: any) => u.ownerId !== userId);
+                  } else {
+                    myLocalUnits = unitsRef.current.filter(u => u.team === myTeamName);
+                    otherRemoteUnits = remoteUnits.filter((u: any) => u.team !== myTeamName);
+                  }
 
-                  const merged = [...opponentRemoteUnits, ...myLocalUnits];
+                  const merged = [...otherRemoteUnits, ...myLocalUnits];
                   const mergedWithStats = recalculateSquadStats(merged);
 
                   const sortedMerged = [...mergedWithStats].sort((a, b) => a.id.localeCompare(b.id));
@@ -1731,7 +1738,7 @@ export default function Game({
              setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
              
              setUnits(prev => prev.map(u => {
-                if (u.id === enemy.id) return { ...u, hp: Math.min(u.class.stats.maxHP, u.hp + 20), ap: u.ap - 1 + 1 };
+                if (u.id === enemy.id) return { ...u, hp: Math.min(u.class.stats.maxHP, u.hp + 20), ap: Math.min(3, u.ap) };
                 return u;
              }));
              addLog(`[TACTICAL] Enemy Scout activated rapid adrenaline surge: Gained +1 AP, healed +20 HP.`, 'ability');
@@ -2535,7 +2542,7 @@ export default function Game({
     if (isSpectator) return; // Spectators cannot interact with the grid
     if (Date.now() - lastZoomTimeRef.current < 450) return; // Prevent double tap zoom clicks from triggering cell interactions
     if (!isOnline && gameMode === 'local_ai' && mode === 'play' && activeTeam === 'enemy') return; // Block player input during AI turn
-    if (isOnline && myTeam && mode === 'play' && activeTeam !== myTeam) return; // Block out of turn
+    if (isOnline && mode === 'play' && (isSpectator || (myTeam && activeTeam !== myTeam))) return; // Block spectators and out-of-turn
 
     const existingUnitIndex = units.findIndex(u => u.x === x && u.y === y && u.hp > 0);
     let existingUnit = existingUnitIndex >= 0 ? units[existingUnitIndex] : null;
@@ -3900,21 +3907,11 @@ export default function Game({
           
           let randClass = CLASSES[Math.floor(Math.random() * CLASSES.length)];
           if (campaignMissionId) {
-             if (campaignMissionId === 'tutorial') {
-                randClass = CLASSES.find(c => c.className === 'Assault') || CLASSES[0];
-             } else if (campaignMissionId === 'sector-1') {
-                const reconClasses = CLASSES.filter(c => ['Scout', 'Sniper', 'Assault'].includes(c.className));
-                randClass = reconClasses[Math.floor(Math.random() * reconClasses.length)];
-             } else if (campaignMissionId === 'sector-2') {
-                const urbanClasses = CLASSES.filter(c => ['Shotgunner', 'Demoman', 'Heavy', 'Assassin', 'Scout'].includes(c.className));
-                randClass = urbanClasses[Math.floor(Math.random() * urbanClasses.length)];
-             } else if (campaignMissionId === 'sector-3' || campaignMissionId === 'sector-4' || campaignMissionId === 'sector-5') {
-                const heavyClasses = CLASSES.filter(c => ['Heavy', 'Medic', 'Technician', 'Sniper', 'Flamethrower'].includes(c.className));
-                randClass = heavyClasses[Math.floor(Math.random() * heavyClasses.length)];
-             } else {
-                // High-end elite classes for sectors 6+
-                const eliteClasses = CLASSES.filter(c => ['Heavy', 'Assassin', 'Sniper', 'Flamethrower', 'Demoman', 'Technician'].includes(c.className));
-                randClass = eliteClasses[Math.floor(Math.random() * eliteClasses.length)] || CLASSES[0];
+             const region = BASE_REGIONS.find(r => r.id === campaignMissionId);
+             if (region && (region as any).enemyClasses) {
+                const enemyPool = (region as any).enemyClasses as string[];
+                const className = enemyPool[Math.floor(Math.random() * enemyPool.length)];
+                randClass = CLASSES.find(c => c.className === className) || CLASSES[0];
              }
           }
 
@@ -5269,11 +5266,19 @@ export default function Game({
                   </div>
                </div>
                
-               <div className="p-4 sm:p-6 flex flex-col gap-5 sm:gap-6">
+               <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5 max-h-[60vh] overflow-y-auto">
                   <div>
                      <h4 className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Tactical Overview</h4>
                      <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed font-mono">{BASE_REGIONS.find(r => r.id === campaignMissionId)?.desc || 'No tactical data.'}</p>
                   </div>
+                  {(BASE_REGIONS.find(r => r.id === campaignMissionId) as any)?.briefing && (
+                    <div>
+                       <h4 className="text-[10px] font-bold text-cyan-500/70 tracking-widest uppercase mb-2">Commander Intel</h4>
+                       <div className="bg-cyan-950/20 border border-cyan-800/30 p-3 rounded-lg text-xs sm:text-sm text-cyan-300/90 font-mono leading-relaxed">
+                          {(BASE_REGIONS.find(r => r.id === campaignMissionId) as any).briefing}
+                       </div>
+                    </div>
+                  )}
                   <div>
                      <h4 className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Primary Objective</h4>
                      <div className="bg-zinc-900 bg-opacity-80 border border-zinc-800 border-opacity-50 p-3 rounded-lg text-xs sm:text-sm text-emerald-400 font-mono">
@@ -5286,6 +5291,18 @@ export default function Game({
                         {BASE_REGIONS.find(r => r.id === campaignMissionId)?.conditions || 'Standard deployment variables apply.'}
                      </div>
                   </div>
+                  {(BASE_REGIONS.find(r => r.id === campaignMissionId) as any)?.enemyClasses && (
+                    <div>
+                       <h4 className="text-[10px] font-bold text-rose-500/70 tracking-widest uppercase mb-2">Expected Hostile Classes</h4>
+                       <div className="flex flex-wrap gap-1.5">
+                         {[...new Set((BASE_REGIONS.find(r => r.id === campaignMissionId) as any).enemyClasses as string[])].map((cn: string) => (
+                           <span key={cn} className="bg-rose-950/30 border border-rose-800/30 text-rose-400/90 text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 rounded">
+                             {cn}
+                           </span>
+                         ))}
+                       </div>
+                    </div>
+                  )}
                </div>
                
                <div className="p-4 bg-zinc-900 bg-opacity-80 border-t border-zinc-800 border-opacity-50 flex flex-col-reverse sm:flex-row items-center justify-end gap-3 shrink-0">
