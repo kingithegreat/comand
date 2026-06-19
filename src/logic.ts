@@ -62,25 +62,26 @@ export const getReachableTiles = (
   return tiles;
 };
 
+export type CoverLevel = 'none' | 'half' | 'full';
+
 export const calculateHitChance = (
   attacker: Unit,
   target: { x: number; y: number },
   map: GridCell[][]
-): { chance: number, isCovered: boolean } => {
+): { chance: number, isCovered: boolean, coverLevel: CoverLevel, damageReduction: number } => {
   let baseAccuracy = attacker.class.stats.accuracy || 85;
   const dist = Math.abs(attacker.x - target.x) + Math.abs(attacker.y - target.y);
-  
-  // Distance penalty: -3% per tile beyond half range for better gameplay feel
+
   const halfRange = Math.max(1, Math.floor(attacker.class.stats.range / 2));
   let distPenalty = 0;
   if (dist > halfRange) {
     distPenalty = (dist - halfRange) * 3;
   }
 
-  // Cover penalty: check if there's a crate adjacent to the target that is between attacker and target
-  let isCovered = false;
+  let coverLevel: CoverLevel = 'none';
   let coverPenalty = 0;
-  
+  let damageReduction = 0;
+
   const neighbors = [
     { dx: 0, dy: -1 }, { dx: 1, dy: -1 }, { dx: 1, dy: 0 }, { dx: 1, dy: 1 },
     { dx: 0, dy: 1 }, { dx: -1, dy: 1 }, { dx: -1, dy: 0 }, { dx: -1, dy: -1 }
@@ -90,29 +91,52 @@ export const calculateHitChance = (
     const nx = target.x + n.dx;
     const ny = target.y + n.dy;
     if (nx >= 0 && ny >= 0 && nx < map[0].length && ny < map.length) {
-      if (map[ny][nx].type === 'crate' || map[ny][nx].type === 'barrel') {
-        // Is this crate between attacker and target?
-        const distAttackerToCrate = Math.abs(attacker.x - nx) + Math.abs(attacker.y - ny);
-        if (distAttackerToCrate < dist) {
-          isCovered = true;
-          coverPenalty = 20; // Reduced from 25 to 20 for a fairer low cover experience
-          break;
-        }
+      const tileType = map[ny][nx].type;
+      const distAttackerToCover = Math.abs(attacker.x - nx) + Math.abs(attacker.y - ny);
+      if (distAttackerToCover >= dist) continue;
+
+      if (tileType === 'wall' && coverLevel !== 'full') {
+        coverLevel = 'full';
+        coverPenalty = 35;
+        damageReduction = 0.25;
+      } else if ((tileType === 'crate' || tileType === 'barrel') && coverLevel === 'none') {
+        coverLevel = 'half';
+        coverPenalty = 20;
+        damageReduction = 0;
       }
     }
   }
 
+  const isCovered = coverLevel !== 'none';
   let finalChance = baseAccuracy - distPenalty - coverPenalty;
-  
-  // Easy range override: units should never miss in easy/close ranges (distance of 2 or less)
+
   if (dist <= 2) {
     finalChance = 100;
   } else {
-    // Minimum hit chance of 30% ensures interesting underdog mechanics rather than extreme 0% misses
     finalChance = Math.max(30, Math.min(100, finalChance));
   }
 
-  return { chance: finalChance, isCovered };
+  return { chance: finalChance, isCovered, coverLevel, damageReduction };
+};
+
+export const getUnitCoverLevel = (
+  unit: { x: number; y: number },
+  map: GridCell[][]
+): CoverLevel => {
+  const neighbors = [
+    { dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 },
+  ];
+  let best: CoverLevel = 'none';
+  for (const n of neighbors) {
+    const nx = unit.x + n.dx;
+    const ny = unit.y + n.dy;
+    if (nx >= 0 && ny >= 0 && nx < map[0]?.length && ny < map.length) {
+      const t = map[ny][nx].type;
+      if (t === 'wall') return 'full';
+      if (t === 'crate' || t === 'barrel') best = 'half';
+    }
+  }
+  return best;
 };
 
 export const countWallsPenetrated = (

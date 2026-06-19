@@ -4,7 +4,7 @@ import TurnCounter from './TurnCounter';
 import { CLASSES } from '../data';
 import { CharacterClass, Unit, GridCell, TurnSnapshot, StatusEffect } from '../types';
 import { generateMap, MAPS } from '../mapUtils';
-import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats, countWallsPenetrated } from '../logic';
+import { getReachableTiles, checkLineOfSight, calculateHitChance, getCharacterLevelInfo, getBoostedStats, countWallsPenetrated, getUnitCoverLevel, CoverLevel } from '../logic';
 import { getActiveChemistries, applyChemistryBuffsToStats, CHEMISTRIES } from '../chemistries';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc, setDoc, getDoc, increment, runTransaction } from 'firebase/firestore';
@@ -225,7 +225,9 @@ export default function Game({
   const myTeam = isOnline 
     ? (gameMode === 'online_coop' ? (isSpectator ? undefined : 'player') : (isHost ? 'player' : (isSpectator ? undefined : 'enemy')))
     : (gameMode === 'local_ai' ? 'player' : (gameMode === 'local_p2p' ? activeTeam : undefined));
-  const isSmogActive = isOnline ? !!onlineMatch?.smogEnabled : (gameMode === 'local_ai' && ['sector-2', 'sector-5', 'sector-7', 'sector-9', 'sector-11', 'sector-14', 'sector-15'].includes(campaignMissionId || '')) ? true : !!smogMode;
+  const smogMissions = ['sector-2', 'sector-5', 'sector-7', 'sector-9', 'sector-11', 'sector-14', 'sector-15'];
+  const isSmogTheme = isOnline ? !!onlineMatch?.smogEnabled : smogMissions.includes(campaignMissionId || '') || !!smogMode;
+  const isFogOfWarActive = isOnline ? !!onlineMatch?.smogEnabled : gameMode === 'local_ai' ? true : !!smogMode;
   const matchSquadSize = isOnline ? (onlineMatch?.squadSize || squadSize || 4) : (squadSize || 4);
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>(() => {
@@ -1735,12 +1737,13 @@ export default function Game({
         const dist = Math.abs(owUnit.x - enemy.x) + Math.abs(owUnit.y - enemy.y);
         const pen = owUnit.class.className === 'Sniper' ? 1 : 0;
         if (dist <= owUnit.class.stats.range && checkLineOfSight(owUnit.x, owUnit.y, enemy.x, enemy.y, mapEnvironment, pen)) {
-          const { chance } = calculateHitChance(owUnit, enemy, mapEnvironment);
+          const { chance, damageReduction: owDmgRed } = calculateHitChance(owUnit, enemy, mapEnvironment);
           const isHit = Math.random() * 100 <= chance;
           const owColor = owUnit.team === 'player' ? 'Blue' : 'Purple';
           const eColor = enemy.team === 'player' ? 'Blue' : 'Purple';
           if (isHit) {
-            const dmg = Math.floor(owUnit.class.stats.damage * 0.75);
+            let dmg = Math.floor(owUnit.class.stats.damage * 0.75);
+            if (owDmgRed > 0) dmg = Math.floor(dmg * (1 - owDmgRed));
             const idx = updatedUnits.findIndex(u => u.id === enemy.id);
             if (idx >= 0) {
               updatedUnits[idx] = { ...updatedUnits[idx], hp: Math.max(0, updatedUnits[idx].hp - dmg) };
@@ -2315,7 +2318,7 @@ export default function Game({
     if (bestTarget && enemy.ap >= 1) { // attack costs 1 AP
        const p = bestTarget;
        const targetFacing = getFacingDirection(enemy.x, enemy.y, p.x, p.y, enemy.facing);
-       const { chance, isCovered } = calculateHitChance(enemy, p, mapEnvironment);
+       const { chance, isCovered, coverLevel, damageReduction } = calculateHitChance(enemy, p, mapEnvironment);
        const difficultyAccMod = aiDifficulty === 0 ? -25 : aiDifficulty === 1 ? -10 : 0;
        const isHit = Math.random() * 100 <= Math.max(10, chance + difficultyAccMod);
 
@@ -2328,6 +2331,7 @@ export default function Game({
            if (wallsHit > 0) effectiveDmg = Math.floor(effectiveDmg * 0.5);
          }
          if (p.fortified) effectiveDmg = Math.floor(effectiveDmg * 0.5);
+         if (damageReduction > 0) effectiveDmg = Math.floor(effectiveDmg * (1 - damageReduction));
          setBattleStats(prev => ({ ...prev, damageTaken: prev.damageTaken + effectiveDmg }));
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
@@ -2349,7 +2353,8 @@ export default function Game({
          }, 800);
 
          const remHp = p.hp - effectiveDmg;
-         addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${effectiveDmg} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).`, 'combat');
+         const aiCoverMsg = coverLevel === 'full' ? ' (You had full cover — 25% damage reduced)' : coverLevel === 'half' ? ' (You had half cover)' : '';
+         addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${effectiveDmg} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).${aiCoverMsg}`, 'combat');
          if (remHp <= 0) {
            addLog(`[FATALITY] Blue ${p.class.className} neutralized under enemy hostile fire.`, 'death');
          }
@@ -2369,7 +2374,8 @@ export default function Game({
             setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
          }, 800);
 
-         addLog(`[MISS] Enemy ${enemy.class.className} fired on Blue ${p.class.className} (${chance}% hit chance) but missed!${isCovered ? ' (Cover interference)' : ''}`, 'info');
+         const aiMissCoverMsg = coverLevel === 'full' ? ' (You had full cover)' : coverLevel === 'half' ? ' (You had half cover)' : '';
+         addLog(`[MISS] Enemy ${enemy.class.className} fired on Blue ${p.class.className} (${chance}% hit chance) but missed!${aiMissCoverMsg}`, 'info');
        }
        return;
     }
@@ -2727,7 +2733,7 @@ export default function Game({
     const existingUnitIndex = units.findIndex(u => u.x === x && u.y === y && u.hp > 0);
     let existingUnit = existingUnitIndex >= 0 ? units[existingUnitIndex] : null;
 
-    if (mode === 'play' && isSmogActive && existingUnit) {
+    if (mode === 'play' && isFogOfWarActive && existingUnit) {
       const viewerTeam = isOnline ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player');
       const isFriendly = existingUnit.team === viewerTeam;
       if (!isFriendly && !isTileVisible(x, y)) {
@@ -2857,12 +2863,12 @@ export default function Game({
                const sniperPen = unit.class.className === 'Sniper' ? 1 : 0;
                const hasLos = checkLineOfSight(unit.x, unit.y, existingUnit.x, existingUnit.y, mapEnvironment, sniperPen);
                if (dist <= unit.class.stats.range && hasLos && unit.ap >= 1) {
-                  const { chance, isCovered } = calculateHitChance(unit, existingUnit, mapEnvironment);
+                  const { chance, isCovered, coverLevel, damageReduction } = calculateHitChance(unit, existingUnit, mapEnvironment);
                   const isHit = existingUnit.markedForDeath ? true : Math.random() * 100 <= chance;
                   const attackerColor = unit.team === 'player' ? 'Blue' : 'Purple';
                   const targetColor = existingUnit.team === 'player' ? 'Blue' : 'Purple';
                   setLastMoveState(null); // Can't undo after attacking
-                  
+
                   const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
 
                   if (isHit) {
@@ -2875,6 +2881,7 @@ export default function Game({
                     }
                     if (unit.invisible) effectiveDmg = effectiveDmg * 2;
                     if (existingUnit.fortified) effectiveDmg = Math.floor(effectiveDmg * 0.5);
+                    if (damageReduction > 0) effectiveDmg = Math.floor(effectiveDmg * (1 - damageReduction));
                     if (unit.team === (myTeam || 'player')) {
                       setBattleStats(prev => ({
                         ...prev,
@@ -2908,7 +2915,8 @@ export default function Game({
                     }, 800);
 
                     const relHP = existingUnit.hp - effectiveDmg;
-                    addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${effectiveDmg} damage!${isCovered ? ' (Target partially behind cover)' : ''}`, 'combat');
+                    const coverMsg = coverLevel === 'full' ? ' (Target behind full cover — 25% damage reduced)' : coverLevel === 'half' ? ' (Target behind half cover)' : '';
+                    addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${effectiveDmg} damage!${coverMsg}`, 'combat');
                     if (relHP <= 0) {
                         addLog(`[FATALITY] ${targetColor} ${existingUnit.class.className} neutralized under hostile fire.`, 'death');
                         addKillFeedEntry(unit.class.className, unit.team, existingUnit.class.className, existingUnit.team);
@@ -2945,7 +2953,8 @@ export default function Game({
                       });
                     }, 800);
 
-                    addLog(`[MISS] ${attackerColor} ${unit.class.className} fired on ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) but missed!${isCovered ? ' (Target shielded by cover)' : ''}`, 'info');
+                    const missCoverMsg = coverLevel === 'full' ? ' (Target behind full cover)' : coverLevel === 'half' ? ' (Target behind half cover)' : '';
+                    addLog(`[MISS] ${attackerColor} ${unit.class.className} fired on ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) but missed!${missCoverMsg}`, 'info');
 
                     setUnits(newUnits);
                     if(isOnline) updateOnlineState(newUnits, turnRef.current, activeTeamRef.current);
@@ -3292,15 +3301,15 @@ export default function Game({
   };
 
   const isTileVisible = (x: number, y: number): boolean => {
-    if (!isSmogActive) return true;
+    if (!isFogOfWarActive) return true;
     if (mode === 'deploy') return true;
-    
+
     let viewerTeam: 'player' | 'enemy' = 'player';
     if (gameMode === 'online') {
       viewerTeam = myTeam || 'player';
     } else if (gameMode === 'local_p2p') {
       viewerTeam = activeTeam;
-    } else { // local_ai
+    } else {
       viewerTeam = 'player';
     }
 
@@ -3309,7 +3318,8 @@ export default function Game({
 
     return friendlyUnits.some(u => {
       const dist = Math.abs(u.x - x) + Math.abs(u.y - y);
-      const sightRange = Math.max(5, u.class.stats.range + 1);
+      const scoutBonus = u.class.className === 'Scout' ? 2 : 0;
+      const sightRange = Math.max(5, u.class.stats.range + 1) + scoutBonus;
       if (dist > sightRange) return false;
       const vPen = u.class.className === 'Sniper' ? 1 : 0;
       return checkLineOfSight(u.x, u.y, x, y, mapEnvironment, vPen);
@@ -3328,7 +3338,7 @@ export default function Game({
         const isFriendly = rawUnit && rawUnit.team === (gameMode === 'online' ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player'));
         
         // Assassin Passive: Invisibility in Smog unless distance to a friendly unit is 1 (4 for Scouts)
-        if (rawUnit && rawUnit.class.className === 'Assassin' && !isFriendly && isSmogActive) {
+        if (rawUnit && rawUnit.class.className === 'Assassin' && !isFriendly && isSmogTheme) {
            let adjacentToFriendly = false;
            const viewerTeam = isOnline ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player');
            const friendlyUnits = finalUnits.filter(f => f.team === viewerTeam && f.hp > 0);
@@ -3345,7 +3355,7 @@ export default function Game({
            }
         }
 
-        const unit = (rawUnit && (isFriendly || !isSmogActive || visible)) ? rawUnit : undefined;
+        const unit = (rawUnit && (isFriendly || !isFogOfWarActive || visible)) ? rawUnit : undefined;
         const reachableObj = isReachableTileObj(x, y);
         
         let bgClass = 'amber-grid-bg relative hover:bg-slate-800/25 transition-colors duration-150'; // Military command base
@@ -3550,23 +3560,33 @@ export default function Game({
           );
         }
 
-        // Override styling if this coordinate is obscured in smog
-        if (isSmogActive && !visible && mode === 'play') {
-          bgClass = 'bg-[#040504] relative';
-          borderClass = 'border-[#0a120a]/60 border-[1px]';
-          backgroundDecor = (
-            <div className="absolute inset-0 bg-emerald-900/5 pointer-events-none z-1 flex items-center justify-center overflow-hidden">
-              <svg viewBox="0 0 100 100" className="w-full h-full opacity-[0.22] text-[#2e4c2e] animate-pulse" style={{ animationDuration: '6s' }} fill="currentColor">
-                <path d="M 15 50 C 15 35, 35 35, 45 40 C 55 25, 75 30, 80 45 C 90 45, 95 60, 85 70 C 85 85, 65 85, 55 80 C 40 85, 20 85, 15 70 C 5 70, 5 55, 15 50 Z" />
-              </svg>
-            </div>
-          );
-          cellDecoration = (
-            <div className="absolute inset-0 bg-[#060a06]/92 backdrop-blur-[1.5px] pointer-events-none z-2 flex flex-col items-center justify-center">
-              <div className="absolute inset-x-0 top-0 bottom-0 warning-stripes-blue opacity-[0.03]" />
-              <Wind className="w-3.5 h-3.5 text-emerald-800/40 animate-pulse" />
-            </div>
-          );
+        if (isFogOfWarActive && !visible && mode === 'play') {
+          if (isSmogTheme) {
+            bgClass = 'bg-[#040504] relative';
+            borderClass = 'border-[#0a120a]/60 border-[1px]';
+            backgroundDecor = (
+              <div className="absolute inset-0 bg-emerald-900/5 pointer-events-none z-1 flex items-center justify-center overflow-hidden">
+                <svg viewBox="0 0 100 100" className="w-full h-full opacity-[0.22] text-[#2e4c2e] animate-pulse" style={{ animationDuration: '6s' }} fill="currentColor">
+                  <path d="M 15 50 C 15 35, 35 35, 45 40 C 55 25, 75 30, 80 45 C 90 45, 95 60, 85 70 C 85 85, 65 85, 55 80 C 40 85, 20 85, 15 70 C 5 70, 5 55, 15 50 Z" />
+                </svg>
+              </div>
+            );
+            cellDecoration = (
+              <div className="absolute inset-0 bg-[#060a06]/92 backdrop-blur-[1.5px] pointer-events-none z-2 flex flex-col items-center justify-center">
+                <div className="absolute inset-x-0 top-0 bottom-0 warning-stripes-blue opacity-[0.03]" />
+                <Wind className="w-3.5 h-3.5 text-emerald-800/40 animate-pulse" />
+              </div>
+            );
+          } else {
+            bgClass = 'bg-[#08080a] relative';
+            borderClass = 'border-zinc-900/40 border-[1px]';
+            backgroundDecor = null;
+            cellDecoration = (
+              <div className="absolute inset-0 bg-black/75 pointer-events-none z-2 flex items-center justify-center">
+                <EyeOff className="w-3 h-3 text-zinc-700/30" />
+              </div>
+            );
+          }
         }
 
         // Action Point deploy warning zones (Visible simultaneously on both allied and enemy regions)
@@ -3677,12 +3697,13 @@ export default function Game({
            const hasLos = checkLineOfSight(selectedUnit.x, selectedUnit.y, x, y, mapEnvironment, hPen);
            if (hasLos) {
              losClass = 'ring-2 ring-red-500 ring-offset-1 ring-offset-[#2a2e25] z-10';
-             const { chance } = calculateHitChance(selectedUnit, unit, mapEnvironment);
+             const { chance, coverLevel: hcCover } = calculateHitChance(selectedUnit, unit, mapEnvironment);
              hitChanceInfo = (
                 <div className="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 z-20">
                    <div className="bg-purple-950/90 text-purple-400 text-[2cqw] font-black font-mono px-1 py-0.5 rounded-lg shadow-[0_0_10px_rgba(168,85,247,0.6)] border border-purple-500/50 flex flex-col items-center leading-none">
                      <span>HIT</span>
                      <span>{chance}%</span>
+                     {hcCover !== 'none' && <span className={`text-[1.6cqw] ${hcCover === 'full' ? 'text-sky-400' : 'text-amber-400'}`}>{hcCover === 'full' ? 'FULL' : 'HALF'}</span>}
                    </div>
                 </div>
              );
@@ -3857,6 +3878,15 @@ export default function Game({
                    {mode === 'play' && unit.fortified && (
                       <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-blue-500/90 border border-blue-300/50 z-40 pointer-events-none" title="Fortified" />
                    )}
+                   {mode === 'play' && !unit.fortified && (() => {
+                      const cl = getUnitCoverLevel(unit, mapEnvironment);
+                      if (cl === 'none') return null;
+                      return (
+                        <div className={`absolute top-0 right-0 z-40 pointer-events-none flex items-center justify-center w-3 h-3 rounded-full border ${cl === 'full' ? 'bg-sky-500/90 border-sky-300/60' : 'bg-amber-500/80 border-amber-300/50'}`} title={cl === 'full' ? 'Full Cover (-35% acc, -25% dmg)' : 'Half Cover (-20% acc)'}>
+                          <Shield className="w-2 h-2 text-white" />
+                        </div>
+                      );
+                   })()}
                    {mode === 'play' && unit.invisible && (
                       <div className="absolute inset-0 bg-black/50 rounded z-20 pointer-events-none animate-pulse" />
                    )}
@@ -4395,6 +4425,15 @@ export default function Game({
             <span className="text-zinc-300">{tooltipUnit.unit.class.stats.range}</span>
             <span className="text-zinc-500">ACC</span>
             <span className="text-zinc-300">{tooltipUnit.unit.class.stats.accuracy}%</span>
+            {(() => {
+              const cl = getUnitCoverLevel(tooltipUnit.unit, mapEnvironment);
+              return (<>
+                <span className="text-zinc-500">COVER</span>
+                <span className={cl === 'full' ? 'text-sky-400' : cl === 'half' ? 'text-amber-400' : 'text-zinc-600'}>
+                  {cl === 'full' ? 'Full' : cl === 'half' ? 'Half' : 'None'}
+                </span>
+              </>);
+            })()}
           </div>
           {tooltipUnit.unit.statusEffects && tooltipUnit.unit.statusEffects.length > 0 && (
             <div className="flex gap-1 mt-1 border-t border-zinc-800 pt-1">
