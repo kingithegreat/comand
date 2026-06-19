@@ -59,6 +59,7 @@ export default function FriendList({ onInvite, roomCode }: FriendListProps) {
       if (!fSnap.exists()) { setError('Commander not found'); setAdding(false); return; }
 
       await updateDoc(doc(db, 'users', user.uid), { friends: arrayUnion(friendId) });
+      await updateDoc(doc(db, 'users', friendId), { friends: arrayUnion(user.uid) }).catch(() => {});
       setFriends(prev => [...prev, { id: friendId, name: fSnap.data().displayName || 'Commander' }]);
       setAddInput('');
     } catch (err) {
@@ -72,6 +73,7 @@ export default function FriendList({ onInvite, roomCode }: FriendListProps) {
     if (!user) return;
     try {
       await updateDoc(doc(db, 'users', user.uid), { friends: arrayRemove(friendId) });
+      await updateDoc(doc(db, 'users', friendId), { friends: arrayRemove(user.uid) }).catch(() => {});
       setFriends(prev => prev.filter(f => f.id !== friendId));
     } catch (err) {
       console.error('Error removing friend:', err);

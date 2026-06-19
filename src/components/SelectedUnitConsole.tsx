@@ -145,7 +145,7 @@ export default function SelectedUnitConsole({
         } else if (dist > selectedUnit.class.stats.mobility) {
           liveWarning = `Too far (${dist} tiles, mobility ${selectedUnit.class.stats.mobility})`;
         } else if (reached) {
-          actionHint = `Move to ${getCoord(tileX, tileY)} (${dist > 2 ? 2 : 1} AP)`;
+          actionHint = `Move to ${getCoord(tileX, tileY)} (${dist > selectedUnit.class.stats.mobility ? 2 : 1} AP)`;
         }
       }
     }

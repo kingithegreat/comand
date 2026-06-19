@@ -188,7 +188,7 @@ export default function CampaignMode({ onBack, onStartMission }: { onBack: () =>
                        {iconContent}
                     </div>
                     <div>
-                       <div className="text-[9px] sm:text-[10px] text-zinc-400 font-black tracking-widest mb-0.5 uppercase">SECTOR 0{i+1}</div>
+                       <div className="text-[9px] sm:text-[10px] text-zinc-400 font-black tracking-widest mb-0.5 uppercase">SECTOR {String(i + 1).padStart(2, '0')}</div>
                        <h3 className="text-sm sm:text-base font-bold text-zinc-300 uppercase tracking-wider">{r.name}</h3>
                     </div>
                  </div>

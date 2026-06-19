@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion, runTransaction } from 'firebase/firestore';
 import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { CLASSES } from './data';
@@ -179,7 +179,7 @@ export default function App() {
 
   useEffect(() => {
      if (profile && !editingProfile) {
-        setDisplayNameInput(profile.displayName);
+        setDisplayNameInput(profile.displayName || '');
      }
   }, [profile, editingProfile]);
 
@@ -188,18 +188,22 @@ export default function App() {
       const autoJoin = async () => {
         try {
           const matchRef = doc(db, 'matches', pendingRoomCode);
-          const matchSnap = await getDoc(matchRef);
-          if (matchSnap.exists()) {
+          const result = await runTransaction(db, async (transaction) => {
+            const matchSnap = await transaction.get(matchRef);
+            if (!matchSnap.exists()) return null;
             const data = matchSnap.data();
             if (data.hostId !== user.uid) {
               if (!data.guestId) {
-                await updateDoc(matchRef, { guestId: user.uid });
+                transaction.update(matchRef, { guestId: user.uid });
               } else if (data.guestId !== user.uid) {
-                await updateDoc(matchRef, { spectators: arrayUnion(user.uid) });
+                transaction.update(matchRef, { spectators: arrayUnion(user.uid) });
               }
             }
+            return data;
+          });
+          if (result) {
             setOnlineMatchId(pendingRoomCode);
-            setGameMode(data.isCoop ? 'online_coop' : 'online');
+            setGameMode(result.isCoop ? 'online_coop' : 'online');
           }
         } catch (err) {
           console.error("Auto-join failed:", err);
@@ -487,6 +491,14 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      if (searchIntervalRef.current) {
+        clearInterval(searchIntervalRef.current);
+      }
+    };
+  }, []);
+
   const quickMatch = async () => {
     if (!user) return;
     setIsSearching(true);
@@ -509,11 +521,21 @@ export default function App() {
       for (const matchDoc of querySnapshot.docs) {
         const data = matchDoc.data();
         if (data.hostId !== user.uid) {
-          await updateDoc(doc(db, 'matches', matchDoc.id), { guestId: user.uid });
-          setOnlineMatchId(matchDoc.id);
-          setGameMode(data.isCoop ? 'online_coop' : 'online');
-          cancelSearch();
-          return true;
+          const matchRef = doc(db, 'matches', matchDoc.id);
+          const claimed = await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(matchRef);
+            if (!snap.exists()) return false;
+            const current = snap.data();
+            if (current.guestId) return false;
+            transaction.update(matchRef, { guestId: user.uid });
+            return true;
+          });
+          if (claimed) {
+            setOnlineMatchId(matchDoc.id);
+            setGameMode(data.isCoop ? 'online_coop' : 'online');
+            cancelSearch();
+            return true;
+          }
         }
       }
       return false;
@@ -533,6 +555,10 @@ export default function App() {
           cancelSearch();
           return;
         }
+        const found = await tryFind();
+        if (found) {
+          clearInterval(pollInterval);
+        }
       }, 3000);
 
     } catch(err: any) {
@@ -551,21 +577,21 @@ export default function App() {
     }
     try {
       const matchRef = doc(db, 'matches', cleanCode);
-      const matchSnap = await getDoc(matchRef);
-      if (matchSnap.exists()) {
-         const data = matchSnap.data();
-         if (data.hostId === user.uid) {
-            setOnlineMatchId(cleanCode);
-            setGameMode(data.isCoop ? 'online_coop' : 'online');
-            return;
-         }
-         if (!data.guestId) {
-            await updateDoc(matchRef, { guestId: user.uid });
-         } else if (data.guestId !== user.uid) {
-            await updateDoc(matchRef, { spectators: arrayUnion(user.uid) });
-         }
-         setOnlineMatchId(cleanCode);
-         setGameMode(data.isCoop ? 'online_coop' : 'online');
+      const result = await runTransaction(db, async (transaction) => {
+        const matchSnap = await transaction.get(matchRef);
+        if (!matchSnap.exists()) return null;
+        const data = matchSnap.data();
+        if (data.hostId === user.uid) return { action: 'host' as const, data };
+        if (!data.guestId) {
+          transaction.update(matchRef, { guestId: user.uid });
+        } else if (data.guestId !== user.uid) {
+          transaction.update(matchRef, { spectators: arrayUnion(user.uid) });
+        }
+        return { action: 'join' as const, data };
+      });
+      if (result) {
+        setOnlineMatchId(cleanCode);
+        setGameMode(result.data.isCoop ? 'online_coop' : 'online');
       } else {
         alert("Room not found! Check the code and try again.");
       }
@@ -1259,7 +1285,7 @@ export default function App() {
                        maxLength={6}
                        className="w-full h-full bg-black/60 border border-zinc-800 border-opacity-50 focus:border-amber-400 rounded-lg px-3 text-sm text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
                      />
-                     <button type="button" onClick={handleLogin} disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer">
+                     <button type="button" onClick={() => { if (joinCode.trim().length >= 5) setPendingRoomCode(joinCode.trim().toUpperCase()); handleLogin(); }} disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer">
                        SIGN IN & JOIN
                      </button>
                    </div>

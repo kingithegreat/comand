@@ -23,23 +23,20 @@ export default function CommanderLeaderboard() {
     const fetchLeaders = async () => {
       try {
         setLoading(true);
+        const field = activeTab === 'pvp' ? 'victories' : activeTab === 'campaign' ? 'campaignSectors' : 'totalSquadLevel';
         const q = query(
-          collection(db, 'stats')
+          collection(db, 'stats'),
+          orderBy(field, 'desc'),
+          limit(20)
         );
         const querySnapshot = await getDocs(q);
         let fetchedLeaders: CommanderStat[] = [];
         querySnapshot.forEach((doc) => {
           fetchedLeaders.push(doc.data() as CommanderStat);
         });
-        
-        if (activeTab === 'pvp') {
-          fetchedLeaders = fetchedLeaders.filter(l => (l.victories || 0) > 0).sort((a, b) => (b.victories || 0) - (a.victories || 0));
-        } else if (activeTab === 'campaign') {
-          fetchedLeaders = fetchedLeaders.filter(l => (l.campaignSectors || 0) > 0).sort((a, b) => (b.campaignSectors || 0) - (a.campaignSectors || 0));
-        } else {
-          fetchedLeaders = fetchedLeaders.filter(l => (l.totalSquadLevel || 0) > 0).sort((a, b) => (b.totalSquadLevel || 0) - (a.totalSquadLevel || 0));
-        }
-        
+
+        fetchedLeaders = fetchedLeaders.filter(l => (l[field] || 0) > 0);
+
         if (active) {
           setLeaders(fetchedLeaders.slice(0, 10));
           setLoading(false);

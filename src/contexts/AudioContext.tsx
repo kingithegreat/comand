@@ -54,6 +54,22 @@ let musicNodes: { oscs: OscillatorNode[]; gains: GainNode[]; sources: AudioBuffe
   oscs: [], gains: [], sources: [], master: null, interval: null
 };
 
+const pruneMusicNodes = () => {
+  const MAX_NODES = 30;
+  if (musicNodes.oscs.length > MAX_NODES) {
+    const old = musicNodes.oscs.splice(0, musicNodes.oscs.length - MAX_NODES);
+    old.forEach(o => { try { o.disconnect(); } catch (_) {} });
+  }
+  if (musicNodes.gains.length > MAX_NODES) {
+    const old = musicNodes.gains.splice(0, musicNodes.gains.length - MAX_NODES);
+    old.forEach(g => { try { g.disconnect(); } catch (_) {} });
+  }
+  if (musicNodes.sources.length > MAX_NODES) {
+    const old = musicNodes.sources.splice(0, musicNodes.sources.length - MAX_NODES);
+    old.forEach(s => { try { s.disconnect(); } catch (_) {} });
+  }
+};
+
 interface AudioContextType {
   soundEnabled: boolean;
   musicEnabled: boolean;
@@ -103,6 +119,7 @@ const playMenuMusic = (ctx: AudioContext) => {
 
   let chordIdx = 0;
   const playChord = () => {
+    pruneMusicNodes();
     const now = ctx.currentTime;
     chords[chordIdx % chords.length].forEach(freq => {
       const osc = ctx.createOscillator();
@@ -152,6 +169,7 @@ const playBattleMusic = (ctx: AudioContext) => {
   let beatIdx = 0;
 
   const playBeat = () => {
+    pruneMusicNodes();
     const now = ctx.currentTime;
     const bassFreq = bassNotes[Math.floor(beatIdx / 4) % bassNotes.length];
 
@@ -246,6 +264,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if ((soundEnabled || musicEnabled) && !audioCtx) {
       try {
         audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        noiseBuffer = null;
+        reverbBuffer = null;
       } catch (e) {
         console.warn('Web Audio API is not supported in this browser', e);
       }

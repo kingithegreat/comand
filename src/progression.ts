@@ -232,6 +232,6 @@ export function getDefaultProgression(): PlayerProgression {
     dailyChallenges: [],
     dailyChallengeDate: '',
     seasonXP: 0,
-    seasonLevel: 1,
+    seasonLevel: 0,
   };
 }

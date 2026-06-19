@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { ArrowLeft, Save, Trash2, Download, Upload, RotateCcw, Grid, Copy, Check } from 'lucide-react';
+import { safeGetItem, safeSetItem } from '../lib/storage';
 
 type TileType = 'floor' | 'wall' | 'crate' | 'fire' | 'poison' | 'barrel';
 
@@ -72,7 +73,7 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
   const [mapName, setMapName] = useState('Custom Map');
   const [savedMaps, setSavedMaps] = useState<SavedMap[]>(() => {
     try {
-      const stored = localStorage.getItem('tc_custom_maps');
+      const stored = safeGetItem('tc_custom_maps');
       return stored ? JSON.parse(stored) : [];
     } catch { return []; }
   });
@@ -106,13 +107,13 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
     const newMap: SavedMap = { name: mapName || 'Untitled', layout, createdAt: Date.now() };
     const updated = [...savedMaps, newMap];
     setSavedMaps(updated);
-    localStorage.setItem('tc_custom_maps', JSON.stringify(updated));
+    safeSetItem('tc_custom_maps', JSON.stringify(updated));
   };
 
   const handleDelete = (index: number) => {
     const updated = savedMaps.filter((_, i) => i !== index);
     setSavedMaps(updated);
-    localStorage.setItem('tc_custom_maps', JSON.stringify(updated));
+    safeSetItem('tc_custom_maps', JSON.stringify(updated));
   };
 
   const handleLoad = (map: SavedMap) => {

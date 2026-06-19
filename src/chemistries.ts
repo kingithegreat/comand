@@ -89,6 +89,40 @@ export const CHEMISTRIES: ChemistryDuo[] = [
       }
       return newStats;
     }
+  },
+  {
+    id: "shadow_ops",
+    name: "Shadow Operations Unit",
+    description: "Assassin + Phantom pairing. Combines lethal melee strikes with electromagnetic disruption.",
+    classes: ["Assassin", "Phantom"],
+    buffText: "Assassin receives +1 Mobility; Phantom receives +5 Damage.",
+    applyBuffs: (className, stats) => {
+      const newStats = { ...stats };
+      if (className === "Assassin") {
+        newStats.mobility += 1;
+      }
+      if (className === "Phantom") {
+        newStats.damage += 5;
+      }
+      return newStats;
+    }
+  },
+  {
+    id: "frontline",
+    name: "Frontline Shock Force",
+    description: "Vanguard + Heavy pairing. Maximum armor combined with kinetic charge power.",
+    classes: ["Vanguard", "Heavy"],
+    buffText: "Vanguard receives +15 Max HP; Heavy receives +3 Damage.",
+    applyBuffs: (className, stats) => {
+      const newStats = { ...stats };
+      if (className === "Vanguard") {
+        newStats.maxHP += 15;
+      }
+      if (className === "Heavy") {
+        newStats.damage += 3;
+      }
+      return newStats;
+    }
   }
 ];
 

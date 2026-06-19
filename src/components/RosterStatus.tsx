@@ -89,9 +89,11 @@ export default function RosterStatus({
             <span className={`font-semibold ${isDead ? 'line-through text-zinc-600' : 'text-zinc-200'}`}>
               {u.class.className}
             </span>
-            <span className="text-[7px] text-zinc-500 font-mono px-1 py-[1px] bg-zinc-800/40 rounded-md border border-zinc-700/20">
-              {getCoordString(u.x, u.y)}
-            </span>
+            {!isDead && (
+              <span className="text-[7px] text-zinc-500 font-mono px-1 py-[1px] bg-zinc-800/40 rounded-md border border-zinc-700/20">
+                {getCoordString(u.x, u.y)}
+              </span>
+            )}
           </div>
         </div>
 

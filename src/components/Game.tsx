@@ -682,53 +682,6 @@ export default function Game({
     }
   }, [isOnline, isHost, onlineMatch, mode]);
 
-  enum OperationType {
-    CREATE = 'create',
-    UPDATE = 'update',
-    DELETE = 'delete',
-    LIST = 'list',
-    GET = 'get',
-    WRITE = 'write',
-  }
-
-  interface FirestoreErrorInfo {
-    error: string;
-    operationType: OperationType;
-    path: string | null;
-    authInfo: {
-      userId?: string | null;
-      email?: string | null;
-      emailVerified?: boolean | null;
-      isAnonymous?: boolean | null;
-      tenantId?: string | null;
-      providerInfo?: {
-        providerId?: string | null;
-        email?: string | null;
-      }[];
-    }
-  }
-
-  function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-    const errInfo: FirestoreErrorInfo = {
-      error: error instanceof Error ? error.message : String(error),
-      authInfo: {
-        userId: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        emailVerified: auth.currentUser?.emailVerified,
-        isAnonymous: auth.currentUser?.isAnonymous,
-        tenantId: auth.currentUser?.tenantId,
-        providerInfo: auth.currentUser?.providerData?.map(provider => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || []
-      },
-      operationType,
-      path
-    };
-    console.error('Firestore Error: ', JSON.stringify(errInfo));
-    throw new Error(JSON.stringify(errInfo));
-  }
-
   // Sync state from onlineMatch — only reacts to remote changes, not local state
   useEffect(() => {
     if (isOnline && onlineMatch) {
@@ -1048,9 +1001,11 @@ export default function Game({
     const ability = selectedUnit.class.ability;
     if (selectedUnit.ap < ability.apCost) return;
 
+    const targetUnit = units.find(u => u.x === x && u.y === y && u.hp > 0);
+
     if (selectedUnit.team === (myTeam || 'player')) {
-      const demoHits = selectedUnit.class.className === 'Demoman' 
-        ? units.filter(u => u.team !== selectedUnit.team && u.hp > 0 && Math.abs(u.x - x) <= 1 && Math.abs(u.y - y) <= 1).length 
+      const demoHits = selectedUnit.class.className === 'Demoman'
+        ? units.filter(u => u.team !== selectedUnit.team && u.hp > 0 && Math.abs(u.x - x) <= 1 && Math.abs(u.y - y) <= 1).length
         : 0;
 
       setBattleStats(prev => ({
@@ -1072,8 +1027,6 @@ export default function Game({
 
     const attackerColor = selectedUnit.team === 'player' ? 'Blue' : 'Purple';
     const targetColor = selectedUnit.team === 'player' ? 'Purple' : 'Blue';
-
-    const targetUnit = units.find(u => u.x === x && u.y === y && u.hp > 0);
     let isCrateCreated = false;
     let newMapEnvironment = [...mapEnvironment];
 
@@ -1264,8 +1217,9 @@ export default function Game({
       const pushY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
       const newX = x + pushX;
       const newY = y + pushY;
+      const pushTileType = mapEnvironment[newY]?.[newX]?.type;
       const canPush = newX >= 0 && newX < 15 && newY >= 0 && newY < 15 &&
-        mapEnvironment[newY]?.[newX]?.type === 'floor' &&
+        (pushTileType === 'floor' || pushTileType === 'fire' || pushTileType === 'poison') &&
         !units.some(u => u.x === newX && u.y === newY && u.hp > 0 && u.id !== targetUnit?.id);
 
       newUnits = newUnits.map(u => {
@@ -1379,6 +1333,7 @@ export default function Game({
       apPenalty: u.team === nextTeam ? 0 : u.apPenalty
     }));
 
+    setBattleStats(prev => ({ ...prev, turnsElapsed: prev.turnsElapsed + 1 }));
     addLog(`[CYCLE] Terminating ${activeTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'} action cycle. Rotating control to ${nextTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'}. Turn ${nextTurn} active.`, 'system');
 
     if (isOnline) {
@@ -1751,8 +1706,9 @@ export default function Game({
              const pushY = dy === 0 ? 0 : dy > 0 ? 1 : -1;
              const newX = target.x + pushX;
              const newY = target.y + pushY;
+             const pushTileType = mapEnvironment[newY]?.[newX]?.type;
              const canPush = newX >= 0 && newX < GRID_SIZE && newY >= 0 && newY < GRID_SIZE &&
-               mapEnvironment[newY]?.[newX]?.type === 'floor' &&
+               (pushTileType === 'floor' || pushTileType === 'fire' || pushTileType === 'poison') &&
                !units.some(u => u.x === newX && u.y === newY && u.hp > 0 && u.id !== target.id);
 
              const effectId = crypto.randomUUID();
@@ -1777,6 +1733,37 @@ export default function Game({
              addLog(`[CHARGE] Enemy Vanguard launched Kinetic Charge at Blue ${target.class.className} for 45 damage${canPush ? ', knocking them back!' : '!'}`, 'combat');
              if (target.hp - 45 <= 0) {
                 addLog(`[FATALITY] Blue ${target.class.className} crushed by kinetic impact.`, 'death');
+             }
+             return;
+          }
+       }
+       else if (enemy.class.className === 'Assassin') {
+          const target = playerUnits.find(u =>
+             u.hp > 0 &&
+             (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 1 &&
+             checkLineOfSight(enemy.x, enemy.y, u.x, u.y, mapEnvironment)
+          );
+          if (target) {
+             const targetFacing = getFacingDirection(enemy.x, enemy.y, target.x, target.y, enemy.facing);
+             const effectiveDmg = target.class.className === 'Heavy' ? 100 : 250;
+             const effectId = crypto.randomUUID();
+             setDamageTexts(prev => [...prev, { id: effectId, x: target.x, y: target.y, amount: effectiveDmg }]);
+             setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
+             setShake(true);
+             setTimeout(() => setShake(false), 200);
+
+             setUnits(prev => prev.map(u => {
+                if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - effectiveDmg) };
+                return u;
+             }));
+             setTimeout(() => {
+                setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
+             }, 800);
+
+             addLog(`[STRIKE] Enemy Assassin executed Shadow Strike on Blue ${target.class.className} for ${effectiveDmg} lethal damage!`, 'combat');
+             if (target.hp - effectiveDmg <= 0) {
+                addLog(`[FATALITY] Blue ${target.class.className} eliminated by shadow assassination.`, 'death');
              }
              return;
           }
@@ -1825,6 +1812,7 @@ export default function Game({
          const effectiveDmg = (enemy.class.className === 'Assassin' && p.class.className === 'Heavy')
            ? Math.floor(enemy.class.stats.damage * 0.5)
            : enemy.class.stats.damage;
+         setBattleStats(prev => ({ ...prev, damageTaken: prev.damageTaken + effectiveDmg }));
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
          const damageId = crypto.randomUUID();
@@ -1932,9 +1920,13 @@ export default function Game({
         const cx = enemy.x + dir.x;
         const cy = enemy.y + dir.y;
         if (cx >= 0 && cx < GRID_SIZE && cy >= 0 && cy < GRID_SIZE && mapEnvironment[cy]?.[cx]?.type === 'crate') {
+          const testMap = mapEnvironment.map((row, ry) =>
+            row.map((c, colx) => colx === cx && ry === cy ? { ...c, type: 'floor' as const } : c)
+          );
           const crateBlocksLos = playerUnits.some(p => {
-            const hasLos = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
-            return !hasLos;
+            const hasLosBefore = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, mapEnvironment);
+            const hasLosAfter = checkLineOfSight(enemy.x, enemy.y, p.x, p.y, testMap);
+            return !hasLosBefore && hasLosAfter;
           });
           if (crateBlocksLos) {
             const updatedMap = mapEnvironment.map((row, ry) =>
@@ -1976,15 +1968,16 @@ export default function Game({
     }
   }, [enemyUnitsApHash, activeTeam, mode, gameMode, isOnline, isHost]);
 
-  // Synchronize Host's AI moves in online coop mode
+  // Synchronize Host's AI moves in online coop mode (debounced to avoid Firestore flooding)
+  const coopSyncHash = units.map(u => `${u.id}:${u.x}:${u.y}:${u.hp}:${u.ap}`).join(',');
   useEffect(() => {
     if (isOnline && isHost && gameMode === 'online_coop' && mode === 'play' && activeTeam === 'enemy') {
        const timer = setTimeout(() => {
            updateOnlineState(units, turn, activeTeam);
-       }, 100);
+       }, 800);
        return () => clearTimeout(timer);
     }
-  }, [units, isOnline, isHost, gameMode, mode, activeTeam, turn]);
+  }, [coopSyncHash, isOnline, isHost, gameMode, mode, activeTeam, turn]);
 
   useEffect(() => {
     const deadUnits = units.filter(u => u.hp <= 0);
@@ -2147,7 +2140,10 @@ export default function Game({
     if (onMatchComplete) onMatchComplete(won, survivalRate, turn);
     if (onChallengeProgress) {
       if (won) onChallengeProgress('win', 1);
-      const kills = units.filter(u => u.team !== (myTeam || 'player') && u.hp <= 0).length;
+      const enemyTeam = myTeam === 'enemy' ? 'player' : 'enemy';
+      const startingEnemyCount = startingUnits.filter(u => u.team === enemyTeam).length;
+      const survivingEnemyCount = units.filter(u => u.team === enemyTeam && u.hp > 0).length;
+      const kills = startingEnemyCount - survivingEnemyCount;
       if (kills > 0) onChallengeProgress('kill', kills);
       if (won && survivalRate >= 1) onChallengeProgress('survive', 1);
       if (battleStats.playerDamageDealt > 0) onChallengeProgress('damage', battleStats.playerDamageDealt);
@@ -2226,7 +2222,7 @@ export default function Game({
     if (mode === 'deploy') {
       if (isOnline && teamSelection !== myTeam) return; 
 
-      if (mapEnvironment[y] && mapEnvironment[y][x].type === 'wall') return;
+      if (mapEnvironment[y] && mapEnvironment[y][x].type !== 'floor') return;
 
       if (existingUnit) {
          if (existingUnit.team !== teamSelection) return; 
@@ -2348,17 +2344,17 @@ export default function Game({
                   const targetFacing = getFacingDirection(unit.x, unit.y, existingUnit.x, existingUnit.y, unit.facing);
 
                   if (isHit) {
+                    const effectiveDmg = (unit.class.className === 'Assassin' && existingUnit.class.className === 'Heavy')
+                      ? Math.floor(unit.class.stats.damage * 0.5)
+                      : unit.class.stats.damage;
                     if (unit.team === (myTeam || 'player')) {
                       setBattleStats(prev => ({
                         ...prev,
                         playerShotsFired: prev.playerShotsFired + 1,
                         playerShotsHit: prev.playerShotsHit + 1,
-                        playerDamageDealt: prev.playerDamageDealt + unit.class.stats.damage
+                        playerDamageDealt: prev.playerDamageDealt + effectiveDmg
                       }));
                     }
-                    const effectiveDmg = (unit.class.className === 'Assassin' && existingUnit.class.className === 'Heavy')
-                      ? Math.floor(unit.class.stats.damage * 0.5)
-                      : unit.class.stats.damage;
                     playSound('attack');
                     setTimeout(() => playSound('damage'), 150);
                     const damageId = crypto.randomUUID();
@@ -2484,8 +2480,12 @@ export default function Game({
              const blastUnits = units.filter(u =>
                u.hp > 0 && Math.abs(u.x - x) <= 1 && Math.abs(u.y - y) <= 1
              );
+             const isShooterInBlast = blastUnits.some(bu => bu.id === unit.id);
              let newUnits = units.map(u => {
-               if (u.id === unit.id) return { ...u, ap: u.ap - 1 };
+               if (u.id === unit.id) {
+                 const newHp = isShooterInBlast ? Math.max(0, u.hp - 30) : u.hp;
+                 return { ...u, ap: u.ap - 1, hp: newHp };
+               }
                if (blastUnits.some(bu => bu.id === u.id)) return { ...u, hp: Math.max(0, u.hp - 30) };
                return u;
              });
@@ -2557,6 +2557,9 @@ export default function Game({
            const finalUnitsAfterMove = hazardDmg > 0
              ? newUnits.map(u => u.id === selectedUnitId ? { ...u, hp: Math.max(0, u.hp - hazardDmg) } : u)
              : newUnits;
+           if (hazardDmg > 0 && unit.hp - hazardDmg <= 0) {
+             addLog(`[FATALITY] ${unitTeamColor} ${unit.class.className} perished from environmental hazard at ${getCoord(x, y)}.`, 'death');
+           }
 
            const remainingAp = unit.ap - reachableObj.apCost;
            if (remainingAp <= 0) {
@@ -3503,10 +3506,14 @@ export default function Game({
        }
        for(let i=0; i<aiSquadSize; i++) {
           let x, y;
+          let attempts = 0;
           do {
              x = Math.floor(Math.random() * GRID_SIZE);
-             y = Math.floor(Math.random() * 4); // Top rows 0-3
-          } while(currentUnits.some(u => u.x === x && u.y === y) || (mapEnvironment[y] && mapEnvironment[y][x].type === 'wall'));
+             y = Math.floor(Math.random() * 4);
+             attempts++;
+             if (attempts > 200) break;
+          } while(currentUnits.some(u => u.x === x && u.y === y) || !mapEnvironment[y] || mapEnvironment[y][x].type !== 'floor');
+          if (attempts > 200) continue;
           
           let randClass = CLASSES[Math.floor(Math.random() * CLASSES.length)];
           if (campaignMissionId) {

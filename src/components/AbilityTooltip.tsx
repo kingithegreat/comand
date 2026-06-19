@@ -14,7 +14,7 @@ interface TacticalSpecs {
   damageOrHeal: string;
   targetType: string;
   detailedPerk: string;
-  intensity: 'High' | 'Medium' | 'Low' | 'Utility';
+  intensity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Utility';
 }
 
 // Map each squad class's active ability to precise tactical specifications
@@ -116,6 +116,14 @@ const getTacticalSpecs = (className: string, ability: CharacterAbility): Tactica
         detailedPerk: 'Charges target dealing heavy damage and pushing them back 1 tile.',
         intensity: 'High',
       };
+    case 'Assassin':
+      return {
+        cooldown: '1 Turn',
+        damageOrHeal: '250 Fatal DMG (100 vs Heavy)',
+        targetType: 'Adjacent Hostile Unit (1 Range)',
+        detailedPerk: 'Guaranteed lethal melee strike. Damage halved against Heavy armor.',
+        intensity: 'Critical',
+      };
     default:
       return {
         cooldown: '1 Turn',
@@ -165,6 +173,7 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ ability, classNa
 
   const getIntensityColor = (level: string) => {
     switch (level) {
+      case 'Critical': return 'text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/35';
       case 'High': return 'text-rose-500 bg-rose-500/10 border-rose-500/35';
       case 'Medium': return 'text-amber-500 bg-amber-500/10 border-amber-500/35';
       case 'Low': return 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20';

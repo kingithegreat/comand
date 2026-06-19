@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { collection, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useCollectionData } from 'react-firebase-hooks/firestore';
+import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebase';
 import { Send, MessageSquare } from 'lucide-react';
 
@@ -14,7 +15,7 @@ export default function MatchChat({ matchId }: MatchChatProps) {
   const [messages, loading, error] = useCollectionData(q) as unknown as [any[] | undefined, boolean, any];
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const user = auth.currentUser;
+  const [user] = useAuthState(auth);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -65,7 +66,7 @@ export default function MatchChat({ matchId }: MatchChatProps) {
            messages.map((msg, idx) => {
              const isMe = msg.senderId === user?.uid;
              return (
-               <div key={idx} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-full text-left`}>
+               <div key={`${msg.senderId}-${msg.timestamp?.seconds ?? idx}-${idx}`} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-full text-left`}>
                  <span className="text-[8px] font-mono text-zinc-600 tracking-wider mb-0.5 px-1">{msg.senderName}</span>
                  <div className={`px-2.5 py-1.5 rounded-lg font-mono text-[10px] break-words max-w-[90%] ${isMe ? 'bg-sky-500/10 border border-sky-500/20 text-sky-100' : 'bg-zinc-800/30 border border-zinc-700/20 text-zinc-300'}`}>
                    {msg.text}

@@ -50,16 +50,19 @@ export default function TurnCounter({
   const activeUnits = units?.filter(u => u.team === activeTeam && u.hp > 0) || [];
   const outOfAP = activeUnits.length > 0 && activeUnits.every(u => u.ap <= 0);
 
+  const onEndTurnRef = React.useRef(onEndTurn);
+  React.useEffect(() => { onEndTurnRef.current = onEndTurn; }, [onEndTurn]);
+
   React.useEffect(() => {
     if (mode === 'play' && outOfAP && !isSpectator) {
       if (!isOnline || activeTeam === myTeam) {
         const timer = setTimeout(() => {
-          onEndTurn();
+          onEndTurnRef.current();
         }, 1000);
         return () => clearTimeout(timer);
       }
     }
-  }, [outOfAP, mode, isOnline, activeTeam, myTeam, isSpectator, onEndTurn]);
+  }, [outOfAP, mode, isOnline, activeTeam, myTeam, isSpectator]);
 
   return (
     <div className="flex flex-col gap-2 w-full">

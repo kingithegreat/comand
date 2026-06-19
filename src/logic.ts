@@ -24,7 +24,7 @@ export const getReachableTiles = (
     const { x, y, dist } = queue.shift()!;
 
     if (dist > 0 && dist <= mobility * 2) {
-      const isOccupied = units.some((u) => u.x === x && u.y === y);
+      const isOccupied = units.some((u) => u.x === x && u.y === y && u.hp > 0);
       if (!isOccupied) {
         const apCost = dist <= mobility ? 1 : 2;
         if (apCost <= unit.ap) {
@@ -49,8 +49,8 @@ export const getReachableTiles = (
           const key = `${nx},${ny}`;
           // Check if wall
           const tileType = map[ny][nx].type;
-          if (!visited.has(key) && tileType !== "wall" && tileType !== "crate" && tileType !== "barrel") {
-            // Also need to allow passing through friends, but here it's simplified.
+          const isBlockedByEnemy = units.some(u => u.x === nx && u.y === ny && u.hp > 0 && u.team !== unit.team);
+          if (!visited.has(key) && tileType !== "wall" && tileType !== "crate" && tileType !== "barrel" && !isBlockedByEnemy) {
             visited.add(key);
             queue.push({ x: nx, y: ny, dist: dist + 1 });
           }
@@ -150,11 +150,19 @@ export const checkLineOfSight = (
     }
 
     let e2 = 2 * err;
-    if (e2 >= dy) {
+    const stepX = e2 >= dy;
+    const stepY = e2 <= dx;
+    if (stepX && stepY) {
+      const t1 = map[cy]?.[cx + sx]?.type;
+      const t2 = map[cy + sy]?.[cx]?.type;
+      const isBlocking = (t: string | undefined) => t === 'wall' || t === 'crate' || t === 'barrel';
+      if (isBlocking(t1) && isBlocking(t2)) return false;
+    }
+    if (stepX) {
       err += dy;
       cx += sx;
     }
-    if (e2 <= dx) {
+    if (stepY) {
       err += dx;
       cy += sy;
     }

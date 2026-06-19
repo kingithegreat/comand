@@ -50,6 +50,14 @@ export default function DailyChallenges({ challenges, onClaim }: DailyChallenges
                       <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md uppercase">
                         <CheckCircle className="w-3 h-3" /> Done
                       </span>
+                    ) : progress >= c.target && onClaim ? (
+                      <button
+                        type="button"
+                        onClick={() => onClaim(c.id)}
+                        className="flex items-center gap-1 text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-md uppercase cursor-pointer hover:bg-amber-500/25 transition-colors"
+                      >
+                        <Gift className="w-3 h-3" /> Claim +{c.reward}
+                      </button>
                     ) : (
                       <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md uppercase">
                         <Gift className="w-3 h-3" /> {c.reward}
