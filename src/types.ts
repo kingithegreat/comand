@@ -44,6 +44,7 @@ export interface Unit {
   damageTaken?: number;
   healingDone?: number;
   abilitiesUsed?: number;
+  apPenalty?: number;
 }
 
 export interface GridCell {

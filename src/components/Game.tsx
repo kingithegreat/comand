@@ -1211,7 +1211,7 @@ export default function Game({
       const damage = isSupport ? 20 : 25;
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - damage), ap: Math.max(0, u.ap - 1) };
+          return { ...u, hp: Math.max(0, u.hp - damage), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
         }
         return u;
       });
@@ -1236,7 +1236,7 @@ export default function Game({
     else if (selectedUnit.class.className === 'Phantom') {
       newUnits = newUnits.map(u => {
         if (targetUnit && u.id === targetUnit.id) {
-          return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1) };
+          return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
         }
         return u;
       });
@@ -1369,7 +1369,8 @@ export default function Game({
 
     const updatedUnits = units.map(u => ({
       ...u,
-      ap: u.team === nextTeam ? 2 : u.ap
+      ap: u.team === nextTeam ? Math.max(0, 2 - (u.apPenalty || 0)) : u.ap,
+      apPenalty: u.team === nextTeam ? 0 : u.apPenalty
     }));
 
     addLog(`[CYCLE] Terminating ${activeTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'} action cycle. Rotating control to ${nextTeam === 'player' ? 'Blue Squad (Player)' : 'Purple Squad (Enemy)'}. Turn ${nextTurn} active.`, 'system');
@@ -1627,13 +1628,13 @@ export default function Game({
              
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 25), ap: Math.max(0, u.ap - 1) };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 25), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
                 return u;
              }));
              setTimeout(() => {
                 setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
              }, 800);
-             
+
              addLog(`[CORRECT] Enemy Assault performed tactical sweep on Blue ${target.class.className} dealing 25 damage and draining 1 AP at ${getCoord(target.x, target.y)}!`, 'combat');
              if (target.hp - 25 <= 0) {
                 addLog(`[FATALITY] Blue ${target.class.className} neutralized during tactical sweep.`, 'death');
@@ -1657,13 +1658,13 @@ export default function Game({
              
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 20), ap: Math.max(0, u.ap - 1) };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 20), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
                 return u;
              }));
              setTimeout(() => {
                 setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
              }, 800);
-             
+
              addLog(`[SUPPRESS] Enemy Support delivered covering automatic fire at Blue ${target.class.className}: Dealt 20 damage, drained 1 AP!`, 'combat');
              if (target.hp - 20 <= 0) {
                 addLog(`[FATALITY] Blue ${target.class.className} neutralized under heavy Support cover.`, 'death');
@@ -1716,7 +1717,7 @@ export default function Game({
 
              setUnits(prev => prev.map(u => {
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1) };
+                if (u.id === target.id) return { ...u, hp: Math.max(0, u.hp - 15), ap: Math.max(0, u.ap - 1), apPenalty: (u.apPenalty || 0) + 1 };
                 return u;
              }));
              setTimeout(() => {
