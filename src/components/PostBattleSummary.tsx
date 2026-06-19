@@ -83,8 +83,8 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
   const neutralizationRate = (enemiesNeutralizedCount / startingOpponentsCount) * 100;
 
   const accuracyRate = battleStats.playerShotsFired > 0
-    ? (battleStats.playerShotsHit / battleStats.playerShotsFired) * 105
-    : 85;
+    ? (battleStats.playerShotsHit / battleStats.playerShotsFired) * 100
+    : 0;
 
   const turnFactor = Math.max(30, 100 - (turn * 4));
   let calculatedScore = (survivalRate * 0.4) + (neutralizationRate * 0.3) + (accuracyRate * 0.15) + (turnFactor * 0.15);

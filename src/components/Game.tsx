@@ -1053,8 +1053,8 @@ export default function Game({
         playerHealsPerformed: prev.playerHealsPerformed + (selectedUnit.class.className === 'Medic' ? 1 : 0),
         playerDamageDealt: prev.playerDamageDealt + (
           selectedUnit.class.className === 'Flamethrower' ? 85 :
-          selectedUnit.class.className === 'Assassin' ? 250 :
-          selectedUnit.class.className === 'Demoman' ? (demoHits * 30) :
+          selectedUnit.class.className === 'Assassin' ? (targetUnit?.class.className === 'Heavy' ? 100 : 250) :
+          selectedUnit.class.className === 'Demoman' ? (demoHits * 40) :
           selectedUnit.class.className === 'Sniper' ? 45 :
           selectedUnit.class.className === 'Assault' ? 25 :
           selectedUnit.class.className === 'Support' ? 20 : 0
@@ -1167,17 +1167,17 @@ export default function Game({
       newUnits = newUnits.map(u => {
         const isHit = hitUnits.some(hu => hu.id === u.id);
         if (isHit) {
-          return { ...u, hp: Math.max(0, u.hp - 30) };
+          return { ...u, hp: Math.max(0, u.hp - 40) };
         }
         return u;
       });
 
       hitUnits.forEach(hu => {
         const damageId = crypto.randomUUID();
-        setDamageTexts(prev => [...prev, { id: damageId, x: hu.x, y: hu.y, amount: 30 }]);
+        setDamageTexts(prev => [...prev, { id: damageId, x: hu.x, y: hu.y, amount: 40 }]);
         setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
         
-        const remHp = hu.hp - 30;
+        const remHp = hu.hp - 40;
         if (remHp <= 0) {
           addLog(`[FATALITY] ${targetColor} ${hu.class.className} neutralized in explosive Demoman blast at ${getCoord(hu.x, hu.y)}.`, 'death');
         }
@@ -1185,7 +1185,7 @@ export default function Game({
       
       setShake(true);
       setTimeout(() => setShake(false), 200);
-      addLog(`[BOMBARD] ${attackerColor} Demoman launched high-explosive bundle at sector ${getCoord(x, y)} dealing 30 damage to surrounding enemy units.`, 'combat');
+      addLog(`[BOMBARD] ${attackerColor} Demoman launched high-explosive bundle at sector ${getCoord(x, y)} dealing 40 damage to surrounding enemy units.`, 'combat');
     }
     else if (selectedUnit.class.className === 'Sniper') {
       newUnits = newUnits.map(u => {
@@ -1395,9 +1395,11 @@ export default function Game({
     // AI special ability activation triggers (Intelligent tactical actions)
     if (enemy.ap >= 1 && enemy.class.ability) {
        if (enemy.class.className === 'Medic') {
-          const woundedFriendly = units.find(u => 
-             u.team === 'enemy' && 
-             u.hp < u.class.stats.maxHP && 
+          const woundedFriendly = units.find(u =>
+             u.team === 'enemy' &&
+             u.id !== enemy.id &&
+             u.hp > 0 &&
+             u.hp < u.class.stats.maxHP &&
              (Math.abs(u.x - enemy.x) + Math.abs(u.y - enemy.y)) <= 3
           );
           if (woundedFriendly) {
@@ -1449,8 +1451,7 @@ export default function Game({
              setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== effectId)), 1000);
              
              setUnits(prev => prev.map(u => {
-                // Adrenaline surge heals 20 and returns 1 AP (+1 net AP, since casting costs 1, net AP changed is 0)
-                if (u.id === enemy.id) return { ...u, hp: Math.min(u.class.stats.maxHP, u.hp + 20) };
+                if (u.id === enemy.id) return { ...u, hp: Math.min(u.class.stats.maxHP, u.hp + 20), ap: u.ap - 1 + 1 };
                 return u;
              }));
              addLog(`[TACTICAL] Enemy Scout activated rapid adrenaline surge: Gained +1 AP, healed +20 HP.`, 'ability');
@@ -1535,7 +1536,7 @@ export default function Game({
                 if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
                 const isHit = hitUnits.some(hu => hu.id === u.id);
                 if (isHit) {
-                   return { ...u, hp: Math.max(0, u.hp - 30) };
+                   return { ...u, hp: Math.max(0, u.hp - 40) };
                 }
                 return u;
              }));
@@ -1545,10 +1546,10 @@ export default function Game({
              
              hitUnits.forEach(hu => {
                const damageId = crypto.randomUUID();
-               setDamageTexts(prev => [...prev, { id: damageId, x: hu.x, y: hu.y, amount: 30 }]);
+               setDamageTexts(prev => [...prev, { id: damageId, x: hu.x, y: hu.y, amount: 40 }]);
                setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
                
-               const remHp = hu.hp - 30;
+               const remHp = hu.hp - 40;
                if (remHp <= 0) {
                  addLog(`[FATALITY] Blue ${hu.class.className} neutralized in explosive Demoman blast at ${getCoord(hu.x, hu.y)}.`, 'death');
                }
@@ -1556,7 +1557,7 @@ export default function Game({
              
              setShake(true);
              setTimeout(() => setShake(false), 200);
-             addLog(`[BOMBARD] Enemy Demoman launched high-explosive bundle at sector ${getCoord(target.x, target.y)} dealing 30 damage to surrounding player units.`, 'combat');
+             addLog(`[BOMBARD] Enemy Demoman launched high-explosive bundle at sector ${getCoord(target.x, target.y)} dealing 40 damage to surrounding player units.`, 'combat');
              return;
           }
        }
@@ -1691,27 +1692,30 @@ export default function Game({
        const isHit = Math.random() * 100 <= chance;
 
        if (isHit) {
+         const effectiveDmg = (enemy.class.className === 'Assassin' && p.class.className === 'Heavy')
+           ? Math.floor(enemy.class.stats.damage * 0.5)
+           : enemy.class.stats.damage;
          playSound('attack');
          setTimeout(() => playSound('damage'), 150);
          const damageId = crypto.randomUUID();
-         setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: enemy.class.stats.damage }]);
+         setDamageTexts(prev => [...prev, { id: damageId, x: p.x, y: p.y, amount: effectiveDmg }]);
          setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
-         
+
          setShake(true);
          setTimeout(() => setShake(false), 200);
 
          setUnits(prev => prev.map(u => {
             if (u.id === enemy.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-            if (u.id === p.id) return { ...u, hp: Math.max(0, u.hp - enemy.class.stats.damage) };
+            if (u.id === p.id) return { ...u, hp: Math.max(0, u.hp - effectiveDmg) };
             return u;
          }));
 
          setTimeout(() => {
             setUnits(curr => curr.map(u => u.id === enemy.id ? { ...u, pose: 'idle' as const } : u));
          }, 800);
-         
-         const remHp = p.hp - enemy.class.stats.damage;
-         addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${enemy.class.stats.damage} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).`, 'combat');
+
+         const remHp = p.hp - effectiveDmg;
+         addLog(`[ENGAGE] Enemy ${enemy.class.className} attacked Blue ${p.class.className} for ${effectiveDmg} damage at ${getCoord(p.x, p.y)} (${chance}% hit chance).`, 'combat');
          if (remHp <= 0) {
            addLog(`[FATALITY] Blue ${p.class.className} neutralized under enemy hostile fire.`, 'death');
          }
@@ -2193,17 +2197,20 @@ export default function Game({
                         playerDamageDealt: prev.playerDamageDealt + unit.class.stats.damage
                       }));
                     }
+                    const effectiveDmg = (unit.class.className === 'Assassin' && existingUnit.class.className === 'Heavy')
+                      ? Math.floor(unit.class.stats.damage * 0.5)
+                      : unit.class.stats.damage;
                     playSound('attack');
                     setTimeout(() => playSound('damage'), 150);
                     const damageId = crypto.randomUUID();
-                    setDamageTexts(prev => [...prev, { id: damageId, x: existingUnit.x, y: existingUnit.y, amount: unit.class.stats.damage }]);
+                    setDamageTexts(prev => [...prev, { id: damageId, x: existingUnit.x, y: existingUnit.y, amount: effectiveDmg }]);
                     setTimeout(() => setDamageTexts(current => current.filter(d => d.id !== damageId)), 1000);
                     setShake(true);
                     setTimeout(() => setShake(false), 200);
 
                     const newUnits = units.map(u => {
                       if (u.id === unit.id) return { ...u, ap: u.ap - 1, facing: targetFacing, pose: 'firing' as const };
-                      if (u.id === existingUnit.id) return { ...u, hp: Math.max(0, u.hp - unit.class.stats.damage) };
+                      if (u.id === existingUnit.id) return { ...u, hp: Math.max(0, u.hp - effectiveDmg) };
                       return u;
                     });
 
@@ -2216,9 +2223,9 @@ export default function Game({
                         return updated;
                       });
                     }, 800);
-                    
-                    const relHP = existingUnit.hp - unit.class.stats.damage;
-                    addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${unit.class.stats.damage} damage!${isCovered ? ' (Target partially behind cover)' : ''}`, 'combat');
+
+                    const relHP = existingUnit.hp - effectiveDmg;
+                    addLog(`[ENGAGE] ${attackerColor} ${unit.class.className} attacked ${targetColor} ${existingUnit.class.className} at ${getCoord(existingUnit.x, existingUnit.y)} (${chance}% hit chance) for ${effectiveDmg} damage!${isCovered ? ' (Target partially behind cover)' : ''}`, 'combat');
                     if (relHP <= 0) {
                         addLog(`[FATALITY] ${targetColor} ${existingUnit.class.className} neutralized under hostile fire.`, 'death');
                     }

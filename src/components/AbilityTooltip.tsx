@@ -31,7 +31,7 @@ const getTacticalSpecs = (className: string, ability: CharacterAbility): Tactica
     case 'Demoman':
       return {
         cooldown: '1 Turn',
-        damageOrHeal: '30 Splash DMG',
+        damageOrHeal: '40 Splash DMG',
         targetType: 'Coordinate Grid (3x3 Area)',
         detailedPerk: 'Deals damage to all units in a 3x3 grid sector.',
         intensity: 'Medium',

@@ -9,7 +9,8 @@ export const getReachableTiles = (
   const tiles: { x: number; y: number; apCost: number }[] = [];
   if (unit.ap <= 0) return tiles;
 
-  const gridSize = map.length;
+  const gridHeight = map.length;
+  const gridWidth = map[0]?.length ?? map.length;
   const mobility = unit.class.stats.mobility;
 
   // BFS
@@ -44,7 +45,7 @@ export const getReachableTiles = (
         const nx = x + dx;
         const ny = y + dy;
 
-        if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize) {
+        if (nx >= 0 && ny >= 0 && nx < gridWidth && ny < gridHeight) {
           const key = `${nx},${ny}`;
           // Check if wall
           if (!visited.has(key) && map[ny][nx].type !== "wall" && map[ny][nx].type !== "crate") {
@@ -133,6 +134,9 @@ export const checkLineOfSight = (
     if (cx === x2 && cy === y2) break;
     
     if (cx !== x1 || cy !== y1) {
+       if (cy < 0 || cy >= map.length || cx < 0 || cx >= (map[0]?.length ?? 0)) {
+          return false;
+       }
        if (map[cy][cx].type === "wall") {
           return false;
        }

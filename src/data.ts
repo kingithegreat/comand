@@ -18,14 +18,14 @@ export const CLASSES: CharacterClass[] = [
   {
     className: "Demoman",
     archetype: "Explosives",
-    description: "Heavy demolitionist with blast gear and launcher backpack. Deals splash damage in a broad area.",
-    stats: { maxHP: 110, damage: 35, range: 5, mobility: 4, accuracy: 85 },
+    description: "Heavy demolitionist with blast gear and launcher backpack. Deals splash damage in a broad area. Explosives ignore cover.",
+    stats: { maxHP: 120, damage: 38, range: 6, mobility: 4, accuracy: 88 },
     personality: 'Aggressive',
     ability: {
       name: "Frag Grenade",
-      description: "Throws an explosive bundle dealing 30 damage in a 3x3 splash grid (1 AP).",
+      description: "Throws an explosive bundle dealing 40 damage in a 3x3 splash grid (1 AP).",
       apCost: 1,
-      range: 5,
+      range: 6,
       type: "offensive"
     }
   },

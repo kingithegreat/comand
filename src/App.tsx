@@ -451,14 +451,13 @@ export default function App() {
     if (!user) return;
     try {
       let newMatchId = '';
-      let attempts = 0;
-      while (attempts < 5) {
+      let found = false;
+      for (let attempts = 0; attempts < 5; attempts++) {
         newMatchId = crypto.randomUUID().substring(0, 6).toUpperCase();
         const existing = await getDoc(doc(db, 'matches', newMatchId));
-        if (!existing.exists()) break;
-        attempts++;
+        if (!existing.exists()) { found = true; break; }
       }
-      if (!newMatchId) return;
+      if (!found) { alert('Could not generate a unique room code. Please try again.'); return; }
       await setDoc(doc(db, 'matches', newMatchId), {
         hostId: user.uid,
         status: 'waiting',
