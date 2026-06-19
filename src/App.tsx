@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion, runTransaction } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
@@ -1090,14 +1090,26 @@ export default function App() {
                COMMAND
              </h1>
            </div>
-           <div className="flex items-center justify-center gap-4 text-[9px] font-mono text-zinc-500 tracking-wider uppercase">
-             <span className="text-zinc-600">SYS v2.1.0</span>
-             <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
-             <span className="text-zinc-600">AES-256</span>
-             <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
-             <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse"></span> <span className="text-emerald-500/80">ONLINE</span></span>
-           </div>
+           <p className="text-xs text-zinc-500 mt-1">Turn-based tactics. Build a squad. Outsmart the enemy.</p>
          </div>
+
+         {/* New Player Banner */}
+         <button
+           type="button"
+           onClick={() => setGameMode('tutorial')}
+           className="w-full p-4 rounded-xl border-2 border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 hover:border-amber-400/60 hover:bg-amber-500/15 transition-all cursor-pointer group flex items-center justify-between gap-4"
+         >
+           <div className="flex items-center gap-3">
+             <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:bg-amber-500/25 transition-colors">
+               <BookOpen className="w-5 h-5 text-amber-400" />
+             </div>
+             <div className="text-left">
+               <h3 className="font-black text-white text-sm uppercase tracking-wide">New here? Learn to play</h3>
+               <p className="text-[10px] text-amber-400/70 mt-0.5">Step-by-step interactive tutorial — takes 2 minutes</p>
+             </div>
+           </div>
+           <ArrowRight className="w-5 h-5 text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
+         </button>
 
          {/* Match Configuration */}
          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1110,7 +1122,7 @@ export default function App() {
                      </div>
                      <div>
                         <h4 className="text-sm font-mono font-black text-zinc-200 uppercase tracking-wider leading-none">FOG OF WAR</h4>
-                        <p className="text-[10px] text-zinc-500 mt-1 uppercase">Limits visibility to unit sight ranges</p>
+                        <p className="text-[10px] text-zinc-500 mt-1">Hide enemies you can't see (harder mode)</p>
                      </div>
                   </div>
                   <button
@@ -1135,7 +1147,7 @@ export default function App() {
                         SQUAD SIZE
                         <span className="bg-amber-400 text-black text-[9px] px-1.5 py-0.5 font-black rounded-md leading-none">{squadSize}</span>
                      </h4>
-                     <p className="text-[10px] text-zinc-500 mt-1 uppercase">Units per side</p>
+                     <p className="text-[10px] text-zinc-500 mt-1">How many characters per team</p>
                   </div>
                </div>
                <div className="flex flex-col gap-1.5">
@@ -1171,10 +1183,10 @@ export default function App() {
                    </div>
                    <div>
                      <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">CAMPAIGN</h3>
-                     <p className="text-[10px] text-emerald-500/60 font-mono uppercase tracking-wider">Global Operations</p>
+                     <p className="text-[10px] text-emerald-500/60 font-mono uppercase tracking-wider">Story Mode</p>
                    </div>
                  </div>
-                 <p className="text-xs text-zinc-400 leading-relaxed">Command your squad across international battle sectors. Progressive difficulty.</p>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Fight through missions that get harder as you go. Great for solo play.</p>
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
@@ -1190,10 +1202,10 @@ export default function App() {
                    </div>
                    <div>
                      <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">VS AI</h3>
-                     <p className="text-[10px] text-amber-500/60 font-mono uppercase tracking-wider">Offline Simulator</p>
+                     <p className="text-[10px] text-amber-500/60 font-mono uppercase tracking-wider">Practice</p>
                    </div>
                  </div>
-                 <p className="text-xs text-zinc-400 leading-relaxed">Deploy a customized tactical squad and play against the smart combat AI.</p>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Pick your squad and battle the computer. Good for practicing strategies.</p>
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
@@ -1212,7 +1224,7 @@ export default function App() {
                      <p className="text-[10px] text-sky-500/60 font-mono uppercase tracking-wider">Local 2-Player</p>
                    </div>
                  </div>
-                 <p className="text-xs text-zinc-400 leading-relaxed">Hotseat 2-player mode. Formulate tactics, then hand off command.</p>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Play with a friend on the same device. Take turns, then pass it over.</p>
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
@@ -1227,11 +1239,11 @@ export default function App() {
                      <BookOpen className="w-6 h-6 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
                    </div>
                    <div>
-                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase flex items-center gap-2">ACADEMY <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-black text-[8px] px-1.5 font-black py-0.5 rounded-md leading-none">NEW</span></h3>
-                     <p className="text-[10px] text-purple-500/60 font-mono uppercase tracking-wider">Interactive Tutorial</p>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">BOOT CAMP</h3>
+                     <p className="text-[10px] text-purple-500/60 font-mono uppercase tracking-wider">Learn the Game</p>
                    </div>
                  </div>
-                 <p className="text-xs text-zinc-400 leading-relaxed">Learn movement, analyze core abilities, and try different character classes.</p>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Step-by-step tutorial. Learn how to move, attack, use abilities, and use cover.</p>
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-purple-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
@@ -1246,11 +1258,11 @@ export default function App() {
                      <Grid className="w-6 h-6 text-rose-400 group-hover:scale-110 transition-transform duration-300" />
                    </div>
                    <div>
-                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase flex items-center gap-2">MAP EDITOR <span className="bg-gradient-to-r from-amber-400 to-orange-400 text-black text-[8px] px-1.5 font-black py-0.5 rounded-md leading-none">NEW</span></h3>
-                     <p className="text-[10px] text-rose-500/60 font-mono uppercase tracking-wider">Custom Battlefields</p>
+                     <h3 className="font-black text-white text-lg font-mono tracking-wider uppercase">MAP EDITOR</h3>
+                     <p className="text-[10px] text-rose-500/60 font-mono uppercase tracking-wider">Build Your Own Maps</p>
                    </div>
                  </div>
-                 <p className="text-xs text-zinc-400 leading-relaxed">Design your own tactical maps with walls, crates, fire zones, poison, and explosive barrels. Play or share your creations.</p>
+                 <p className="text-xs text-zinc-400 leading-relaxed">Create custom maps with walls, crates, fire, poison, and barrels. Then play on them!</p>
                </div>
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-rose-500/40 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             </button>
@@ -1271,12 +1283,12 @@ export default function App() {
                <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
             ) : !user ? (
                <div className="text-center py-2 font-mono space-y-4">
-                 <p className="text-[10px] text-[#8b9180] uppercase">Sign in to create or join a match.</p>
+                 <p className="text-[10px] text-zinc-400">Sign in with Google to play online with others.</p>
                  <button type="button" onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
                    <LogIn className="w-4 h-4" /> SIGN IN WITH GOOGLE
                  </button>
                  <div className="border-t border-zinc-800/30 pt-4">
-                   <p className="text-[10px] text-zinc-500 uppercase mb-2">Have an invite code? Sign in first, then enter it below.</p>
+                   <p className="text-[10px] text-zinc-500 mb-2">Have a room code from a friend? Enter it below:</p>
                    <div className="flex gap-2 w-full h-11">
                      <input
                        value={joinCode}
@@ -1312,13 +1324,13 @@ export default function App() {
                            ) : (
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-[#fbbf24] text-xs uppercase">{profile.displayName}</span>
-                                <button onClick={() => setEditingProfile(true)} className="text-[7.5px] text-amber-400 hover:text-amber-300 uppercase tracking-widest font-extrabold px-1.5 py-0.5 bg-amber-400/10 rounded-lg border border-amber-400/20">RE-ID</button>
+                                <button onClick={() => setEditingProfile(true)} className="text-[7.5px] text-amber-400 hover:text-amber-300 uppercase tracking-widest font-extrabold px-1.5 py-0.5 bg-amber-400/10 rounded-lg border border-amber-400/20">Edit</button>
                               </div>
                            )}
-                           <div className="text-[8.5px] text-[#8b9180] mt-1 uppercase">GRID_KEY: {user.email?.split('@')[0]}</div>
+                           <div className="text-[8.5px] text-zinc-500 mt-1">{user.email?.split('@')[0]}</div>
                         </div>
                      </div>
-                     <button onClick={() => signOut(auth)} className="p-2 hover:bg-[#202716] rounded-lg border border-transparent hover:border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 transition-colors" title="De-Authorize Profile">
+                     <button onClick={() => signOut(auth)} className="p-2 hover:bg-[#202716] rounded-lg border border-transparent hover:border-zinc-800 border-opacity-50 text-[#8b9180] hover:text-zinc-300 transition-colors" title="Sign Out">
                         <LogOut className="w-4 h-4" />
                      </button>
                   </div>
@@ -1328,10 +1340,10 @@ export default function App() {
                      <div className="flex flex-col gap-4 pt-1">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                            <button onClick={() => createRoom(false)} className="w-full py-3 bg-amber-500/20 hover:bg-amber-500/35 text-[#fbbf24] font-bold border border-amber-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer">
-                             ESTABLISH PRIVATE ROOM
+                             CREATE ROOM (1v1)
                            </button>
                            <button onClick={() => createRoom(false, true)} className="w-full py-3 bg-sky-500/20 hover:bg-sky-500/35 text-sky-400 font-bold border border-sky-500/50 rounded-lg text-sm sm:text-base uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2">
-                             ESTABLISH CO-OP ROOM
+                             CREATE CO-OP ROOM
                            </button>
                         </div>
                         <div className="grid grid-cols-1 gap-4">
@@ -1349,10 +1361,10 @@ export default function App() {
                            )}
                         </div>
                         <form onSubmit={joinRoom} className="flex gap-2 w-full h-11">
-                           <input 
-                             value={joinCode} 
+                           <input
+                             value={joinCode}
                              onChange={e => setJoinCode(e.target.value.toUpperCase())}
-                             placeholder="JOIN CODE_KEY"
+                             placeholder="ROOM CODE"
                              maxLength={6}
                              className="w-full h-full bg-black/60 border border-zinc-800 border-opacity-50 focus:border-amber-400 rounded-lg px-3 text-sm sm:text-base text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
                            />
@@ -1375,7 +1387,7 @@ export default function App() {
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
                   <BookOpen className="w-4 h-4 text-amber-400" />
                 </div>
-                <h3 className="font-mono text-sm font-black text-zinc-200 tracking-wider uppercase">TACTICAL DATABASE</h3>
+                <h3 className="font-mono text-sm font-black text-zinc-200 tracking-wider uppercase">GAME INFO</h3>
               </div>
               <div className="flex gap-2">
                 <button 
@@ -1386,77 +1398,78 @@ export default function App() {
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
                   }`}
                 >
-                  Field Manual
+                  How to Play
                 </button>
-                <button 
+                <button
                   onClick={() => setDbTab('classes')}
                   className={`px-3 py-1.5 text-[10px] sm:text-xs font-mono uppercase rounded-lg transition-all font-black border ${
-                    dbTab === 'classes' 
-                      ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
+                    dbTab === 'classes'
+                      ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]'
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
                   }`}
                 >
-                  Squad Bios
+                  All Classes
                 </button>
-                <button 
+                <button
                   onClick={() => setDbTab('chemistries')}
                   className={`px-3 py-1.5 text-[10px] sm:text-xs font-mono uppercase rounded-lg transition-all font-black border ${
-                    dbTab === 'chemistries' 
-                      ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]' 
+                    dbTab === 'chemistries'
+                      ? 'bg-amber-500/10 text-[#fbbf24] border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.1)]'
                       : 'text-zinc-500 border-transparent hover:text-zinc-300 cursor-pointer'
                   }`}
                 >
-                  Squad Chemistries
+                  Team Combos
                 </button>
               </div>
             </div>
 
             {/* TAB CONTENT: TUTORIAL */}
             {dbTab === 'tutorial' && (
-              <div className="space-y-4 text-left font-mono text-xs sm:text-sm text-[#8b9180] leading-relaxed">
-                <div className="border border-zinc-800 border-opacity-50/40 bg-black/25 p-4 rounded-lg space-y-2">
-                  <h4 className="font-bold text-zinc-300 uppercase text-xs sm:text-sm tracking-wide flex items-center gap-2">
-                    <CheckSquare className="w-4 h-4 text-[#fbbf24]" /> 01. OBJECTIVE CONFIGURATION
+              <div className="space-y-4 text-left font-mono text-xs sm:text-sm text-zinc-400 leading-relaxed relative z-10">
+                <div className="border border-zinc-800/40 bg-black/25 p-4 rounded-lg space-y-2">
+                  <h4 className="font-bold text-zinc-200 text-xs sm:text-sm tracking-wide flex items-center gap-2">
+                    <CheckSquare className="w-4 h-4 text-amber-400" /> Goal
                   </h4>
-                  <p className="uppercase">
-                    Your direct mandate is simple: utilize superior cover positioning, smart lines of sight flanking vectors, and specific class actions to completely neutralize all 4 enemy squad units on the grid battlefield.
+                  <p>
+                    Eliminate all enemy characters to win. Use movement, attacks, abilities, and cover to outsmart your opponent.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="border border-zinc-800 border-opacity-50/30 bg-black/10 p-4 rounded-lg space-y-2">
-                    <h5 className="font-black text-zinc-300 uppercase text-[10px] sm:text-xs">SQUAD DEPLOYMENT</h5>
-                    <p className="uppercase text-[10px] sm:text-xs">
-                      Before engagement begins, you must recruit, select and deploy 4 team members on highlighted quadrant cells in rows 8 to 14. Once locked, tap "Launch" to synchronize terminal frequencies.
+                  <div className="border border-zinc-800/30 bg-black/10 p-4 rounded-lg space-y-2">
+                    <h5 className="font-black text-zinc-200 text-[10px] sm:text-xs uppercase">Setup Phase</h5>
+                    <p className="text-[10px] sm:text-xs">
+                      Pick 4 characters for your team, then place them on the highlighted tiles on your side of the map. Hit "Launch" when ready.
                     </p>
                   </div>
-                  <div className="border border-zinc-800 border-opacity-50/30 bg-black/10 p-4 rounded-lg space-y-2">
-                    <h5 className="font-black text-zinc-300 uppercase text-[10px] sm:text-xs">ACTION SYSTEM (AP)</h5>
-                    <p className="uppercase text-[10px] sm:text-xs">
-                      Every active squad unit receives exactly 2 Action Points (AP) per turn. Standard movement costs 1 AP (mobility metric scales cell ranges). Initiating a coordinate weapon attack costs 1 AP.
+                  <div className="border border-zinc-800/30 bg-black/10 p-4 rounded-lg space-y-2">
+                    <h5 className="font-black text-zinc-200 text-[10px] sm:text-xs uppercase">Action Points (AP)</h5>
+                    <p className="text-[10px] sm:text-xs">
+                      Each character gets 2 AP per turn. Moving costs 1 AP (2 if going far). Attacking or using an ability costs 1 AP.
                     </p>
                   </div>
                 </div>
 
-                <div className="border border-zinc-800 border-opacity-50/40 bg-black/25 p-4 rounded-lg space-y-2">
-                  <h4 className="font-bold text-zinc-300 uppercase text-xs sm:text-sm tracking-wide flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-emerald-400" /> 02. COVER & LINE-OF-SIGHT (LOS)
+                <div className="border border-zinc-800/40 bg-black/25 p-4 rounded-lg space-y-2">
+                  <h4 className="font-bold text-zinc-200 text-xs sm:text-sm tracking-wide flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-400" /> Cover & Line of Sight
                   </h4>
-                  <p className="uppercase">
-                    Solid walls and cargo crates absorb primary dynamic ordnance. If a direct tracing vector from shooting coordinate to hostile coordinate hits an obstacle, firing is blocked! Sniper Piercing Rounds ignore cover penalties but are still blockable by walls and crates. Technicians can build crates anywhere on adjacent floor grids.
+                  <p>
+                    Walls and crates block shots. If something is in the way, you can't shoot through it. Standing near a crate gives you a cover bonus (-20% enemy accuracy). Barrels explode when shot!
                   </p>
                 </div>
 
-                <div className="text-center text-[#fbbf24] font-black uppercase text-[10px] sm:text-xs border border-dashed border-zinc-800 border-opacity-50 p-2 rounded-lg animate-pulse">
-                  ⚡ PRO TIP: ALWAYS INJECT WEAK SQUADMATES WITH SPECIAL MEDIC NANITES TO RESTORE HEALTH DURING AI FLANK ACTIONS!
+                <div className="text-center text-amber-400 font-bold text-[10px] sm:text-xs border border-amber-500/20 bg-amber-500/5 p-3 rounded-lg">
+                  Tip: Use a Medic to heal injured teammates before they get knocked out!
                 </div>
 
                 <div className="border border-amber-500/15 p-3 bg-amber-400/5 rounded-lg text-center">
-                  <button 
+                  <button
+                    type="button"
                     onClick={() => setGameMode('tutorial')}
                     className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm tracking-wider rounded-lg uppercase cursor-pointer"
                   >
-                    🚀 LAUNCH INTERACTIVE BATTLE ACADEMY SIMULATOR
+                    Try the Interactive Tutorial
                   </button>
                 </div>
               </div>
