@@ -23,7 +23,7 @@ const getTacticalSpecs = (className: string, ability: CharacterAbility): Tactica
     case 'Sniper':
       return {
         cooldown: '1 Turn (AP Limited)',
-        damageOrHeal: '55 Piercing DMG',
+        damageOrHeal: '45 Piercing DMG',
         targetType: 'Hostile Tile (Line-of-Sight)',
         detailedPerk: 'Pierces through unit defensive shields and blocks.',
         intensity: 'High',

@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "gen-lang-client-0969027846",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
@@ -9,7 +10,10 @@
       }
     ]
   },
-  "firestore": {
-    "rules": "firestore.rules"
-  }
+  "firestore": [
+    {
+      "database": "ai-studio-a7d8dadd-1678-4601-9f7a-a5368a5ed154",
+      "rules": "firestore.rules"
+    }
+  ]
 }

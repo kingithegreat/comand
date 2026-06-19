@@ -155,7 +155,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
     if (selectedClassName === 'Sniper') {
       // Sniper lasers are electric cyan
       setFireLine({ fromX: unitX, fromY: unitY, toX: 4, toY: 1, color: '#06b6d4' });
-      setActiveDamageText({ x: 4, y: 1, text: '-55 DMG CRITICAL!', color: '#ef4444' });
+      setActiveDamageText({ x: 4, y: 1, text: '-45 DMG CRITICAL!', color: '#ef4444' });
       setIsShaking(true);
       
       setTimeout(() => {
@@ -163,7 +163,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
         playSound('damage');
       }, 250);
 
-      addLog(`[CRITICAL] Fired Piercing Round on target dummy for 55 absolute damage!`);
+      addLog(`[CRITICAL] Fired Piercing Round on target dummy for 45 absolute damage!`);
     } else if (selectedClassName === 'Assault') {
       // Assault tracer lines are fiery orange
       setFireLine({ fromX: unitX, fromY: unitY, toX: 4, toY: 1, color: '#f97316' });
