@@ -512,34 +512,38 @@ export default function App() {
     }, 1000);
 
     const tryFind = async (): Promise<boolean> => {
-      const matchesRef = collection(db, 'matches');
-      const q = query(
-        matchesRef,
-        where('status', '==', 'waiting'),
-        where('isPublic', '==', true),
-        limit(5)
-      );
-      const querySnapshot = await getDocs(q);
+      try {
+        const matchesRef = collection(db, 'matches');
+        const q = query(
+          matchesRef,
+          where('status', '==', 'waiting'),
+          where('isPublic', '==', true),
+          limit(5)
+        );
+        const querySnapshot = await getDocs(q);
 
-      for (const matchDoc of querySnapshot.docs) {
-        const data = matchDoc.data();
-        if (data.hostId !== user.uid) {
-          const matchRef = doc(db, 'matches', matchDoc.id);
-          const claimed = await runTransaction(db, async (transaction) => {
-            const snap = await transaction.get(matchRef);
-            if (!snap.exists()) return false;
-            const current = snap.data();
-            if (current.guestId) return false;
-            transaction.update(matchRef, { guestId: user.uid });
-            return true;
-          });
-          if (claimed) {
-            setOnlineMatchId(matchDoc.id);
-            setGameMode(data.isCoop ? 'online_coop' : 'online');
-            cancelSearch();
-            return true;
+        for (const matchDoc of querySnapshot.docs) {
+          const data = matchDoc.data();
+          if (data.hostId !== user.uid) {
+            const matchRef = doc(db, 'matches', matchDoc.id);
+            const claimed = await runTransaction(db, async (transaction) => {
+              const snap = await transaction.get(matchRef);
+              if (!snap.exists()) return false;
+              const current = snap.data();
+              if (current.guestId) return false;
+              transaction.update(matchRef, { guestId: user.uid });
+              return true;
+            });
+            if (claimed) {
+              setOnlineMatchId(matchDoc.id);
+              setGameMode(data.isCoop ? 'online_coop' : 'online');
+              cancelSearch();
+              return true;
+            }
           }
         }
+      } catch (e) {
+        console.warn('Quick match search error:', e);
       }
       return false;
     };
@@ -548,7 +552,30 @@ export default function App() {
       const found = await tryFind();
       if (found) return;
 
-      await createRoom(true);
+      let createdMatchId = '';
+      try {
+        let newMatchId = '';
+        let idFound = false;
+        for (let attempts = 0; attempts < 5; attempts++) {
+          newMatchId = crypto.randomUUID().substring(0, 6).toUpperCase();
+          const existing = await getDoc(doc(db, 'matches', newMatchId));
+          if (!existing.exists()) { idFound = true; break; }
+        }
+        if (!idFound) { cancelSearch(); return; }
+        await setDoc(doc(db, 'matches', newMatchId), {
+          hostId: user.uid,
+          status: 'waiting',
+          smogEnabled: smogMode,
+          squadSize: squadSize,
+          isPublic: true,
+          isCoop: false
+        });
+        createdMatchId = newMatchId;
+      } catch (e) {
+        cancelSearch();
+        console.error('Failed to create quick match room:', e);
+        return;
+      }
 
       let retries = 0;
       const pollInterval = setInterval(async () => {
@@ -558,16 +585,25 @@ export default function App() {
           cancelSearch();
           return;
         }
-        const found = await tryFind();
-        if (found) {
+        const matched = await tryFind();
+        if (matched) {
           clearInterval(pollInterval);
+          return;
         }
+        try {
+          const snap = await getDoc(doc(db, 'matches', createdMatchId));
+          if (snap.exists() && snap.data().guestId) {
+            clearInterval(pollInterval);
+            setOnlineMatchId(createdMatchId);
+            setGameMode('online');
+            cancelSearch();
+          }
+        } catch {}
       }, 3000);
 
     } catch(err: any) {
       cancelSearch();
-      alert("Failed to find or create quick match.");
-      console.error(err);
+      console.error('Quick match error:', err);
     }
   };
 

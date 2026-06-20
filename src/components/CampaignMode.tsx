@@ -318,18 +318,18 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
              </div>
            )}
 
-           <div className="mt-auto w-full pt-4 shrink-0 sticky bottom-0 bg-zinc-900 bg-opacity-80 z-10 pb-2">
+           <div className="mt-auto w-full pt-4 shrink-0 sticky bottom-0 bg-zinc-900 bg-opacity-80 z-10 pb-6 sm:pb-2" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0.5rem))' }}>
               {selectedRegion.status === 'available' || selectedRegion.status === 'completed' ? (
                  <button
                    type="button"
                    onClick={handleLaunch}
-                   className="w-full py-3 sm:py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs sm:text-sm tracking-widest rounded transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(251,191,36,0.3)] hover:-translate-y-0.5"
+                   className="w-full py-4 sm:py-4 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-sm tracking-widest rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(251,191,36,0.3)] hover:-translate-y-0.5 active:scale-[0.98]"
                  >
-                   <Play className="w-4 h-4 sm:w-5 sm:h-5" /> {selectedRegion.status === 'completed' ? 'Re-Infiltrate Sector' : 'Infiltrate Sector'}
+                   <Play className="w-5 h-5" /> {selectedRegion.status === 'completed' ? 'Re-Infiltrate Sector' : 'Infiltrate Sector'}
                  </button>
               ) : (
-                 <button type="button" disabled className="w-full py-3 sm:py-4 bg-zinc-900 text-zinc-600 font-black uppercase text-xs sm:text-sm tracking-widest rounded border border-zinc-800 cursor-not-allowed flex items-center justify-center gap-2">
-                   <SearchX className="w-4 h-4 sm:w-5 sm:h-5" /> Sector Locked
+                 <button type="button" disabled className="w-full py-4 sm:py-4 bg-zinc-900 text-zinc-600 font-black uppercase text-sm tracking-widest rounded-lg border border-zinc-800 cursor-not-allowed flex items-center justify-center gap-2">
+                   <SearchX className="w-5 h-5" /> Sector Locked
                  </button>
               )}
            </div>
