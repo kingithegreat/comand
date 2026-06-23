@@ -12,8 +12,8 @@
   "backgroundColor": "#09090b",
   "enableNotifications": false,
   "startUrl": "/",
-  "iconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.svg",
-  "maskableIconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.svg",
+  "iconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.png",
+  "maskableIconUrl": "https://gen-lang-client-0969027846.web.app/icon-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "tacticalcommand.keystore",

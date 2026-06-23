@@ -60,6 +60,7 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchTime, setSearchTime] = useState(0);
   const searchIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const [matchData, matchLoading] = useDocumentData(
     onlineMatchId ? doc(db, 'matches', onlineMatchId) : null
   );
@@ -94,7 +95,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('tc_progression', JSON.stringify(progression));
+    try { localStorage.setItem('tc_progression', JSON.stringify(progression)); } catch {}
     if (user) {
       updateDoc(doc(db, 'users', user.uid), { progression }).catch(() => {});
     }
@@ -501,13 +502,16 @@ export default function App() {
       clearInterval(searchIntervalRef.current);
       searchIntervalRef.current = null;
     }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
   };
 
   useEffect(() => {
     return () => {
-      if (searchIntervalRef.current) {
-        clearInterval(searchIntervalRef.current);
-      }
+      if (searchIntervalRef.current) clearInterval(searchIntervalRef.current);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, []);
 
@@ -561,6 +565,9 @@ export default function App() {
       const found = await tryFind();
       if (found) return;
 
+      const foundRetry = await tryFind();
+      if (foundRetry) return;
+
       let createdMatchId = '';
       try {
         let newMatchId = '';
@@ -587,22 +594,20 @@ export default function App() {
       }
 
       let retries = 0;
-      const pollInterval = setInterval(async () => {
+      pollIntervalRef.current = setInterval(async () => {
         retries++;
         if (retries > 30) {
-          clearInterval(pollInterval);
           cancelSearch();
           return;
         }
         const matched = await tryFind();
         if (matched) {
-          clearInterval(pollInterval);
+          if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
           return;
         }
         try {
           const snap = await getDoc(doc(db, 'matches', createdMatchId));
           if (snap.exists() && snap.data().guestId) {
-            clearInterval(pollInterval);
             setOnlineMatchId(createdMatchId);
             setGameMode('online');
             cancelSearch();
@@ -706,7 +711,7 @@ export default function App() {
     return (
       <Suspense fallback={LazyFallback}>
         <MapEditor
-          onBack={() => setGameMode(null)}
+          onBack={() => { setGameMode(null); setCustomLayout(null); }}
           onPlayMap={(layout) => {
             setCustomLayout(layout);
             setGameMode('local_ai');
