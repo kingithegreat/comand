@@ -192,6 +192,7 @@ export default function Game({
   userId,
   userProfile,
   smogMode,
+  ctfMode = false,
   squadSize = 4,
   campaignMissionId,
   campaignDifficulty = 1,
@@ -208,6 +209,7 @@ export default function Game({
   userId?: string,
   userProfile?: any,
   smogMode?: boolean,
+  ctfMode?: boolean,
   squadSize?: number,
   campaignMissionId?: string | null,
   campaignDifficulty?: number,
@@ -349,6 +351,19 @@ export default function Game({
   const [shake, setShake] = useState(false);
   const [winner, setWinner] = useState<'player' | 'enemy' | null>(null);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
+
+  // CTF State
+  const isCTF = ctfMode && !campaignMissionId;
+  const [flags, setFlags] = useState<{
+    player: { baseX: number; baseY: number; x: number; y: number; carriedBy: string | null };
+    enemy: { baseX: number; baseY: number; x: number; y: number; carriedBy: string | null };
+  } | null>(null);
+  const [flagScores, setFlagScores] = useState<{ player: number; enemy: number }>({ player: 0, enemy: 0 });
+  const CTF_SCORE_TO_WIN = 2;
+  const flagsRef = React.useRef(flags);
+  useEffect(() => { flagsRef.current = flags; }, [flags]);
+  const flagScoresRef = React.useRef(flagScores);
+  useEffect(() => { flagScoresRef.current = flagScores; }, [flagScores]);
   const [turnBannerTeam, setTurnBannerTeam] = useState<'player' | 'enemy' | null>(null);
 
   useEffect(() => {
@@ -571,6 +586,69 @@ export default function Game({
 
   const getCoord = (cx: number, cy: number) => {
     return `${String.fromCharCode(65 + cx)}${(cy + 1).toString().padStart(2, '0')}`;
+  };
+
+  const handleFlagInteraction = (unitId: string, unitTeam: 'player' | 'enemy', toX: number, toY: number) => {
+    if (!isCTF) return;
+    const f = flagsRef.current;
+    if (!f) return;
+    const enemyFlag = unitTeam === 'player' ? f.enemy : f.player;
+    const ownFlag = unitTeam === 'player' ? f.player : f.enemy;
+    const enemyKey = unitTeam === 'player' ? 'enemy' : 'player';
+    const ownKey = unitTeam === 'player' ? 'player' : 'enemy';
+    const teamColor = unitTeam === 'player' ? 'Blue' : 'Purple';
+    const unitName = unitsRef.current.find(u => u.id === unitId)?.class.className || 'Unit';
+
+    // Pick up enemy flag
+    if (!enemyFlag.carriedBy && toX === enemyFlag.x && toY === enemyFlag.y) {
+      setFlags(prev => prev ? { ...prev, [enemyKey]: { ...prev[enemyKey], carriedBy: unitId } } : prev);
+      addLog(`[FLAG] ${teamColor} ${unitName} picked up the ${enemyKey === 'player' ? 'Blue' : 'Purple'} flag!`, 'system');
+      playSound('deploy');
+      return;
+    }
+
+    // Return own dropped flag to base
+    if (!ownFlag.carriedBy && (ownFlag.x !== ownFlag.baseX || ownFlag.y !== ownFlag.baseY) && toX === ownFlag.x && toY === ownFlag.y) {
+      setFlags(prev => prev ? { ...prev, [ownKey]: { ...prev[ownKey], x: prev[ownKey].baseX, y: prev[ownKey].baseY } } : prev);
+      addLog(`[FLAG] ${teamColor} ${unitName} returned the ${teamColor} flag to base!`, 'system');
+      playSound('shield');
+      return;
+    }
+
+    // Capture: carrying enemy flag + at own flag base + own flag is at base
+    const currentFlags = flagsRef.current;
+    if (!currentFlags) return;
+    const currentEnemyFlag = unitTeam === 'player' ? currentFlags.enemy : currentFlags.player;
+    const currentOwnFlag = unitTeam === 'player' ? currentFlags.player : currentFlags.enemy;
+    if (currentEnemyFlag.carriedBy === unitId && toX === currentOwnFlag.baseX && toY === currentOwnFlag.baseY && currentOwnFlag.x === currentOwnFlag.baseX && currentOwnFlag.y === currentOwnFlag.baseY) {
+      const newScores = { ...flagScoresRef.current, [ownKey === 'player' ? 'player' : 'enemy']: flagScoresRef.current[unitTeam] + 1 };
+      setFlagScores(newScores);
+      setFlags(prev => prev ? { ...prev, [enemyKey]: { ...prev[enemyKey], x: prev[enemyKey].baseX, y: prev[enemyKey].baseY, carriedBy: null } } : prev);
+      addLog(`[CAPTURE] ${teamColor} ${unitName} captured the flag! Score: Blue ${unitTeam === 'player' ? newScores.player : newScores.enemy} - ${unitTeam === 'player' ? newScores.enemy : newScores.player} Purple`, 'system');
+      playSound('win');
+      if (newScores[unitTeam] >= CTF_SCORE_TO_WIN) {
+        setWinner(unitTeam);
+        addLog(`[VICTORY] ${teamColor} team wins by capturing ${CTF_SCORE_TO_WIN} flags!`, 'system');
+      }
+    }
+  };
+
+  const handleFlagDrop = (unitId: string) => {
+    if (!isCTF) return;
+    const f = flagsRef.current;
+    if (!f) return;
+    const deadUnit = unitsRef.current.find(u => u.id === unitId);
+    if (!deadUnit) return;
+    if (f.player.carriedBy === unitId) {
+      setFlags(prev => prev ? { ...prev, player: { ...prev.player, x: deadUnit.x, y: deadUnit.y, carriedBy: null } } : prev);
+      addLog(`[FLAG] Blue flag dropped at ${getCoord(deadUnit.x, deadUnit.y)}!`, 'system');
+      playSound('debuff');
+    }
+    if (f.enemy.carriedBy === unitId) {
+      setFlags(prev => prev ? { ...prev, enemy: { ...prev.enemy, x: deadUnit.x, y: deadUnit.y, carriedBy: null } } : prev);
+      addLog(`[FLAG] Purple flag dropped at ${getCoord(deadUnit.x, deadUnit.y)}!`, 'system');
+      playSound('debuff');
+    }
   };
 
   const handlePassUnit = () => {
@@ -1725,7 +1803,8 @@ export default function Game({
     const nextTeam = activeTeam === 'player' ? 'enemy' : 'player';
     const nextTurn = activeTeam === 'enemy' ? turn + 1 : turn;
 
-    const updatedUnits = units.map(u => {
+    const currentUnits = unitsRef.current;
+    const updatedUnits = currentUnits.map(u => {
       if (u.hp <= 0) return u;
       let newHp = u.hp;
       let newAp = u.team === nextTeam ? Math.max(0, 2 - (u.apPenalty || 0)) : u.ap;
@@ -1746,6 +1825,9 @@ export default function Game({
         if (wasStunned) {
           newAp = Math.max(0, newAp - 1);
           addLog(`[STUN] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} is stunned, -1 AP!`, 'combat');
+        }
+        if (u.apPenalty && u.apPenalty > 0) {
+          addLog(`[SUPPRESSED] ${u.team === 'player' ? 'Blue' : 'Purple'} ${u.class.className} AP drained! Only ${newAp} AP this turn.`, 'combat');
         }
       }
       const newInvTurns = (u.invisibleTurns || 0) > 0 ? u.invisibleTurns! - 1 : 0;
@@ -1835,7 +1917,7 @@ export default function Game({
        }
     }
     setSelectedUnitId(null);
-  }, [activeTeam, turn, units, isOnline, onlineMatch, addLog, gameMode, pendingTurnData, isSpectator]);
+  }, [activeTeam, turn, isOnline, onlineMatch, addLog, gameMode, pendingTurnData, isSpectator]);
 
   // Synchronize dynamic visual turn timer for multiplayer matches
   useEffect(() => {
@@ -2342,6 +2424,8 @@ export default function Game({
           if (aiDifficulty >= 2 && p.hp <= enemy.class.stats.damage) score += 50;
           if (aiDifficulty >= 3 && p.class.className === 'Medic') score += 30;
           if (aiDifficulty >= 2 && p.class.className === 'Sniper') score += 15;
+          // CTF: prioritize killing the flag carrier
+          if (isCTF && flagsRef.current && flagsRef.current.enemy.carriedBy === p.id) score += 80;
 
           const fuzz = aiDifficulty === 0 ? 20 : aiDifficulty === 1 ? 5 : 2;
           score += (Math.random() - 0.5) * fuzz;
@@ -2459,13 +2543,34 @@ export default function Game({
              score = -minFriendDist * 2 + (minPlayerDist * 0.5); // Stays near friends, away from enemies
           }
 
+          // CTF: AI flag objectives
+          if (isCTF && flagsRef.current) {
+            const ef = flagsRef.current.enemy; // enemy's own flag (AI is 'enemy' team)
+            const pf = flagsRef.current.player; // player's flag (the one AI wants to capture)
+            const isCarryingFlag = pf.carriedBy === enemy.id;
+            if (isCarryingFlag) {
+              // Carrying player flag → go to own base
+              const distToBase = Math.abs(tx - ef.baseX) + Math.abs(ty - ef.baseY);
+              score += (20 - distToBase) * 3;
+            } else if (!pf.carriedBy) {
+              // Player flag is on the ground → go pick it up
+              const distToFlag = Math.abs(tx - pf.x) + Math.abs(ty - pf.y);
+              score += (20 - distToFlag) * 2;
+            }
+            // Return own dropped flag
+            if (!ef.carriedBy && (ef.x !== ef.baseX || ef.y !== ef.baseY)) {
+              const distToOwnFlag = Math.abs(tx - ef.x) + Math.abs(ty - ef.y);
+              score += (15 - distToOwnFlag);
+            }
+          }
+
           return score + (Math.random() - 0.5) * 2; // Minor variability
        };
 
        const currentScore = scoreTile(enemy.x, enemy.y);
 
        for (const r of reachable) {
-          const finalScore = scoreTile(r.x, r.y) - (r.apCost * 0.1); 
+          const finalScore = scoreTile(r.x, r.y) - (r.apCost * 0.1);
           if (finalScore > bestTileScore) {
              bestTileScore = finalScore;
              bestTile = r;
@@ -2480,6 +2585,7 @@ export default function Game({
           ));
           addLog(`[MANEUVER] Enemy ${enemy.class.className} advanced to quadrant ${getCoord(bestTile.x, bestTile.y)} (used ${bestTile.apCost} AP).`, 'info');
           playSound('move');
+          handleFlagInteraction(enemy.id, 'enemy', bestTile.x, bestTile.y);
           return;
        }
     }
@@ -2553,8 +2659,9 @@ export default function Game({
     const deadUnits = units.filter(u => u.hp <= 0);
     if (deadUnits.length > 0) {
       const timer = setTimeout(() => {
+        deadUnits.forEach(du => handleFlagDrop(du.id));
         const newUnits = units.filter(u => u.hp > 0);
-        
+
         let newWinner = undefined;
         let newStatus = mode;
 
@@ -2579,6 +2686,23 @@ export default function Game({
       return () => clearTimeout(timer);
     }
   }, [units, mode, isOnline, turn, activeTeam, winner, myTeam]);
+
+  useEffect(() => {
+    if (!flags) return;
+    let changed = false;
+    const updated = { ...flags };
+    for (const key of ['player', 'enemy'] as const) {
+      const f = flags[key];
+      if (f.carriedBy) {
+        const carrier = units.find(u => u.id === f.carriedBy && u.hp > 0);
+        if (carrier && (carrier.x !== f.x || carrier.y !== f.y)) {
+          updated[key] = { ...f, x: carrier.x, y: carrier.y };
+          changed = true;
+        }
+      }
+    }
+    if (changed) setFlags(updated);
+  }, [units, flags]);
 
   const processedWinnerRef = React.useRef<string | null>(null);
 
@@ -3177,7 +3301,7 @@ export default function Game({
            if (isOnline) {
              updateOnlineState(finalUnitsAfterMove, turnRef.current, activeTeamRef.current);
            }
-            // State updated locally above
+           handleFlagInteraction(unit.id, unit.team, x, y);
          }
       }
     }
@@ -3944,6 +4068,9 @@ export default function Game({
                    {mode === 'play' && unit.fortified && (
                       <div className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-blue-500/90 border border-blue-300/50 z-40 pointer-events-none" title="Fortified" />
                    )}
+                   {flags && (flags.player.carriedBy === unit.id || flags.enemy.carriedBy === unit.id) && (
+                      <div className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] font-black z-40 pointer-events-none animate-pulse ${flags.player.carriedBy === unit.id ? 'bg-sky-500 text-white shadow-[0_0_8px_rgba(14,165,233,0.6)]' : 'bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.6)]'}`} title="Carrying Flag">&#9873;</div>
+                   )}
                    {mode === 'play' && !unit.fortified && (() => {
                       const cl = getUnitCoverLevel(unit, mapEnvironment);
                       if (cl === 'none') return null;
@@ -4000,6 +4127,42 @@ export default function Game({
           aiCameraHighlight = <div className="absolute inset-0 border-2 border-yellow-400/60 rounded z-[25] pointer-events-none animate-pulse" />;
         }
 
+        // CTF: Flag rendering
+        let flagOverlay = null;
+        if (flags && mode === 'play') {
+          const pf = flags.player;
+          const ef = flags.enemy;
+          if (!pf.carriedBy && pf.x === x && pf.y === y) {
+            const isAtBase = pf.x === pf.baseX && pf.y === pf.baseY;
+            flagOverlay = (
+              <div className={`absolute inset-0 z-[30] pointer-events-none flex items-center justify-center`}>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${isAtBase ? 'bg-sky-500/80 text-white shadow-[0_0_10px_rgba(14,165,233,0.5)]' : 'bg-sky-500/60 text-white animate-pulse shadow-[0_0_14px_rgba(14,165,233,0.7)]'}`}>
+                  &#9873;
+                </div>
+              </div>
+            );
+          }
+          if (!ef.carriedBy && ef.x === x && ef.y === y) {
+            const isAtBase = ef.x === ef.baseX && ef.y === ef.baseY;
+            flagOverlay = (
+              <div className={`absolute inset-0 z-[30] pointer-events-none flex items-center justify-center`}>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${isAtBase ? 'bg-purple-500/80 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'bg-purple-500/60 text-white animate-pulse shadow-[0_0_14px_rgba(168,85,247,0.7)]'}`}>
+                  &#9873;
+                </div>
+              </div>
+            );
+          }
+          // Flag base markers (show when flag is away from base)
+          if (!flagOverlay) {
+            if ((pf.x !== pf.baseX || pf.y !== pf.baseY) && pf.baseX === x && pf.baseY === y) {
+              flagOverlay = <div className="absolute inset-0 z-[28] pointer-events-none flex items-center justify-center"><div className="w-4 h-4 rounded-full border-2 border-dashed border-sky-500/40" /></div>;
+            }
+            if ((ef.x !== ef.baseX || ef.y !== ef.baseY) && ef.baseX === x && ef.baseY === y) {
+              flagOverlay = <div className="absolute inset-0 z-[28] pointer-events-none flex items-center justify-center"><div className="w-4 h-4 rounded-full border-2 border-dashed border-purple-500/40" /></div>;
+            }
+          }
+        }
+
         grid.push(
           <div
             key={`${x}-${y}`}
@@ -4033,6 +4196,7 @@ export default function Game({
             {deployGridOverlay}
             {dangerOverlay}
             {aiCameraHighlight}
+            {flagOverlay}
             {overlayClass && <div className={`absolute inset-0 ${overlayClass} z-0`}></div>}
             {cell.type === 'wall' && <div className="absolute inset-0 opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMSIvPgo8L3N2Zz4=')]"></div>}
             
@@ -4252,6 +4416,33 @@ export default function Game({
 
     currentUnits = recalculateSquadStats(currentUnits);
     setUnits(currentUnits);
+
+    if (isCTF) {
+      const findFlagSpot = (centerX: number, centerY: number) => {
+        if (mapEnvironment[centerY]?.[centerX]?.type === 'floor' && !currentUnits.some(u => u.x === centerX && u.y === centerY)) {
+          return { x: centerX, y: centerY };
+        }
+        for (let r = 1; r < 4; r++) {
+          for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+              const nx = centerX + dx, ny = centerY + dy;
+              if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE && mapEnvironment[ny]?.[nx]?.type === 'floor' && !currentUnits.some(u => u.x === nx && u.y === ny)) {
+                return { x: nx, y: ny };
+              }
+            }
+          }
+        }
+        return { x: centerX, y: centerY };
+      };
+      const playerFlag = findFlagSpot(7, 13);
+      const enemyFlag = findFlagSpot(7, 1);
+      setFlags({
+        player: { baseX: playerFlag.x, baseY: playerFlag.y, x: playerFlag.x, y: playerFlag.y, carriedBy: null },
+        enemy: { baseX: enemyFlag.x, baseY: enemyFlag.y, x: enemyFlag.x, y: enemyFlag.y, carriedBy: null },
+      });
+      setFlagScores({ player: 0, enemy: 0 });
+      addLog(`[CTF] Capture the Flag enabled! Grab the enemy flag and bring it to your base. First to ${CTF_SCORE_TO_WIN} captures wins!`, 'system');
+    }
 
     const rolledWinner = Math.random() < 0.5 ? 'player' : 'enemy';
 
@@ -4687,6 +4878,8 @@ export default function Game({
             setOverwatchUnits([]);
             setKillFeed([]);
             setLastMoveState(null);
+            setFlags(null);
+            setFlagScores({ player: 0, enemy: 0 });
             processedWinnerRef.current = null;
             addLog(`[SYSTEM] Rematch initiated — redeploy your squad.`, 'system');
           }}
@@ -4919,8 +5112,22 @@ export default function Game({
               {renderHoverHUD()}
             </div>
             
+            {isCTF && flags && mode === 'play' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-zinc-700/50 font-mono text-xs shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-sky-500 shadow-[0_0_6px_rgba(14,165,233,0.4)]" />
+                  <span className="text-sky-400 font-black">{flagScores.player}</span>
+                </div>
+                <span className="text-zinc-600 font-bold">:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-purple-400 font-black">{flagScores.enemy}</span>
+                  <div className="w-3 h-3 rounded-full bg-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.4)]" />
+                </div>
+                <span className="text-zinc-500 text-[8px] ml-1">FIRST TO {CTF_SCORE_TO_WIN}</span>
+              </div>
+            )}
             <div className="flex-1 min-w-0 flex items-center justify-end">
-              <TurnCounter 
+              <TurnCounter
                 turn={turn}
                 activeTeam={activeTeam}
                 mode={mode}

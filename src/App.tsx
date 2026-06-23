@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion, runTransaction } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid, Flag } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
@@ -72,6 +72,7 @@ export default function App() {
   const [guestProfile, setGuestProfile] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [smogMode, setSmogMode] = useState(false);
+  const [ctfMode, setCtfMode] = useState(false);
   const [squadSize, setSquadSize] = useState<number>(4);
   const [isLaunching, setIsLaunching] = useState(false);
   const [menuTab, setMenuTab] = useState<'play' | 'progress' | 'shop'>('play');
@@ -684,9 +685,10 @@ export default function App() {
       }}
       userProfile={profile}
       smogMode={smogMode}
+      ctfMode={ctfMode}
       squadSize={squadSize}
-      onMatchComplete={handleMatchComplete}
-      onChallengeProgress={updateChallengeProgress}
+      onMatchComplete={gameMode === 'local_p2p' ? undefined : handleMatchComplete}
+      onChallengeProgress={gameMode === 'local_p2p' ? undefined : updateChallengeProgress}
       boardTheme={progression.activeTheme}
       playerElo={progression.elo}
     /></Suspense>;
@@ -1172,6 +1174,29 @@ export default function App() {
                      className={`relative w-12 h-7 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${smogMode ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'bg-zinc-700'}`}
                   >
                      <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${smogMode ? 'left-[calc(100%-1.625rem)]' : 'left-0.5'}`} />
+                  </button>
+               </div>
+            </div>
+
+            {/* CTF Toggle */}
+            <div className={`relative rounded-xl p-4 border transition-all duration-300 ${ctfMode ? 'bg-sky-500/5 border-sky-500/30 shadow-[0_0_20px_rgba(14,165,233,0.06)]' : 'bg-zinc-900/60 border-zinc-800/50'}`}>
+               <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${ctfMode ? 'bg-sky-500/15 text-sky-400 shadow-[0_0_10px_rgba(14,165,233,0.15)]' : 'bg-zinc-800/50 text-zinc-500'}`}>
+                        <Flag className="w-5 h-5" />
+                     </div>
+                     <div>
+                        <h4 className="text-sm font-mono font-black text-zinc-200 uppercase tracking-wider leading-none">CAPTURE THE FLAG</h4>
+                        <p className="text-[10px] text-zinc-500 mt-1">Capture the enemy flag and bring it back to score</p>
+                     </div>
+                  </div>
+                  <button
+                     type="button"
+                     title={ctfMode ? "Disable Capture the Flag" : "Enable Capture the Flag"}
+                     onClick={() => { setCtfMode(!ctfMode); playSound('click'); }}
+                     className={`relative w-12 h-7 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${ctfMode ? 'bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.3)]' : 'bg-zinc-700'}`}
+                  >
+                     <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${ctfMode ? 'left-[calc(100%-1.625rem)]' : 'left-0.5'}`} />
                   </button>
                </div>
             </div>

@@ -162,10 +162,10 @@ export const CLASSES: CharacterClass[] = [
   },
   {
     className: "Flamethrower",
-    archetype: "Support",
+    archetype: "Short Range",
     description: "Equipped with heavy fuel tanks. Releases devastating, high-temperature close-range fire.",
     stats: { maxHP: 135, damage: 70, range: 2, mobility: 5, accuracy: 100 },
-    personality: 'Support',
+    personality: 'Aggressive',
     ability: {
       name: "Inferno Jet",
       description: "Unleashes a rolling torrent of napalm fire at close range, dealing 85 damage (1 AP).",
