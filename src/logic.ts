@@ -10,7 +10,7 @@ export const getReachableTiles = (
   if (unit.ap <= 0) return tiles;
 
   const gridHeight = map.length;
-  const gridWidth = map[0]?.length ?? map.length;
+  const gridWidth = map[0]?.length ?? 0;
   const mobility = unit.class.stats.mobility;
 
   // BFS
@@ -90,7 +90,7 @@ export const calculateHitChance = (
   for (const n of neighbors) {
     const nx = target.x + n.dx;
     const ny = target.y + n.dy;
-    if (nx >= 0 && ny >= 0 && nx < map[0].length && ny < map.length) {
+    if (nx >= 0 && ny >= 0 && nx < (map[0]?.length ?? 0) && ny < map.length) {
       const tileType = map[ny][nx].type;
       const distAttackerToCover = Math.abs(attacker.x - nx) + Math.abs(attacker.y - ny);
       if (distAttackerToCover >= dist) continue;
