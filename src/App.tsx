@@ -1,7 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
-import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion, runTransaction } from 'firebase/firestore';
 import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid, Flag } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
@@ -335,32 +335,31 @@ export default function App() {
     }
   };
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      const userRef = doc(db, 'users', user.uid);
+  useEffect(() => {
+    getRedirectResult(auth).then(async (result) => {
+      if (!result) return;
+      const u = result.user;
+      const userRef = doc(db, 'users', u.uid);
       const snap = await getDoc(userRef);
       if (!snap.exists()) {
         try {
           await setDoc(userRef, {
-            userId: user.uid,
-            displayName: user.displayName || 'Commander',
-            email: user.email
+            userId: u.uid,
+            displayName: u.displayName || 'Commander',
+            email: u.email
           });
         } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
+          handleFirestoreError(err, OperationType.CREATE, `users/${u.uid}`);
         }
       }
-    } catch (error: any) {
-      console.error(error);
-      if (error.message && error.message.startsWith('{') && error.message.endsWith('}')) {
-        alert("Authentication frequency synchronization issue: " + error.message);
-      } else {
-        alert("Please ensure third-party cookies are not blocked, or open the app in a new tab to authenticate.");
-      }
-    }
+    }).catch((error) => {
+      console.error('Redirect sign-in error:', error);
+    });
+  }, []);
+
+  const handleLogin = () => {
+    const provider = new GoogleAuthProvider();
+    signInWithRedirect(auth, provider);
   };
 
   const saveProfile = async () => {
