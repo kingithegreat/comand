@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { useDocumentData } from 'react-firebase-hooks/firestore';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, limit, arrayUnion, runTransaction } from 'firebase/firestore';
-import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid, Flag } from 'lucide-react';
+import { Target, Monitor, Users, Globe, LogIn, LogOut, Loader2, BookOpen, Cpu, Shield, Zap, Flame, Rocket, Activity, CheckSquare, Volume2, VolumeX, Copy, Check, Radio, ArrowLeft, ArrowRight, Play, Terminal, AlertTriangle, RefreshCw, Wind, Grid, Flag, WifiOff } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { CLASSES } from './data';
 import UnitHelmetAvatar from './components/UnitHelmetAvatar';
@@ -76,6 +76,15 @@ export default function App() {
   const [squadSize, setSquadSize] = useState<number>(4);
   const [isLaunching, setIsLaunching] = useState(false);
   const [menuTab, setMenuTab] = useState<'play' | 'progress' | 'shop'>('play');
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => setIsOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
+  }, []);
 
   const [progression, setProgression] = useState<PlayerProgression>(() => {
     try {
@@ -1098,6 +1107,12 @@ export default function App() {
       </div>
 
       <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
+         {isOffline && (
+           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs font-mono">
+             <WifiOff className="w-4 h-4 shrink-0" />
+             <span>OFFLINE — Solo modes available. Online features require connection.</span>
+           </div>
+         )}
          {/* Hero Header */}
          <div className="text-center space-y-4 pb-4 border-b border-zinc-800/30 relative">
            <div className="absolute right-0 top-0 flex gap-1.5">
