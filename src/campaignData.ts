@@ -2,6 +2,7 @@ export const BASE_REGIONS = [
   {
     id: 'tutorial',
     name: 'Battle Academy',
+    squadSize: 2,
     desc: 'Welcome, Commander. Earth is gone. The remnant fleets have scattered. Before we can mount a counter-offensive to reclaim our home, you must prove you can lead a squad. This is a basic simulation.',
     objective: 'Complete training and familiarize yourself with combat mechanics.',
     conditions: 'Controlled simulation environment. Holographic targets.',
@@ -12,6 +13,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-1',
     name: 'Outpost Delta',
+    squadSize: 3,
     desc: 'You passed the trials. Our intel shows a small recon detachment of the Supreme Tactical AI has landed on a resource planet on the fringes of Sector 1. Take them out before they can alert the fleet.',
     reward: 'Unlock Class: Heavy',
     objective: 'Eliminate all hostile forces established at Outpost Delta.',
@@ -23,6 +25,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-2',
     name: 'Neon District',
+    squadSize: 3,
     desc: 'The scouts were a diversion. We tracked their signal to an abandoned urban mining colony. It is heavily polluted. The enemy is using the smog as cover to harvest the reactors.',
     objective: 'Clear the sector of hostile presence to protect the reactor.',
     conditions: 'Smog Cover Active: Targeting visibility reduced. Expect close-quarters engagement.',
@@ -33,6 +36,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-3',
     name: 'The Citadel',
+    squadSize: 4,
     desc: 'With the reactor secure, we have enough power to breach their forward operating base. This citadel is heavily fortified and serves as their local command hub.',
     objective: 'Breach the fortress and secure the zone.',
     conditions: 'Heavily fortified. Enemy squad size increased (+1 unit). AI tactics improved.',
@@ -43,6 +47,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-4',
     name: 'Frozen Tundra',
+    squadSize: 4,
     desc: 'We extracted data from the Citadel. It points to a massive cryo-storage facility on the ice world of Kaelen. The enemy is guarding something critical in the deep freeze. Do not let them hold it.',
     objective: 'Survive the assault and eliminate all targets.',
     conditions: 'Extreme cold. Enemy relies heavily on durable classes. +10 HP to all enemies.',
@@ -53,6 +58,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-5',
     name: 'Jungle Canopy',
+    squadSize: 4,
     desc: 'The data retrieved from Kaelen contained the coordinates to their stealth research outpost hidden beneath the dense canopy of Veridia. Expect ambushes.',
     objective: 'Root out the elite hostile squads hidden in the canopy.',
     conditions: 'Smog Cover Active: Thick jungle canopy limits sight lines. Assassins deployed.',
@@ -63,6 +69,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-6',
     name: 'Volcanic Ridge',
+    squadSize: 5,
     desc: 'They are constructing a dreadnought using the geothermal vents of this volcanic ridge. We must strike now before the ship launches. The enemy has deployed heavy ordinance to defend the construction.',
     objective: 'Overcome the heavy ordinance team.',
     conditions: 'Fire hazard tiles. Elite enemy classes with +15 HP bonus.',
@@ -73,6 +80,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-7',
     name: 'Desert Ruin',
+    squadSize: 5,
     desc: 'Our forces are spread thin. The Supreme AI has sent assassins to a neutral diplomatic ruin to wipe out our allies. Drop in and intercept them.',
     objective: 'Secure the ruins against high-lethality operatives.',
     conditions: 'Smog Cover Active: Airborne sand limits vision. Elite Assassin squads.',
@@ -83,6 +91,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-8',
     name: 'Oceanic Platform',
+    squadSize: 5,
     desc: 'The enemy fleet is rallying at this offshore command rig. If we take it down, we sever their communication network entirely, clearing the path to their command.',
     objective: 'Neutralize the command rig garrison.',
     conditions: 'Isolated platform. Elite enemy presence with +20 HP bonus. AI fully tactical.',
@@ -93,6 +102,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-9',
     name: 'Orbital Command',
+    squadSize: 6,
     desc: 'This is it, Commander. The Supreme Tactical AI core is aboard the Orbital Command station. We are throwing everything at them. If we win here, the war is won.',
     objective: 'Dismantle the supreme tactical AI forces.',
     conditions: 'Smog Cover Active. Maximum enemy threat level. +25 HP to all enemies. Enemy squad +3 units.',
@@ -105,6 +115,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-10',
     name: 'The Aftermath',
+    squadSize: 4,
     desc: 'The Supreme AI is destroyed — but its death triggered a deadman protocol. Autonomous war factories across the galaxy have activated, producing endless drone armies. We intercepted a signal from a crashed carrier on the moon of Tethys. It holds the master shutdown codes.',
     objective: 'Secure the crash site and recover the encryption drive.',
     conditions: 'Drone reinforcements arrive every 3 turns. Enemy squad +1 unit.',
@@ -115,6 +126,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-11',
     name: 'Blackout Depths',
+    squadSize: 4,
     desc: 'The encryption drive is damaged. Our engineers say the decryption matrix is stored in a deep-space relay station that lost power decades ago. We are going in blind — no scanners, no comms, no backup.',
     objective: 'Navigate the powered-down station and eliminate the defense garrison.',
     conditions: 'Smog Cover Active: Total darkness — all units have reduced vision. No minimap.',
@@ -125,6 +137,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-12',
     name: 'Foundry Siege',
+    squadSize: 5,
     desc: 'We have the decryption matrix but the nearest active war factory is on Kragmore — a forge world producing drone armies around the clock. We need to fight through the assembly lines to reach the core transmitter.',
     objective: 'Push through the factory floor and destroy the production garrison.',
     conditions: 'Fire hazard tiles from molten metal. +15 HP to all enemies. Enemy squad +2 units.',
@@ -135,6 +148,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-13',
     name: 'Signal Spire',
+    squadSize: 5,
     desc: 'The factory is silenced but the drone armies are still active — they are operating on a cached directive. A massive signal spire on the ice moon of Korrath is broadcasting the attack orders. Destroy the garrison and we can upload the shutdown codes.',
     objective: 'Eliminate the spire defense force to gain transmitter access.',
     conditions: 'Extreme cold: +10 HP to all enemies. Poison tiles from cryo-coolant leaks.',
@@ -145,6 +159,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-14',
     name: 'The Gauntlet Run',
+    squadSize: 6,
     desc: 'The shutdown codes are uploaded but the signal needs 5 minutes to propagate. The remaining drone forces have converged on our position for a final desperate assault. Hold the line, Commander.',
     objective: 'Survive the onslaught and eliminate all attackers.',
     conditions: 'Smog Cover Active. +20 HP to all enemies. Enemy squad +3 units. Fire and poison hazards.',
@@ -155,6 +170,7 @@ export const BASE_REGIONS = [
   {
     id: 'sector-15',
     name: 'Earth Reclaimed',
+    squadSize: 6,
     desc: 'The drone armies are shutting down across the galaxy. But one final stronghold remains — Earth itself. A rogue AI fragment has fortified our homeworld with the last operational garrison. Take it back, Commander. Take us home.',
     objective: 'Liberate Earth. Eliminate the final rogue AI garrison.',
     conditions: 'Smog Cover Active. Maximum threat. +30 HP to all enemies. Enemy squad +4 units. All hazard types active.',

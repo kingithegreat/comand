@@ -232,7 +232,8 @@ export default function Game({
   const smogMissions = ['sector-2', 'sector-5', 'sector-7', 'sector-9', 'sector-11', 'sector-14', 'sector-15'];
   const isSmogTheme = isOnline ? !!onlineMatch?.smogEnabled : smogMissions.includes(campaignMissionId || '') || !!smogMode;
   const isFogOfWarActive = isOnline ? !!onlineMatch?.smogEnabled : gameMode === 'local_ai' ? true : !!smogMode;
-  const matchSquadSize = isOnline ? (onlineMatch?.squadSize || squadSize || 4) : (squadSize || 4);
+  const campaignRegion = campaignMissionId ? BASE_REGIONS.find(r => r.id === campaignMissionId) : null;
+  const matchSquadSize = isOnline ? (onlineMatch?.squadSize || squadSize || 4) : (campaignRegion as any)?.squadSize || squadSize || 4;
   const [mapEnvironment, setMapEnvironment] = useState<GridCell[][]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>(() => {
     if (campaignMissionId) {
@@ -4870,8 +4871,12 @@ export default function Game({
             setMode('deploy');
             setUnits([]);
             setSelectedUnitId(null);
+            setSelectedClass(null);
+            setTeamSelection('player');
             setTurn(1);
             setActiveTeam('player');
+            setIsAbilityActive(false);
+            setIsSecondAbilityActive(false);
             setLogs([{ id: crypto.randomUUID(), text: "TACTICAL SEC-NET RE-INITIALIZED. REMATCH ENGAGED.", type: 'system', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }]);
             setTurnSnapshots([]);
             setReplaySnapshotIndex(null);
