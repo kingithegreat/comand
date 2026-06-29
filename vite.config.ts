@@ -88,6 +88,7 @@ export default defineConfig(() => {
           manualChunks: {
             firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
             vendor: ['react', 'react-dom', 'lucide-react'],
+            three: ['three', '@react-three/fiber', '@react-three/drei'],
           },
         },
       },
