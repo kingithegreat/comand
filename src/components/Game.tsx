@@ -22,6 +22,7 @@ import { useAudio } from '../contexts/AudioContext';
 import { PostBattleSummary } from './PostBattleSummary';
 import { safeGetItem, safeSetItem } from '../lib/storage';
 import { BASE_REGIONS } from '../campaignData';
+import Board3DLazy from '../three/Board3DLazy';
 
 const GRID_SIZE = 15;
 
@@ -458,6 +459,8 @@ export default function Game({
   const [isIsometric, setIsIsometric] = useState(() => {
     try { return safeGetItem('tc_isometric') === 'true'; } catch { return false; }
   });
+  // feat/3d-board-spike: additive 3D board overlay (does not affect 2D/iso state)
+  const [show3DSpike, setShow3DSpike] = useState(false);
 
   // Feature: Camera Follow AI
   const [aiHighlightTile, setAiHighlightTile] = useState<{ x: number; y: number } | null>(null);
@@ -5752,6 +5755,18 @@ export default function Game({
                       <span className="hidden sm:inline">{showDangerZone ? 'HIDE THREATS [D]' : 'SHOW THREATS [D]'}</span>
                       <span className="sm:hidden">{showDangerZone ? 'THREATS' : 'THREATS'}</span>
                     </button>
+                    {/* feat/3d-board-spike: real 3D board (R3F) — lazy-loaded overlay */}
+                    <button
+                      type="button"
+                      onClick={() => setShow3DSpike(true)}
+                      className="px-3 py-2 sm:py-1.5 rounded-lg border font-mono text-[10px] sm:text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border-sky-500/50 bg-sky-950/40 text-sky-400 hover:text-sky-200"
+                      title="Open the real 3D board (spike)"
+                    >
+                      <Grid className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
+                      <span className="hidden sm:inline">3D BOARD</span>
+                      <span className="sm:hidden">3D</span>
+                    </button>
+                    {show3DSpike && <Board3DLazy onClose={() => setShow3DSpike(false)} />}
                     {/* Isometric View Toggle */}
                     <button
                       type="button"
