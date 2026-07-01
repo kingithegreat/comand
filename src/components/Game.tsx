@@ -5766,7 +5766,7 @@ export default function Game({
                       <span className="hidden sm:inline">3D BOARD</span>
                       <span className="sm:hidden">3D</span>
                     </button>
-                    {show3DSpike && <Board3DLazy onClose={() => setShow3DSpike(false)} />}
+                    {show3DSpike && <Board3DLazy map={mapEnvironment} units={units} onClose={() => setShow3DSpike(false)} />}
                     {/* Isometric View Toggle */}
                     <button
                       type="button"
