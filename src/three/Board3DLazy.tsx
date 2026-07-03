@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import type { GridMap, Unit } from '../types';
+import type { ReachableTile } from './interaction';
 
 /**
  * Lazy-load the entire Three.js scene so it is code-split into its own async
@@ -11,10 +12,16 @@ const Board3DSpike = React.lazy(() => import('./Board3DSpike'));
 export default function Board3DLazy({
   map,
   units,
+  selectedUnitId,
+  reachableTiles,
+  onPick,
   onClose,
 }: {
   map?: GridMap;
   units?: Unit[];
+  selectedUnitId?: string | null;
+  reachableTiles?: ReachableTile[];
+  onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
   return (
@@ -25,7 +32,14 @@ export default function Board3DLazy({
         </div>
       }
     >
-      <Board3DSpike map={map} units={units} onClose={onClose} />
+      <Board3DSpike
+        map={map}
+        units={units}
+        selectedUnitId={selectedUnitId}
+        reachableTiles={reachableTiles}
+        onPick={onPick}
+        onClose={onClose}
+      />
     </Suspense>
   );
 }
