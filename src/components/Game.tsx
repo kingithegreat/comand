@@ -5772,6 +5772,13 @@ export default function Game({
                         units={finalUnits}
                         selectedUnitId={selectedUnitId}
                         reachableTiles={reachableTiles}
+                        damageTexts={damageTexts}
+                        hitEffects={hitEffects}
+                        muzzleFlashes={muzzleFlashes}
+                        slidingUnits={slidingUnits}
+                        dyingUnits={dyingUnits}
+                        shake={shake}
+                        zoomLevel={zoomLevel}
                         onPick={(coord) => handleCellClick(coord.x, coord.y)}
                         onClose={() => setShow3DSpike(false)}
                       />
