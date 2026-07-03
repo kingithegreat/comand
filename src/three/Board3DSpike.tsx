@@ -3,6 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import CameraRig from './CameraRig';
 import Tiles3D from './Tiles3D';
 import Units3D from './Units3D';
+import Overlays3D from './Overlays3D';
+import type { ReachableTile } from './interaction';
 import type { GridMap, Unit } from '../types';
 
 /**
@@ -24,14 +26,21 @@ import type { GridMap, Unit } from '../types';
 export default function Board3DSpike({
   map,
   units,
+  selectedUnitId,
+  reachableTiles,
+  onPick,
   onClose,
 }: {
   map?: GridMap;
   units?: Unit[];
+  selectedUnitId?: string | null;
+  reachableTiles?: ReachableTile[];
+  onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
   const [lastPick, setLastPick] = useState<{ x: number; y: number } | null>(null);
   const unitList = units ?? [];
+  const selected = selectedUnitId ? unitList.find((u) => u.id === selectedUnitId) ?? null : null;
   const live = Boolean(map && map.length > 0);
 
   return (
@@ -46,8 +55,15 @@ export default function Board3DSpike({
         <hemisphereLight args={['#cbd5e1', '#0b1120', 0.9]} />
         <directionalLight position={[6, 14, 8]} intensity={1.1} />
         <CameraRig />
-        <Tiles3D map={map} onPick={setLastPick} />
+        <Tiles3D
+          map={map}
+          onPick={(coord) => {
+            setLastPick(coord);
+            onPick?.(coord);
+          }}
+        />
         <Units3D units={unitList} />
+        <Overlays3D selected={selected} reachable={reachableTiles} />
       </Canvas>
 
       {/* Overlay HUD (plain DOM, outside the Canvas) */}
@@ -68,11 +84,13 @@ export default function Board3DSpike({
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
         <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/80 px-3 py-2 font-mono text-[11px] text-zinc-400 backdrop-blur">
-          {lastPick
-            ? `picked tile (${lastPick.x}, ${lastPick.y})`
-            : live
-              ? `${unitList.length} units deployed · tap a tile`
-              : 'tap a tile to test picking'}
+          {selected
+            ? `selected ${selected.name ?? selected.class.className} · tap a highlighted tile to move`
+            : lastPick
+              ? `picked tile (${lastPick.x}, ${lastPick.y})`
+              : live
+                ? `${unitList.length} units deployed · tap a unit to select`
+                : 'tap a tile to test picking'}
         </div>
       </div>
     </div>
