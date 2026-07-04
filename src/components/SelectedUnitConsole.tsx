@@ -17,7 +17,7 @@ interface SelectedUnitConsoleProps {
   isOnline: boolean | undefined;
   myTeam?: 'player' | 'enemy';
   onPassUnit: () => void;
-  mode?: 'deploy' | 'play';
+  mode?: 'deploy' | 'play' | 'finished';
   onRenameUnit?: (unitId: string, newName: string) => void;
 }
 

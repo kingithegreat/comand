@@ -4,7 +4,7 @@ import { ChevronRight, Clock, AlertTriangle } from 'lucide-react';
 interface TurnCounterProps {
   turn: number;
   activeTeam: 'player' | 'enemy';
-  mode: 'deploy' | 'play';
+  mode: 'deploy' | 'play' | 'finished';
   isOnline: boolean | undefined;
   myTeam?: 'player' | 'enemy';
   onEndTurn: () => void;

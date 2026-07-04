@@ -4,7 +4,13 @@ import CameraRig from './CameraRig';
 import Tiles3D from './Tiles3D';
 import Units3D from './Units3D';
 import Overlays3D from './Overlays3D';
+import Effects3D from './Effects3D';
 import type { ReachableTile } from './interaction';
+import type {
+  DamageTextState,
+  HitEffectState,
+  MuzzleFlashState,
+} from './effectsMapping';
 import type { GridMap, Unit } from '../types';
 
 /**
@@ -19,6 +25,10 @@ import type { GridMap, Unit } from '../types';
  * render as team-tinted billboards on their actual tiles. Both are optional, so
  * the standalone spike still renders with a flat checkerboard + no units.
  *
+ * Phase 4 adds combat feedback: damage texts, muzzle flashes, hit/miss/death
+ * pulses, slide + death animations, camera shake and the zoomLevel binding —
+ * all driven by the exact same Game.tsx state the 2D board consumes.
+ *
  * NO game logic is touched — additive overlay; the 2D / isometric board is
  * unaffected. frameloop="demand" keeps it battery-friendly (turn-based: render
  * only on change).
@@ -28,6 +38,13 @@ export default function Board3DSpike({
   units,
   selectedUnitId,
   reachableTiles,
+  damageTexts,
+  hitEffects,
+  muzzleFlashes,
+  slidingUnits,
+  dyingUnits,
+  shake,
+  zoomLevel,
   onPick,
   onClose,
 }: {
@@ -35,6 +52,13 @@ export default function Board3DSpike({
   units?: Unit[];
   selectedUnitId?: string | null;
   reachableTiles?: ReachableTile[];
+  damageTexts?: DamageTextState[];
+  hitEffects?: HitEffectState[];
+  muzzleFlashes?: MuzzleFlashState[];
+  slidingUnits?: Map<string, { dx: number; dy: number }>;
+  dyingUnits?: Set<string>;
+  shake?: boolean;
+  zoomLevel?: number;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
@@ -54,7 +78,7 @@ export default function Board3DSpike({
         <color attach="background" args={['#09090b']} />
         <hemisphereLight args={['#cbd5e1', '#0b1120', 0.9]} />
         <directionalLight position={[6, 14, 8]} intensity={1.1} />
-        <CameraRig />
+        <CameraRig shake={shake} zoomLevel={zoomLevel} />
         <Tiles3D
           map={map}
           onPick={(coord) => {
@@ -62,8 +86,13 @@ export default function Board3DSpike({
             onPick?.(coord);
           }}
         />
-        <Units3D units={unitList} />
+        <Units3D units={unitList} slidingUnits={slidingUnits} dyingUnits={dyingUnits} />
         <Overlays3D selected={selected} reachable={reachableTiles} />
+        <Effects3D
+          damageTexts={damageTexts}
+          hitEffects={hitEffects}
+          muzzleFlashes={muzzleFlashes}
+        />
       </Canvas>
 
       {/* Overlay HUD (plain DOM, outside the Canvas) */}

@@ -247,7 +247,7 @@ export default function Game({
     }
     return 'sector_alpha';
   });
-  const [mode, setMode] = useState<'deploy' | 'play'>('deploy');
+  const [mode, setMode] = useState<'deploy' | 'play' | 'finished'>('deploy');
   const [showBriefing, setShowBriefing] = useState<boolean>(!!campaignMissionId);
 
   useEffect(() => {
@@ -5772,6 +5772,13 @@ export default function Game({
                         units={finalUnits}
                         selectedUnitId={selectedUnitId}
                         reachableTiles={reachableTiles}
+                        damageTexts={damageTexts}
+                        hitEffects={hitEffects}
+                        muzzleFlashes={muzzleFlashes}
+                        slidingUnits={slidingUnits}
+                        dyingUnits={dyingUnits}
+                        shake={shake}
+                        zoomLevel={zoomLevel}
                         onPick={(coord) => handleCellClick(coord.x, coord.y)}
                         onClose={() => setShow3DSpike(false)}
                       />

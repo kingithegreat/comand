@@ -1,6 +1,11 @@
 import React, { Suspense } from 'react';
 import type { GridMap, Unit } from '../types';
 import type { ReachableTile } from './interaction';
+import type {
+  DamageTextState,
+  HitEffectState,
+  MuzzleFlashState,
+} from './effectsMapping';
 
 /**
  * Lazy-load the entire Three.js scene so it is code-split into its own async
@@ -14,6 +19,13 @@ export default function Board3DLazy({
   units,
   selectedUnitId,
   reachableTiles,
+  damageTexts,
+  hitEffects,
+  muzzleFlashes,
+  slidingUnits,
+  dyingUnits,
+  shake,
+  zoomLevel,
   onPick,
   onClose,
 }: {
@@ -21,6 +33,13 @@ export default function Board3DLazy({
   units?: Unit[];
   selectedUnitId?: string | null;
   reachableTiles?: ReachableTile[];
+  damageTexts?: DamageTextState[];
+  hitEffects?: HitEffectState[];
+  muzzleFlashes?: MuzzleFlashState[];
+  slidingUnits?: Map<string, { dx: number; dy: number }>;
+  dyingUnits?: Set<string>;
+  shake?: boolean;
+  zoomLevel?: number;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
@@ -37,6 +56,13 @@ export default function Board3DLazy({
         units={units}
         selectedUnitId={selectedUnitId}
         reachableTiles={reachableTiles}
+        damageTexts={damageTexts}
+        hitEffects={hitEffects}
+        muzzleFlashes={muzzleFlashes}
+        slidingUnits={slidingUnits}
+        dyingUnits={dyingUnits}
+        shake={shake}
+        zoomLevel={zoomLevel}
         onPick={onPick}
         onClose={onClose}
       />
