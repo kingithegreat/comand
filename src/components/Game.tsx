@@ -247,7 +247,7 @@ export default function Game({
     }
     return 'sector_alpha';
   });
-  const [mode, setMode] = useState<'deploy' | 'play'>('deploy');
+  const [mode, setMode] = useState<'deploy' | 'play' | 'finished'>('deploy');
   const [showBriefing, setShowBriefing] = useState<boolean>(!!campaignMissionId);
 
   useEffect(() => {
