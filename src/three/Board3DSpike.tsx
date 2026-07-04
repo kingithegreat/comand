@@ -5,6 +5,7 @@ import Tiles3D from './Tiles3D';
 import Units3D from './Units3D';
 import Overlays3D from './Overlays3D';
 import Effects3D from './Effects3D';
+import { themeAmbience } from './boardMapping';
 import type { ReachableTile } from './interaction';
 import type {
   DamageTextState,
@@ -45,6 +46,7 @@ export default function Board3DSpike({
   dyingUnits,
   shake,
   zoomLevel,
+  boardTheme,
   onPick,
   onClose,
 }: {
@@ -59,6 +61,8 @@ export default function Board3DSpike({
   dyingUnits?: Set<string>;
   shake?: boolean;
   zoomLevel?: number;
+  /** Equipped Armory board theme id (BOARD_THEMES), for scene ambience parity with the 2D board frame. */
+  boardTheme?: string;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
@@ -66,6 +70,7 @@ export default function Board3DSpike({
   const unitList = units ?? [];
   const selected = selectedUnitId ? unitList.find((u) => u.id === selectedUnitId) ?? null : null;
   const live = Boolean(map && map.length > 0);
+  const ambience = themeAmbience(boardTheme);
 
   return (
     <div className="fixed inset-0 z-50 bg-zinc-950">
@@ -75,8 +80,8 @@ export default function Board3DSpike({
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         style={{ position: 'absolute', inset: 0 }}
       >
-        <color attach="background" args={['#09090b']} />
-        <hemisphereLight args={['#cbd5e1', '#0b1120', 0.9]} />
+        <color attach="background" args={[ambience.background]} />
+        <hemisphereLight args={[ambience.hemisphereSky, ambience.hemisphereGround, 0.9]} />
         <directionalLight position={[6, 14, 8]} intensity={1.1} />
         <CameraRig shake={shake} zoomLevel={zoomLevel} />
         <Tiles3D

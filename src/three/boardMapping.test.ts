@@ -9,6 +9,7 @@ import {
   teamColor,
   unitBillboardY,
   tileTopY,
+  themeAmbience,
   FLOOR_HEIGHT,
 } from './boardMapping.ts';
 
@@ -67,5 +68,23 @@ assert.ok(unitBillboardY(1.4) > FLOOR_HEIGHT / 2, 'billboard rests above floor')
 assert.equal(tileTopY('wall'), 0.5, 'wall top is height/2');
 assert.equal(tileTopY('floor'), FLOOR_HEIGHT / 2, 'floor top is height/2');
 ok('seating');
+
+// --- theme ambience: every Armory theme id maps to a distinct scene tint ---
+const THEME_IDS = ['default', 'arctic', 'volcanic', 'neon', 'desert', 'jungle'] as const;
+const seenBackgrounds = new Set<string>();
+for (const id of THEME_IDS) {
+  const a = themeAmbience(id);
+  assert.match(a.background, /^#[0-9a-f]{6}$/, `${id} background is a hex color`);
+  assert.match(a.hemisphereSky, /^#[0-9a-f]{6}$/, `${id} sky is a hex color`);
+  assert.match(a.hemisphereGround, /^#[0-9a-f]{6}$/, `${id} ground is a hex color`);
+  seenBackgrounds.add(a.background);
+}
+assert.equal(seenBackgrounds.size, THEME_IDS.length, 'every theme has a distinct background');
+ok('theme-ambience-known');
+
+// --- unknown/missing theme ids fail safe to 'default', never throw ---
+assert.deepEqual(themeAmbience('not-a-real-theme'), themeAmbience('default'), 'unknown theme falls back to default');
+assert.deepEqual(themeAmbience(undefined), themeAmbience('default'), 'missing theme falls back to default');
+ok('theme-ambience-failsafe');
 
 console.log(`boardMapping: ${n} assertion groups passed`);
