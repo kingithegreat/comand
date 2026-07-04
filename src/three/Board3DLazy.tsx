@@ -26,6 +26,7 @@ export default function Board3DLazy({
   dyingUnits,
   shake,
   zoomLevel,
+  boardTheme,
   onPick,
   onClose,
 }: {
@@ -40,6 +41,8 @@ export default function Board3DLazy({
   dyingUnits?: Set<string>;
   shake?: boolean;
   zoomLevel?: number;
+  /** Equipped Armory board theme id (BOARD_THEMES), for scene ambience parity with the 2D board frame. */
+  boardTheme?: string;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
 }) {
@@ -63,6 +66,7 @@ export default function Board3DLazy({
         dyingUnits={dyingUnits}
         shake={shake}
         zoomLevel={zoomLevel}
+        boardTheme={boardTheme}
         onPick={onPick}
         onClose={onClose}
       />

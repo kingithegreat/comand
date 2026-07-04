@@ -5804,6 +5804,7 @@ export default function Game({
                         dyingUnits={dyingUnits}
                         shake={shake}
                         zoomLevel={zoomLevel}
+                        boardTheme={boardTheme}
                         onPick={(coord) => handleCellClick(coord.x, coord.y)}
                         onClose={() => setShow3DSpike(false)}
                       />

@@ -62,6 +62,36 @@ export function teamColor(team: Team): string {
   return team === 'player' ? '#38bdf8' /* sky-400 */ : '#a855f7' /* purple-500 */;
 }
 
+export interface ThemeAmbience {
+  /** Scene background, echoes the 2D board frame's bg-* class for this theme. */
+  background: string;
+  /** Hemisphere light sky color — the theme's warm/cool cast on lit surfaces. */
+  hemisphereSky: string;
+  /** Hemisphere light ground color — echoes the 2D frame's border-* accent. */
+  hemisphereGround: string;
+}
+
+const THEME_AMBIENCE: Record<string, ThemeAmbience> = {
+  default: { background: '#09090b', hemisphereSky: '#cbd5e1', hemisphereGround: '#0b1120' }, // Standard Ops
+  arctic: { background: '#020617', hemisphereSky: '#e0f2fe', hemisphereGround: '#083344' }, // Arctic Outpost — slate-950 / cyan cast
+  volcanic: { background: '#0c0a09', hemisphereSky: '#fee2e2', hemisphereGround: '#450a0a' }, // Volcanic Rift — stone-950 / red cast
+  neon: { background: '#2e1065', hemisphereSky: '#f5d0fe', hemisphereGround: '#4a044e' }, // Neon District — violet-950 / fuchsia cast
+  desert: { background: '#451a03', hemisphereSky: '#fef3c7', hemisphereGround: '#78350f' }, // Sandstorm — amber-950 / amber cast
+  jungle: { background: '#022c22', hemisphereSky: '#bbf7d0', hemisphereGround: '#052e16' }, // Deep Canopy — emerald-950 / green cast
+};
+
+/**
+ * Board-theme -> 3D scene ambience (background + hemisphere light tint), so
+ * the 3D board reflects the equipped Armory theme instead of always looking
+ * like "Standard Ops". Mirrors the 2D board's frame theming (Game.tsx's
+ * BOARD_THEMES switch) rather than re-coloring every tile, since the 2D board
+ * itself only themes the frame, not individual tiles. Unknown/missing theme
+ * ids fail safe to 'default'.
+ */
+export function themeAmbience(themeId?: string): ThemeAmbience {
+  return THEME_AMBIENCE[themeId ?? 'default'] ?? THEME_AMBIENCE.default;
+}
+
 /**
  * World-space Y (vertical center) at which a unit billboard should sit so its
  * base rests just above the tile it stands on. Units only occupy floor/hazard
