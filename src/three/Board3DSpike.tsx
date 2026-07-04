@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { useEffect, useState } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import CameraRig from './CameraRig';
 import Tiles3D from './Tiles3D';
 import Units3D from './Units3D';
@@ -13,6 +13,37 @@ import type {
   MuzzleFlashState,
 } from './effectsMapping';
 import type { GridMap, Unit } from '../types';
+
+/**
+ * Mobile GPUs reclaim the WebGL context under memory pressure or when the
+ * TWA/webview backgrounds — this is a real, common occurrence, not an edge
+ * case (§10/§15 of the rebuild plan). Left unhandled, the canvas just goes
+ * black with no way back in. `webglcontextlost` must call preventDefault()
+ * to even have a chance at `webglcontextrestored` firing later; since a torn
+ * context can't be trusted mid-match, we don't try to resume it — fall back
+ * to the 2D board (which was never affected) and let the player reopen 3D.
+ */
+function ContextLossWatcher({ onContextLost }: { onContextLost?: () => void }) {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleLost = (e: Event) => {
+      e.preventDefault();
+      console.warn('[3D board] WebGL context lost — falling back to 2D.');
+      onContextLost?.();
+    };
+    const handleRestored = () => {
+      console.info('[3D board] WebGL context restored (2D fallback already active).');
+    };
+    canvas.addEventListener('webglcontextlost', handleLost, false);
+    canvas.addEventListener('webglcontextrestored', handleRestored, false);
+    return () => {
+      canvas.removeEventListener('webglcontextlost', handleLost);
+      canvas.removeEventListener('webglcontextrestored', handleRestored);
+    };
+  }, [gl, onContextLost]);
+  return null;
+}
 
 /**
  * 3D board overlay (React Three Fiber).
@@ -49,6 +80,7 @@ export default function Board3DSpike({
   boardTheme,
   onPick,
   onClose,
+  onContextLost,
 }: {
   map?: GridMap;
   units?: Unit[];
@@ -65,6 +97,8 @@ export default function Board3DSpike({
   boardTheme?: string;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
+  /** Fired if the WebGL context is lost (mobile backgrounding/GPU pressure) — caller should fall back to 2D. */
+  onContextLost?: () => void;
 }) {
   const [lastPick, setLastPick] = useState<{ x: number; y: number } | null>(null);
   const unitList = units ?? [];
@@ -83,6 +117,7 @@ export default function Board3DSpike({
         <color attach="background" args={[ambience.background]} />
         <hemisphereLight args={[ambience.hemisphereSky, ambience.hemisphereGround, 0.9]} />
         <directionalLight position={[6, 14, 8]} intensity={1.1} />
+        <ContextLossWatcher onContextLost={onContextLost} />
         <CameraRig shake={shake} zoomLevel={zoomLevel} />
         <Tiles3D
           map={map}

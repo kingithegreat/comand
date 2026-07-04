@@ -29,6 +29,7 @@ export default function Board3DLazy({
   boardTheme,
   onPick,
   onClose,
+  onContextLost,
 }: {
   map?: GridMap;
   units?: Unit[];
@@ -45,6 +46,8 @@ export default function Board3DLazy({
   boardTheme?: string;
   onPick?: (coord: { x: number; y: number }) => void;
   onClose?: () => void;
+  /** Fired if the WebGL context is lost (mobile backgrounding/GPU pressure) — caller should fall back to 2D. */
+  onContextLost?: () => void;
 }) {
   return (
     <Suspense
@@ -69,6 +72,7 @@ export default function Board3DLazy({
         boardTheme={boardTheme}
         onPick={onPick}
         onClose={onClose}
+        onContextLost={onContextLost}
       />
     </Suspense>
   );

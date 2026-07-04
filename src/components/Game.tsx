@@ -461,6 +461,13 @@ export default function Game({
   });
   // feat/3d-board-spike: additive 3D board overlay (does not affect 2D/iso state)
   const [show3DSpike, setShow3DSpike] = useState(false);
+  // Phase 6: WebGL context loss (mobile backgrounding, GPU pressure) falls back to 2D + a transient toast.
+  const [show3DContextLostToast, setShow3DContextLostToast] = useState(false);
+  const handle3DContextLost = () => {
+    setShow3DSpike(false);
+    setShow3DContextLostToast(true);
+    setTimeout(() => setShow3DContextLostToast(false), 4000);
+  };
 
   // Feature: Camera Follow AI
   const [aiHighlightTile, setAiHighlightTile] = useState<{ x: number; y: number } | null>(null);
@@ -5807,7 +5814,15 @@ export default function Game({
                         boardTheme={boardTheme}
                         onPick={(coord) => handleCellClick(coord.x, coord.y)}
                         onClose={() => setShow3DSpike(false)}
+                        onContextLost={handle3DContextLost}
                       />
+                    )}
+                    {show3DContextLostToast && (
+                      <div className="fixed inset-x-0 top-4 z-[100] flex justify-center pointer-events-none">
+                        <div className="pointer-events-auto rounded-lg border border-amber-500/50 bg-zinc-900/90 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-300 backdrop-blur shadow-lg">
+                          3D view lost (graphics reset) — back to 2D
+                        </div>
+                      </div>
                     )}
                     {/* Isometric View Toggle */}
                     <button
