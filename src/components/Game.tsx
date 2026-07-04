@@ -3511,6 +3511,31 @@ export default function Game({
     });
   };
 
+  // Fog-of-war + Assassin-invisibility gate for a single unit, from the
+  // current viewer's POV. Mirrors the per-cell logic renderGrid uses below,
+  // so the 3D board overlay (which has no per-tile loop of its own) can
+  // filter the unit list it's handed instead of leaking hidden units.
+  const isUnitVisibleToViewer = (u: Unit): boolean => {
+    const viewerTeam = gameMode === 'online' ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player');
+    const isFriendly = u.team === viewerTeam;
+    if (isFriendly || !isFogOfWarActive) return true;
+
+    let visible = isTileVisible(u.x, u.y);
+
+    // Assassin Passive: Invisibility in Smog unless a friendly is within detect range (4 for Scouts, 1 otherwise)
+    if (visible && u.class.className === 'Assassin' && isSmogTheme) {
+      const friendlyUnits = finalUnits.filter(f => f.team === viewerTeam && f.hp > 0);
+      const adjacentToFriendly = friendlyUnits.some(f => {
+        const dist = Math.abs(f.x - u.x) + Math.abs(f.y - u.y);
+        const detectRange = f.class.className === 'Scout' ? 4 : 1;
+        return dist <= detectRange;
+      });
+      if (!adjacentToFriendly) visible = false;
+    }
+
+    return visible;
+  };
+
   const renderGrid = () => {
     if (mapEnvironment.length === 0) return null;
 
@@ -3521,7 +3546,7 @@ export default function Game({
         let visible = isTileVisible(x, y);
         const rawUnit = finalUnits.find(u => u.x === x && u.y === y);
         const isFriendly = rawUnit && rawUnit.team === (gameMode === 'online' ? (myTeam || 'player') : (gameMode === 'local_p2p' ? activeTeam : 'player'));
-        
+
         // Assassin Passive: Invisibility in Smog unless distance to a friendly unit is 1 (4 for Scouts)
         if (rawUnit && rawUnit.class.className === 'Assassin' && !isFriendly && isSmogTheme) {
            let adjacentToFriendly = false;
@@ -4654,7 +4679,7 @@ export default function Game({
 
       {/* Feature: Minimap */}
       {showMinimap && mode === 'play' && mapEnvironment.length > 0 && (
-        <div className="absolute bottom-2 right-2 z-[45] pointer-events-auto">
+        <div className="absolute bottom-2 right-2 z-[55] pointer-events-auto">
           <div className="bg-black/80 border border-zinc-700/60 rounded-lg p-1 backdrop-blur-sm shadow-lg">
             <div className="grid gap-0" style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 4px)` }}>
               {Array.from({ length: GRID_SIZE }).map((_, row) =>
@@ -5769,7 +5794,7 @@ export default function Game({
                     {show3DSpike && (
                       <Board3DLazy
                         map={mapEnvironment}
-                        units={finalUnits}
+                        units={finalUnits.filter(isUnitVisibleToViewer)}
                         selectedUnitId={selectedUnitId}
                         reachableTiles={reachableTiles}
                         damageTexts={damageTexts}
