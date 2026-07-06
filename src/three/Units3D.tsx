@@ -1,9 +1,9 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Billboard } from '@react-three/drei';
-import type { Group, Mesh, MeshBasicMaterial } from 'three';
+import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { gridToWorld } from './gridToWorld';
-import { teamColor, unitBillboardY, FLOOR_HEIGHT } from './boardMapping';
+import { teamColor, FLOOR_HEIGHT } from './boardMapping';
+import { archetypeSilhouette } from './archetypeSilhouette';
 import {
   slideWorldDelta,
   slideProgress,
@@ -13,21 +13,25 @@ import {
 import type { Unit } from '../types';
 
 /**
- * Phase 2 — team-tinted unit billboards.
+ * Phase 2 — team-tinted unit tokens.
  * Phase 4 — slide + death animations driven by the same Game.tsx state the 2D
  * board uses (`slidingUnits` map of grid deltas, `dyingUnits` id set).
+ * Phase 6 (visual upgrade, optional) — low-poly per-archetype bodies replace
+ * the previous flat billboard: every unit now renders a real 3D torso + head
+ * + archetype-specific accessory shapes (see archetypeSilhouette.ts), still
+ * team-tinted, still sitting on the same ground ring that marks its tile.
  *
- * Renders one camera-facing token per unit at its real grid tile, tinted sky
- * (player) or purple (enemy) to match the 2D board. Each token is a `Billboard`
- * (always faces the camera) holding a rounded standee plane over a dark
- * backing plate, plus a flat ground ring that marks exactly which tile the unit
- * occupies. Dead units (hp <= 0) are skipped UNLESS they are mid death-dissolve.
- * Pure presentational layer — reads unit x/y/team/hp only, never mutates game
- * state. frameloop="demand": animations call invalidate() until they finish.
+ * Renders one low-poly body per unit at its real grid tile, tinted sky
+ * (player) or purple (enemy) to match the 2D board, plus a flat ground ring
+ * that marks exactly which tile the unit occupies. Dead units (hp <= 0) are
+ * skipped UNLESS they are mid death-dissolve. Pure presentational layer —
+ * reads unit x/y/team/hp/class only, never mutates game state.
+ * frameloop="demand": animations call invalidate() until they finish.
  */
 
-const TOKEN_W = 0.62;
-const TOKEN_H = 1.25;
+const GROUND_Y = FLOOR_HEIGHT / 2; // top surface of a floor tile — where feet rest
+
+type BodyMaterial = MeshBasicMaterial | MeshStandardMaterial;
 
 interface Units3DProps {
   units: Unit[];
@@ -47,10 +51,13 @@ function UnitToken({
   dying: boolean;
 }) {
   const color = teamColor(unit.team);
+  const spec = useMemo(() => archetypeSilhouette(unit.class.archetype), [unit.class.archetype]);
   const [wx, , wz] = gridToWorld(unit.x, unit.y, 0);
-  const y = unitBillboardY(TOKEN_H);
   const groupRef = useRef<Group>(null);
-  const matRefs = useRef<(MeshBasicMaterial | null)[]>([null, null, null, null]);
+  // Sized for: torso + head + ground ring + N accessories, filled by index below.
+  const matRefs = useRef<(BodyMaterial | null)[]>(
+    Array(3 + spec.accessories.length).fill(null),
+  );
   const born = useRef<{ slide?: number; dying?: number }>({});
   if (slide && born.current.slide === undefined) born.current.slide = performance.now();
   if (!slide) born.current.slide = undefined;
@@ -88,37 +95,53 @@ function UnitToken({
     if (active) state.invalidate();
   });
 
-  const setMat = (i: number) => (m: MeshBasicMaterial | null) => {
+  const setMat = (i: number) => (m: BodyMaterial | null) => {
     matRefs.current[i] = m;
     if (m && m.userData.baseOpacity === undefined) m.userData.baseOpacity = m.opacity;
   };
 
+  const torsoCenterY = GROUND_Y + spec.torso[1] / 2;
+  const headCenterY = GROUND_Y + spec.torso[1] + spec.headRadius;
+
   return (
     <group ref={groupRef} position={[wx, 0, wz]}>
-      {/* Standee token — always faces the camera. */}
-      <Billboard position={[0, y, 0]}>
-        {/* dark backing plate for contrast/outline */}
-        <mesh position={[0, 0, -0.01]}>
-          <planeGeometry args={[TOKEN_W + 0.12, TOKEN_H + 0.12]} />
-          <meshBasicMaterial ref={setMat(0)} color="#0b0f14" transparent opacity={0.85} />
-        </mesh>
-        {/* team-tinted face */}
-        <mesh>
-          <planeGeometry args={[TOKEN_W, TOKEN_H]} />
-          <meshBasicMaterial ref={setMat(1)} color={color} toneMapped={false} />
-        </mesh>
-        {/* head dot for a readable "unit" silhouette */}
-        <mesh position={[0, TOKEN_H / 2 - 0.16, 0.01]}>
-          <circleGeometry args={[0.16, 24]} />
-          <meshBasicMaterial ref={setMat(2)} color="#0b0f14" toneMapped={false} />
-        </mesh>
-      </Billboard>
+      {/* Low-poly body: torso box + head sphere, both lit (matches Tiles3D's material) so units read as part of the same 3D scene rather than a flat sprite. */}
+      <mesh position={[0, torsoCenterY, 0]}>
+        <boxGeometry args={spec.torso} />
+        <meshStandardMaterial ref={setMat(0)} color={color} roughness={0.85} metalness={0.05} />
+      </mesh>
+      <mesh position={[0, headCenterY, 0]}>
+        <sphereGeometry args={[spec.headRadius, 12, 10]} />
+        <meshStandardMaterial ref={setMat(1)} color={color} roughness={0.85} metalness={0.05} />
+      </mesh>
 
-      {/* Ground ring on the occupied tile (flat on the board). */}
+      {/* Archetype-specific accessories — the actual silhouette differentiator (see archetypeSilhouette.ts). */}
+      {spec.accessories.map((part, i) => {
+        const pos: [number, number, number] = [part.position[0], GROUND_Y + part.position[1], part.position[2]];
+        const rot = part.rotation ?? [0, 0, 0];
+        const geometry =
+          part.kind === 'box' ? (
+            <boxGeometry args={part.size} />
+          ) : part.kind === 'sphere' ? (
+            <sphereGeometry args={[part.size[0], 10, 8]} />
+          ) : part.kind === 'cone' ? (
+            <coneGeometry args={[part.size[0], part.size[1], 10]} />
+          ) : (
+            <cylinderGeometry args={[part.size[0], part.size[0], part.size[1], 10]} />
+          );
+        return (
+          <mesh key={i} position={pos} rotation={rot}>
+            {geometry}
+            <meshStandardMaterial ref={setMat(2 + i)} color={color} roughness={0.85} metalness={0.05} />
+          </mesh>
+        );
+      })}
+
+      {/* Ground ring on the occupied tile (flat, unlit — unchanged from the previous version). */}
       <mesh position={[0, FLOOR_HEIGHT + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.3, 0.42, 28]} />
         <meshBasicMaterial
-          ref={setMat(3)}
+          ref={setMat(2 + spec.accessories.length)}
           color={color}
           toneMapped={false}
           transparent
