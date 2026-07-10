@@ -460,4 +460,26 @@ html, body, #root {
   .grid > div {
     min-height: 20px;
   }
+  /* Native-feel press feedback — hover glows don't exist on touch,
+     so every button visibly responds to the finger instead. */
+  button:active,
+  [role="button"]:active,
+  a:active {
+    transform: scale(0.97);
+    filter: brightness(1.15);
+    transition: transform 0.08s ease, filter 0.08s ease;
+  }
+}
+
+/* ===== TOUCH / TWA POLISH ===== */
+html {
+  /* Kill the grey tap flash and double-tap zoom delay on Android */
+  -webkit-tap-highlight-color: transparent;
+}
+button, [role="button"], a, input[type="range"] {
+  touch-action: manipulation;
+}
+body {
+  /* No pull-to-refresh or scroll-chaining mid-match inside the TWA */
+  overscroll-behavior-y: none;
 }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Monochrome (Android 13+ themed icon): white marks on transparent -->
+  <g fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="square">
+    <path d="M118,162 L118,118 L162,118"/>
+    <path d="M350,118 L394,118 L394,162"/>
+    <path d="M394,350 L394,394 L350,394"/>
+    <path d="M162,394 L118,394 L118,350"/>
+  </g>
+  <circle cx="256" cy="256" r="92" fill="none" stroke="#ffffff" stroke-width="14"/>
+  <circle cx="256" cy="256" r="22" fill="#ffffff"/>
+  <g stroke="#ffffff" stroke-width="14" stroke-linecap="round">
+    <line x1="256" y1="128" x2="256" y2="176"/>
+    <line x1="256" y1="336" x2="256" y2="384"/>
+    <line x1="128" y1="256" x2="176" y2="256"/>
+    <line x1="336" y1="256" x2="384" y2="256"/>
+  </g>
+</svg>

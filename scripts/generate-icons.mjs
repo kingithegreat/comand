@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,50 +7,60 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = resolve(__dirname, '..', 'public');
 
 async function generate() {
-  const svg192 = readFileSync(resolve(publicDir, 'icon-192.svg'));
   const svg512 = readFileSync(resolve(publicDir, 'icon-512.svg'));
+  const svgMono = readFileSync(resolve(publicDir, 'icon-mono.svg'));
 
-  await sharp(svg192)
-    .resize(192, 192)
-    .png()
-    .toFile(resolve(publicDir, 'icon-192.png'));
+  // Full-bleed launcher icons — same art serves `any` and `maskable`
+  // (all marks sit inside the 80% maskable safe zone; background runs edge to edge).
+  await sharp(svg512).resize(512, 512).png().toFile(resolve(publicDir, 'icon-512.png'));
+  await sharp(svg512).resize(192, 192).png().toFile(resolve(publicDir, 'icon-192.png'));
 
-  await sharp(svg512)
-    .resize(512, 512)
-    .png()
-    .toFile(resolve(publicDir, 'icon-512.png'));
+  // Monochrome for Android 13+ themed icons
+  await sharp(svgMono).resize(512, 512).png().toFile(resolve(publicDir, 'icon-mono-512.png'));
 
-  // Feature graphic for Play Store (1024x500)
+  // Play Store feature graphic (1024x500) — amber identity to match the game UI
   const featureSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500">
-    <rect width="1024" height="500" fill="#09090b"/>
-    <rect x="16" y="16" width="992" height="468" rx="24" fill="none" stroke="#0ea5e9" stroke-width="2" opacity="0.2"/>
-    <g opacity="0.06" stroke="#0ea5e9" stroke-width="1">
+    <defs>
+      <radialGradient id="bg" cx="50%" cy="40%" r="90%">
+        <stop offset="0%" stop-color="#18181b"/>
+        <stop offset="100%" stop-color="#09090b"/>
+      </radialGradient>
+      <linearGradient id="amber" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fde68a"/>
+        <stop offset="50%" stop-color="#fbbf24"/>
+        <stop offset="100%" stop-color="#f97316"/>
+      </linearGradient>
+    </defs>
+    <rect width="1024" height="500" fill="url(#bg)"/>
+    <g opacity="0.06" stroke="#fbbf24" stroke-width="1">
       ${Array.from({length: 20}, (_, i) => `<line x1="${i * 52 + 26}" y1="0" x2="${i * 52 + 26}" y2="500"/>`).join('')}
       ${Array.from({length: 10}, (_, i) => `<line x1="0" y1="${i * 52 + 26}" x2="1024" y2="${i * 52 + 26}"/>`).join('')}
     </g>
-    <circle cx="320" cy="220" r="90" fill="none" stroke="#0ea5e9" stroke-width="5"/>
-    <circle cx="320" cy="220" r="20" fill="#0ea5e9"/>
-    <line x1="320" y1="115" x2="320" y2="155" stroke="#0ea5e9" stroke-width="5"/>
-    <line x1="320" y1="285" x2="320" y2="325" stroke="#0ea5e9" stroke-width="5"/>
-    <line x1="215" y1="220" x2="255" y2="220" stroke="#0ea5e9" stroke-width="5"/>
-    <line x1="385" y1="220" x2="425" y2="220" stroke="#0ea5e9" stroke-width="5"/>
-    <path d="M200,120 L200,90 L230,90" fill="none" stroke="#0ea5e9" stroke-width="3" opacity="0.4"/>
-    <path d="M440,120 L440,90 L410,90" fill="none" stroke="#0ea5e9" stroke-width="3" opacity="0.4"/>
-    <path d="M200,320 L200,350 L230,350" fill="none" stroke="#0ea5e9" stroke-width="3" opacity="0.4"/>
-    <path d="M440,320 L440,350 L410,350" fill="none" stroke="#0ea5e9" stroke-width="3" opacity="0.4"/>
-    <text x="660" y="200" text-anchor="middle" fill="#e4e4e7" font-family="monospace" font-size="72" font-weight="900" letter-spacing="8">TACTICAL</text>
-    <text x="660" y="280" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="72" font-weight="900" letter-spacing="8">COMMAND</text>
-    <text x="660" y="340" text-anchor="middle" fill="#a1a1aa" font-family="monospace" font-size="20" letter-spacing="3">TURN-BASED TACTICAL COMBAT</text>
-    <rect x="520" y="380" width="280" height="48" rx="8" fill="#0ea5e9" opacity="0.15"/>
-    <text x="660" y="412" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="18" font-weight="700" letter-spacing="2">BUILD • DEPLOY • CONQUER</text>
+    <!-- Reticle, left side -->
+    <circle cx="210" cy="250" r="110" fill="none" stroke="url(#amber)" stroke-width="12"/>
+    <circle cx="210" cy="250" r="62" fill="none" stroke="#fbbf24" stroke-width="4" opacity="0.4"/>
+    <circle cx="210" cy="250" r="24" fill="url(#amber)"/>
+    <g stroke="url(#amber)" stroke-width="12" stroke-linecap="round">
+      <line x1="210" y1="98" x2="210" y2="152"/>
+      <line x1="210" y1="348" x2="210" y2="402"/>
+      <line x1="58" y1="250" x2="112" y2="250"/>
+      <line x1="308" y1="250" x2="362" y2="250"/>
+    </g>
+    <!-- Corner brackets -->
+    <g fill="none" stroke="#fbbf24" stroke-width="4" opacity="0.5" stroke-linecap="square">
+      <path d="M40,80 L40,40 L80,40"/>
+      <path d="M984,80 L984,40 L944,40"/>
+      <path d="M40,420 L40,460 L80,460"/>
+      <path d="M984,420 L984,460 L944,460"/>
+    </g>
+    <!-- Wordmark -->
+    <text x="430" y="235" fill="#f4f4f5" font-family="monospace" font-size="76" font-weight="800" letter-spacing="14">TACTICAL</text>
+    <text x="430" y="320" fill="#fbbf24" font-family="monospace" font-size="76" font-weight="800" letter-spacing="14">COMMAND</text>
+    <text x="434" y="378" fill="#a1a1aa" font-family="monospace" font-size="24" letter-spacing="8">OUTTHINK. OUTFLANK. OUTLAST.</text>
   </svg>`;
+  await sharp(Buffer.from(featureSvg)).resize(1024, 500).png().toFile(resolve(publicDir, 'feature-graphic.png'));
 
-  await sharp(Buffer.from(featureSvg))
-    .resize(1024, 500)
-    .png()
-    .toFile(resolve(publicDir, 'feature-graphic.png'));
-
-  console.log('Generated: icon-192.png, icon-512.png, feature-graphic.png');
+  console.log('Icons + feature graphic generated.');
 }
 
-generate().catch(console.error);
+generate().catch((err) => { console.error(err); process.exit(1); });
