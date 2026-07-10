@@ -23,7 +23,7 @@
   "appVersionName": "1.0.0",
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://gen-lang-client-0969027846.web.app/manifest.json",
+  "webManifestUrl": "https://gen-lang-client-0969027846.web.app/manifest.webmanifest",
   "fallbackType": "customtabs",
   "features": {},
   "alphaDependency": {
@@ -33,6 +33,6 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://gen-lang-client-0969027846.web.app/",
-  "minSdkVersion": 19,
+  "minSdkVersion": 21,
   "orientation": "default"
 }
