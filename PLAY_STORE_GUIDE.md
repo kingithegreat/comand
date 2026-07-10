@@ -1,5 +1,25 @@
 # Play Store Deployment Guide (TWA)
 
+## 🚀 Release Night Checklist (2026-07-11)
+
+Everything code-side is done and merged. Your remaining steps, in order:
+
+1. **Deploy the fresh build** (new icons/splash must be live before wrapping):
+   `npm ci && npm run build && firebase deploy --only hosting`
+2. **Generate the signing keystore** (once, keep it forever):
+   `keytool -genkeypair -alias tacticalcommand -keyalg RSA -keysize 2048 -validity 10000 -keystore tacticalcommand.keystore`
+3. **Get the SHA-256** (`keytool -list -v -keystore tacticalcommand.keystore -alias tacticalcommand`), paste it into `public/.well-known/assetlinks.json` replacing `YOUR_SHA256_FINGERPRINT_HERE`, then rebuild + redeploy hosting. Without this the app shows a browser URL bar.
+4. **Build the AAB**: `npx bubblewrap init --manifest="https://gen-lang-client-0969027846.web.app/manifest.json"` then `npx bubblewrap build`
+5. **Test the APK on your phone** — check the launcher icon (new amber reticle), boot splash, and that no URL bar appears.
+6. **Play Console**: upload `app-release-bundle.aab`, use `public/feature-graphic.png` (1024×500) for the listing, and grab 4–8 phone screenshots (main menu, squad select, 3D board mid-battle, victory screen).
+
+Store listing copy suggestion:
+> **Short:** Turn-based tactics. Build a squad, outsmart the enemy.
+> **Full:** Command your squad in fast turn-based tactical battles. Pick from unique unit archetypes, use fog of war and capture-the-flag mutators, fight the campaign solo or battle friends online with room codes. A full 3D battlefield in your pocket.
+
+---
+
+
 Your app is wrapped as a Trusted Web Activity — Chrome renders your PWA full-screen inside an Android app shell. No WebView, no native code needed.
 
 ## Prerequisites

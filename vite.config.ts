@@ -45,7 +45,7 @@ export default defineConfig(() => {
           display: 'standalone',
           orientation: 'any',
           background_color: '#09090b',
-          theme_color: '#0ea5e9',
+          theme_color: '#09090b',
           categories: ['games', 'entertainment'],
           icons: [
             {
@@ -71,6 +71,12 @@ export default defineConfig(() => {
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
+            },
+            {
+              src: '/icon-mono-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'monochrome',
             },
           ],
           prefer_related_applications: false,

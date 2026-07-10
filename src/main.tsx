@@ -11,3 +11,12 @@ createRoot(document.getElementById('root')!).render(
     </AudioProvider>
   </StrictMode>,
 );
+
+// Fade out the static boot splash once React has taken over.
+const bootSplash = document.getElementById('boot-splash');
+if (bootSplash) {
+  requestAnimationFrame(() => {
+    bootSplash.classList.add('boot-done');
+    window.setTimeout(() => bootSplash.remove(), 450);
+  });
+}
