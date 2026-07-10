@@ -492,3 +492,44 @@ body {
   /* No pull-to-refresh or scroll-chaining mid-match inside the TWA */
   overscroll-behavior-y: none;
 }
+
+/* ===== MAIN MENU ENTRANCE CHOREOGRAPHY ===== */
+@keyframes menu-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.menu-stagger > * {
+  animation: menu-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+.menu-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.menu-stagger > *:nth-child(2) { animation-delay: 0.13s; }
+.menu-stagger > *:nth-child(3) { animation-delay: 0.21s; }
+.menu-stagger > *:nth-child(4) { animation-delay: 0.29s; }
+.menu-stagger > *:nth-child(5) { animation-delay: 0.37s; }
+.menu-stagger > *:nth-child(6) { animation-delay: 0.45s; }
+.menu-stagger > *:nth-child(7) { animation-delay: 0.53s; }
+.menu-stagger > *:nth-child(n+8) { animation-delay: 0.6s; }
+
+/* ===== WORDMARK SHEEN (COMMAND title) ===== */
+@keyframes title-sheen-slide {
+  0%, 55% { background-position: 200% center; }
+  85%, 100% { background-position: 0% center; }
+}
+.title-sheen {
+  background-image: linear-gradient(
+    100deg,
+    #fcd34d 0%,
+    #fbbf24 28%,
+    #fff7e0 46%,
+    #fbbf24 54%,
+    #f97316 100%
+  );
+  background-size: 200% auto;
+  background-position: 0% center;
+  animation: title-sheen-slide 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-stagger > * { animation: none; }
+  .title-sheen { animation: none; background-position: 0% center; }
+}

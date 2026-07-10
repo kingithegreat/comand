@@ -1113,7 +1113,7 @@ export default function App() {
         <div className="absolute top-[80%] left-[25%] w-1 h-1 rounded-full bg-emerald-500/20 animate-particle-slow" style={{animationDelay: '2s'}} />
       </div>
 
-      <div className="w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
+      <div className="menu-stagger w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
          {isOffline && (
            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs font-mono">
              <WifiOff className="w-4 h-4 shrink-0" />
@@ -1146,10 +1146,10 @@ export default function App() {
               <Target className="w-9 h-9 text-amber-400 relative z-10 transition-transform group-hover:rotate-90 duration-700" />
            </div>
            <div>
-             <h1 className="text-5xl font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-zinc-200 via-white to-zinc-300 uppercase" style={{fontFamily: 'Orbitron, monospace'}}>
+             <h1 className="text-[clamp(1.9rem,10.5vw,3rem)] font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-zinc-200 via-white to-zinc-300 uppercase whitespace-nowrap" style={{fontFamily: 'Orbitron, monospace'}}>
                TACTICAL
              </h1>
-             <h1 className="text-5xl font-black tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 uppercase mt-[-4px] drop-shadow-[0_0_20px_rgba(251,191,36,0.3)]" style={{fontFamily: 'Orbitron, monospace'}}>
+             <h1 className="title-sheen text-[clamp(1.9rem,10.5vw,3rem)] font-black tracking-[0.2em] text-transparent bg-clip-text uppercase mt-[-4px] drop-shadow-[0_0_20px_rgba(251,191,36,0.3)] whitespace-nowrap" style={{fontFamily: 'Orbitron, monospace'}}>
                COMMAND
              </h1>
            </div>

@@ -4797,7 +4797,7 @@ export default function Game({
 
       {showHandoff && pendingTurnData && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/92 backdrop-blur-md">
-           <div className="glass-dark rounded-2xl p-10 flex flex-col items-center min-w-[320px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+           <div className="glass-dark rounded-2xl p-6 sm:p-10 flex flex-col items-center w-[min(24rem,calc(100vw-2rem))] text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
               <div className={`absolute inset-0 ${handoffTarget === 'player' ? 'bg-gradient-to-b from-sky-500/[0.04] to-transparent' : 'bg-gradient-to-b from-fuchsia-500/[0.04] to-transparent'}`} />
               <div className="relative z-10 flex flex-col items-center">
                 <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-[0.25em] mb-3">Pass device to</p>
@@ -4818,7 +4818,7 @@ export default function Game({
 
       {showForfeitConfirm && (
         <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/92 backdrop-blur-md">
-           <div className="glass-dark rounded-2xl p-8 flex flex-col items-center min-w-[320px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+           <div className="glass-dark rounded-2xl p-6 sm:p-8 flex flex-col items-center w-[min(24rem,calc(100vw-2rem))] text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
               <div className="absolute inset-0 bg-gradient-to-b from-red-500/[0.04] to-transparent" />
 
               <div className="w-14 h-14 mb-5 relative flex items-center justify-center text-red-400 z-10">
@@ -4855,7 +4855,7 @@ export default function Game({
 
       {coinFlipping && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/92 backdrop-blur-md">
-           <div className="glass-dark rounded-2xl p-10 flex flex-col items-center min-w-[340px] max-w-sm text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
+           <div className="glass-dark rounded-2xl p-6 sm:p-10 flex flex-col items-center w-[min(24rem,calc(100vw-2rem))] text-center relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)]">
               <div className="absolute inset-0 bg-gradient-to-b from-amber-500/[0.03] to-transparent" />
 
               <div className="w-28 h-28 mb-8 relative flex items-center justify-center">
