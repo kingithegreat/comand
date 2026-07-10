@@ -9,9 +9,13 @@ Everything code-side is done and merged. Your remaining steps, in order:
 2. **Generate the signing keystore** (once, keep it forever):
    `keytool -genkeypair -alias tacticalcommand -keyalg RSA -keysize 2048 -validity 10000 -keystore tacticalcommand.keystore`
 3. **Get the SHA-256** (`keytool -list -v -keystore tacticalcommand.keystore -alias tacticalcommand`), paste it into `public/.well-known/assetlinks.json` replacing `YOUR_SHA256_FINGERPRINT_HERE`, then rebuild + redeploy hosting. Without this the app shows a browser URL bar.
-4. **Build the AAB**: `npx bubblewrap init --manifest="https://gen-lang-client-0969027846.web.app/manifest.json"` then `npx bubblewrap build`
+4. **Build the AAB**: `npx @bubblewrap/cli init --manifest="https://gen-lang-client-0969027846.web.app/manifest.webmanifest"` then `npx @bubblewrap/cli build`
 5. **Test the APK on your phone** — check the launcher icon (new amber reticle), boot splash, and that no URL bar appears.
-6. **Play Console**: upload `app-release-bundle.aab`, use `public/feature-graphic.png` (1024×500) for the listing, and grab 4–8 phone screenshots (main menu, squad select, 3D board mid-battle, victory screen).
+6. **Play Console**: upload `app-release-bundle.aab`, use `public/feature-graphic.png` (1024×500) for the listing. Phone screenshots are **already generated** at `store-assets/screenshots/` (1080×1920, Play-compliant) — no need to grab them on-device. All listing copy, content-rating answers, and Data safety form answers are pre-written in `store-assets/LISTING.md`.
+7. **Required URLs** (both pages ship with the hosting deploy in step 1):
+   - Privacy policy: `https://gen-lang-client-0969027846.web.app/privacy-policy.html`
+   - Account deletion: `https://gen-lang-client-0969027846.web.app/account-deletion.html`
+   Paste the privacy URL into Store listing → Privacy policy, and the deletion URL into the Data safety form's account-deletion field.
 
 Store listing copy suggestion:
 > **Short:** Turn-based tactics. Build a squad, outsmart the enemy.
@@ -33,9 +37,9 @@ Your app is wrapped as a Trusted Web Activity — Chrome renders your PWA full-s
 ### 1. Install Bubblewrap
 
 ```bash
-npm i -g @nicksinger/nicksinger-bubblewrap-cli
+npm i -g @bubblewrap/cli
 # OR use npx:
-npx @nicksinger/nicksinger-bubblewrap-cli --help
+npx @bubblewrap/cli --help
 ```
 
 ### 2. Deploy your PWA first
@@ -50,7 +54,7 @@ Verify your PWA is live at: `https://gen-lang-client-0969027846.web.app`
 ### 3. Generate the Android project
 
 ```bash
-npx bubblewrap init --manifest="https://gen-lang-client-0969027846.web.app/manifest.json"
+npx @bubblewrap/cli init --manifest="https://gen-lang-client-0969027846.web.app/manifest.webmanifest"
 ```
 
 This reads `twa-manifest.json` and creates an Android project in the current directory.
@@ -79,7 +83,7 @@ npm run build && firebase deploy --only hosting
 ### 6. Build the APK/AAB
 
 ```bash
-npx bubblewrap build
+npx @bubblewrap/cli build
 ```
 
 This produces:
