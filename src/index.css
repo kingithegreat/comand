@@ -469,6 +469,15 @@ html, body, #root {
     filter: brightness(1.15);
     transition: transform 0.08s ease, filter 0.08s ease;
   }
+  /* Range sliders: finger-sized thumb (default is too small to grab) */
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
 }
 
 /* ===== TOUCH / TWA POLISH ===== */

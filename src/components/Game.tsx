@@ -10,6 +10,7 @@ import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc, setDoc, getDoc, increment, runTransaction } from 'firebase/firestore';
 import CombatLog, { LogMessage } from './CombatLog';
 import HUDCombatLog from './HUDCombatLog';
+import { useCoarsePointer } from '../hooks/useCoarsePointer';
 import RosterStatus from './RosterStatus';
 import SelectedUnitConsole from './SelectedUnitConsole';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
@@ -222,6 +223,7 @@ export default function Game({
   boardTheme?: string,
   playerElo?: number,
 }) {
+  const isTouch = useCoarsePointer();
   const { playSound } = useAudio();
   const isOnline = (gameMode === 'online' || gameMode === 'online_coop') && onlineMatch;
   const isHost = isOnline ? onlineMatch.hostId === userId : true;
@@ -4594,7 +4596,7 @@ export default function Game({
         return (
           <div className="bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-lg text-[10px] font-mono uppercase text-amber-400 leading-normal animate-pulse">
             <span className="font-extrabold text-black bg-[#fbbf24] px-1.5 py-0.5 rounded-lg mr-2">SQUADS LOCKED</span>
-            Full rosters successfully built! Click the <span className="font-extrabold text-amber-300">Battle Phase</span> button above to trigger the Coin Toss and start playing!
+            Full rosters successfully built! {isTouch ? 'Tap' : 'Click'} the <span className="font-extrabold text-amber-300">Battle Phase</span> button above to trigger the Coin Toss and start playing!
           </div>
         );
       }

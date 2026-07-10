@@ -3,6 +3,7 @@ import { Target, Shield, Zap, Flame, Rocket, ChevronRight, Activity, Crosshair, 
 import { Unit, GridCell } from '../types';
 import { checkLineOfSight, calculateHitChance } from '../logic';
 import UnitHelmetAvatar from './UnitHelmetAvatar';
+import { useCoarsePointer } from '../hooks/useCoarsePointer';
 
 interface SelectedUnitConsoleProps {
   selectedUnit: Unit | null;
@@ -37,6 +38,7 @@ export default function SelectedUnitConsole({
   mode,
   onRenameUnit
 }: SelectedUnitConsoleProps) {
+  const isTouch = useCoarsePointer();
   const [isEditingName, setIsEditingName] = React.useState(false);
   const [tempName, setTempName] = React.useState('');
 
@@ -55,7 +57,7 @@ export default function SelectedUnitConsole({
           No Unit Selected
         </span>
         <p className="text-[9px] text-zinc-600 max-w-[220px] mt-1.5 leading-normal">
-          Click a unit on the grid to view stats and actions.
+          {isTouch ? 'Tap' : 'Click'} a unit on the grid to view stats and actions.
         </p>
       </div>
     );
@@ -129,7 +131,7 @@ export default function SelectedUnitConsole({
             liveWarning = "No line of sight — obstacle blocking";
           } else {
             const { chance, isCovered } = calculateHitChance(selectedUnit, hoveredUnit, mapEnvironment);
-            actionHint = `Hit chance: ${chance}% — click to fire`;
+            actionHint = `Hit chance: ${chance}% — ${isTouch ? 'tap' : 'click'} to fire`;
           }
         } else if (hoveredUnit.team === selectedUnit.team) {
           liveWarning = "Friendly unit — cannot attack";

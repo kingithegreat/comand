@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useCoarsePointer } from '../hooks/useCoarsePointer';
 import { motion, AnimatePresence } from 'motion/react';
 import { CharacterAbility } from '../types';
 import { Clock, Crosshair, Zap, Flame, Shield, HelpCircle, Heart, Box, Activity } from 'lucide-react';
@@ -138,15 +139,17 @@ const getTacticalSpecs = (className: string, ability: CharacterAbility): Tactica
 export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ ability, classNameVal, children }) => {
   const [coords, setCoords] = useState<{ x: number; y: number } | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const isTouch = useCoarsePointer();
 
   const specs = getTacticalSpecs(classNameVal, ability);
 
   const handlePointerMove = (e: React.PointerEvent) => {
     // Dynamically retrieve client dimensions to ensure tooltip remains inside optimal screen viewport
     const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1000;
-    const tooltipWidth = 240; 
+    const tooltipWidth = 240;
     let xOffset = 18;
-    
+
     // Shift the floating tooltip left if hovering near the right viewport margin
     if (e.clientX + tooltipWidth > screenWidth - 15) {
       xOffset = -tooltipWidth - 18;
@@ -181,6 +184,116 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ ability, classNa
     }
   };
 
+  // Shared spec card body — identical content on hover tooltip and touch sheet
+  const specCard = (
+    <>
+      {/* Tooltip Header */}
+      <div className="flex items-center justify-between border-b border-zinc-800/40 pb-1.5 mb-2">
+        <div className="flex items-center gap-1.5 truncate">
+          {mapTypeToIcon(ability.type)}
+          <span className="text-[10px] uppercase font-bold tracking-wide text-zinc-100 truncate">
+            {ability.name}
+          </span>
+        </div>
+        <span className={`text-[7px] font-semibold border uppercase rounded-md px-1 shrink-0 ${getIntensityColor(specs.intensity)}`}>
+          {specs.intensity}
+        </span>
+      </div>
+
+      <div className="space-y-1.5 text-[8px] uppercase tracking-wide">
+        <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+          <span className="text-zinc-500 font-semibold flex items-center gap-1">
+            <Clock className="w-2.5 h-2.5 text-zinc-600" /> Cooldown
+          </span>
+          <span className="text-zinc-300 font-semibold">{specs.cooldown}</span>
+        </div>
+
+        <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+          <span className="text-zinc-500 font-semibold flex items-center gap-1">
+            <Flame className="w-2.5 h-2.5 text-zinc-600" /> Effect
+          </span>
+          <span className="text-amber-400 font-semibold">{specs.damageOrHeal}</span>
+        </div>
+
+        {ability.range !== undefined && (
+          <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+            <span className="text-zinc-500 font-semibold flex items-center gap-1">
+              <Crosshair className="w-2.5 h-2.5 text-zinc-600" /> Range
+            </span>
+            <span className="text-sky-300 font-semibold">{ability.range} cells</span>
+          </div>
+        )}
+
+        <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
+          <span className="text-zinc-500 font-semibold flex items-center gap-1">
+            <Zap className="w-2.5 h-2.5 text-zinc-600" /> Cost
+          </span>
+          <span className="text-amber-300 font-semibold">{ability.apCost} AP</span>
+        </div>
+
+        <div className="text-[7.5px] border-t border-zinc-800/30 pt-1.5 mt-1.5 leading-relaxed text-zinc-400 normal-case">
+          {specs.detailedPerk}
+        </div>
+      </div>
+    </>
+  );
+
+  // ===== TOUCH MODE: tap toggles a thumb-reachable bottom sheet =====
+  if (isTouch) {
+    return (
+      <>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={sheetOpen}
+          aria-label={`${ability.name} — show full specs`}
+          onClick={(e) => { e.stopPropagation(); setSheetOpen(true); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheetOpen(true); } }}
+          className="relative inline-block w-full cursor-pointer"
+        >
+          {children}
+        </div>
+
+        <AnimatePresence>
+          {sheetOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="fixed inset-0 z-[9998] bg-black/60"
+                onClick={(e) => { e.stopPropagation(); setSheetOpen(false); }}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 40 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                role="dialog"
+                aria-label={`${ability.name} specifications`}
+                className="fixed left-1/2 -translate-x-1/2 bottom-0 z-[9999] w-full max-w-[380px] bg-zinc-950/98 border border-zinc-700/50 border-b-0 text-zinc-200 p-4 rounded-t-2xl shadow-[0_-8px_40px_rgba(0,0,0,0.9)] backdrop-blur-xl font-mono"
+                style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-3" aria-hidden="true" />
+                {specCard}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSheetOpen(false); }}
+                  className="w-full mt-3 py-2.5 rounded-lg border border-zinc-700/60 bg-zinc-900 text-zinc-300 text-[10px] font-bold uppercase tracking-widest active:scale-[0.98]"
+                >
+                  Close
+                </button>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
+  // ===== DESKTOP MODE: original hover-follow tooltip =====
   return (
     <div
       onPointerEnter={(e) => {
@@ -206,54 +319,7 @@ export const AbilityTooltip: React.FC<AbilityTooltipProps> = ({ ability, classNa
               top: coords.y,
             }}
           >
-            {/* Tooltip Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800/40 pb-1.5 mb-2">
-              <div className="flex items-center gap-1.5 truncate">
-                {mapTypeToIcon(ability.type)}
-                <span className="text-[10px] uppercase font-bold tracking-wide text-zinc-100 truncate">
-                  {ability.name}
-                </span>
-              </div>
-              <span className={`text-[7px] font-semibold border uppercase rounded-md px-1 shrink-0 ${getIntensityColor(specs.intensity)}`}>
-                {specs.intensity}
-              </span>
-            </div>
-
-            <div className="space-y-1.5 text-[8px] uppercase tracking-wide">
-              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
-                <span className="text-zinc-500 font-semibold flex items-center gap-1">
-                  <Clock className="w-2.5 h-2.5 text-zinc-600" /> Cooldown
-                </span>
-                <span className="text-zinc-300 font-semibold">{specs.cooldown}</span>
-              </div>
-
-              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
-                <span className="text-zinc-500 font-semibold flex items-center gap-1">
-                  <Flame className="w-2.5 h-2.5 text-zinc-600" /> Effect
-                </span>
-                <span className="text-amber-400 font-semibold">{specs.damageOrHeal}</span>
-              </div>
-
-              {ability.range !== undefined && (
-                <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
-                  <span className="text-zinc-500 font-semibold flex items-center gap-1">
-                    <Crosshair className="w-2.5 h-2.5 text-zinc-600" /> Range
-                  </span>
-                  <span className="text-sky-300 font-semibold">{ability.range} cells</span>
-                </div>
-              )}
-
-              <div className="flex justify-between items-center bg-zinc-800/30 py-1 px-1.5 rounded-md">
-                <span className="text-zinc-500 font-semibold flex items-center gap-1">
-                  <Zap className="w-2.5 h-2.5 text-zinc-600" /> Cost
-                </span>
-                <span className="text-amber-300 font-semibold">{ability.apCost} AP</span>
-              </div>
-
-              <div className="text-[7.5px] border-t border-zinc-800/30 pt-1.5 mt-1.5 leading-relaxed text-zinc-400 normal-case">
-                {specs.detailedPerk}
-              </div>
-            </div>
+            {specCard}
           </motion.div>
         )}
       </AnimatePresence>
