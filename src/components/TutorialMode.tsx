@@ -18,6 +18,7 @@ interface MockCell {
 }
 
 import { safeGetItem, safeSetItem } from '../lib/storage';
+import { useCoarsePointer } from '../hooks/useCoarsePointer';
 
 type TutorialStep =
   | 'welcome'
@@ -57,6 +58,9 @@ const STEP_TITLES: Record<string, string> = {
 };
 
 export default function TutorialMode({ onBack }: { onBack: () => void }) {
+  const isTouch = useCoarsePointer();
+  const tapWord = isTouch ? 'Tap' : 'Click';
+  const tapWordLower = isTouch ? 'tap' : 'click';
   const { playSound } = useAudio();
   const [step, setStep] = useState<TutorialStep>('welcome');
   const [selectedClassName, setSelectedClassName] = useState<string>('Assault');
@@ -348,11 +352,11 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                 <Move className="w-5 h-5 text-emerald-400" /> How Movement Works
               </h3>
               <p className="text-sm text-zinc-300 leading-relaxed">
-                Click one of your characters to select them. <span className="text-emerald-400 font-bold">Green tiles</span> show where they can move.
+                {tapWord} one of your characters to select them. <span className="text-emerald-400 font-bold">Green tiles</span> show where they can move.
               </p>
               <div className="flex items-center gap-3 bg-black/30 border border-zinc-800/30 rounded-lg p-3">
                 <div className="w-8 h-8 bg-emerald-500/20 border-2 border-emerald-500/60 rounded animate-pulse shrink-0" />
-                <p className="text-xs text-zinc-400">Green = you can move here (click to move)</p>
+                <p className="text-xs text-zinc-400">Green = you can move here ({tapWordLower} to move)</p>
               </div>
               <p className="text-sm text-zinc-300 leading-relaxed">
                 Each class has a <span className="text-white font-bold">mobility stat</span> — some can move farther than others. Scouts are fast (7 tiles), Heavies are slow (2 tiles).
@@ -545,13 +549,13 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                     <>
                       <p>Great move! Now use your ability:</p>
                       {selectedClassName === 'Sniper' && (
-                        <p>Click the <span className="text-rose-400 font-bold">red enemy target</span> to fire a long-range Piercing Round!</p>
+                        <p>{tapWord} the <span className="text-rose-400 font-bold">red enemy target</span> to fire a long-range Piercing Round!</p>
                       )}
                       {selectedClassName === 'Assault' && (
-                        <p>Click the <span className="text-rose-400 font-bold">red enemy target</span> to attack with Tactical Flush!</p>
+                        <p>{tapWord} the <span className="text-rose-400 font-bold">red enemy target</span> to attack with Tactical Flush!</p>
                       )}
                       {selectedClassName === 'Medic' && (
-                        <p>Click the <span className="text-sky-400 font-bold">blue injured ally</span> to heal them!</p>
+                        <p>{tapWord} the <span className="text-sky-400 font-bold">blue injured ally</span> to heal them!</p>
                       )}
                       {selectedClassName === 'Technician' && (
                         <p>Click any <span className="text-amber-400 font-bold">highlighted tile</span> to build a cover crate!</p>

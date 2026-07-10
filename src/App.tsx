@@ -13,6 +13,7 @@ import { getCharacterLevelInfo, getBoostedStats } from './logic';
 import { CHEMISTRIES, ChemistryDuo } from './chemistries';
 import { AbilityTooltip } from './components/AbilityTooltip';
 import { BASE_REGIONS } from './campaignData';
+import { useCoarsePointer } from './hooks/useCoarsePointer';
 
 const Game = lazy(() => import('./components/Game'));
 const TutorialMode = lazy(() => import('./components/TutorialMode'));
@@ -27,6 +28,7 @@ const FriendList = lazy(() => import('./components/FriendList'));
 const MapEditor = lazy(() => import('./components/MapEditor'));
 
 export default function App() {
+  const isTouch = useCoarsePointer();
   const [gameMode, setGameMode] = useState<'local_ai' | 'local_p2p' | 'online' | 'online_coop' | 'tutorial' | 'campaign' | 'map_editor' | null>(null);
   const [customLayout, setCustomLayout] = useState<string[] | null>(null);
   const [campaignMissionId, setCampaignMissionId] = useState<string | null>(null);
@@ -1633,7 +1635,7 @@ export default function App() {
                           <AbilityTooltip ability={c.ability} classNameVal={c.className}>
                             <div className="bg-amber-400/5 border border-zinc-800 border-opacity-50/30 hover:border-amber-500/60 p-3 rounded-lg mb-3 font-mono text-[9px] sm:text-[10px] uppercase transition-all cursor-help">
                               <div className="flex justify-between font-black text-[#fbbf24] mb-1">
-                                <span className="flex items-center gap-1">SPEC_ABIL: {c.ability.name} <span className="text-[8px] text-zinc-500 font-normal tracking-wide lowercase italic">(hover for full specs)</span></span>
+                                <span className="flex items-center gap-1">SPEC_ABIL: {c.ability.name} <span className="text-[8px] text-zinc-500 font-normal tracking-wide lowercase italic">({isTouch ? 'tap' : 'hover'} for full specs)</span></span>
                                 <span>COST: {c.ability.apCost} AP</span>
                               </div>
                               <p className="text-[#8b9180] lowercase italic leading-relaxed first-letter:uppercase">
