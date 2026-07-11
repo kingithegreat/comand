@@ -5,7 +5,7 @@
 Everything code-side is done and merged. Your remaining steps, in order:
 
 1. **Deploy the fresh build** (new icons/splash must be live before wrapping):
-   `npm ci && npm run build && firebase deploy --only hosting`
+   `npm ci && npm run build && firebase deploy --only hosting,firestore:rules`
 2. **Generate the signing keystore** (once, keep it forever):
    `keytool -genkeypair -alias tacticalcommand -keyalg RSA -keysize 2048 -validity 10000 -keystore tacticalcommand.keystore`
 3. **Get the SHA-256** (`keytool -list -v -keystore tacticalcommand.keystore -alias tacticalcommand`), paste it into `public/.well-known/assetlinks.json` replacing `YOUR_SHA256_FINGERPRINT_HERE`, then rebuild + redeploy hosting. Without this the app shows a browser URL bar.
@@ -46,7 +46,7 @@ npx @bubblewrap/cli --help
 
 ```bash
 npm run build
-firebase deploy --only hosting
+firebase deploy --only hosting,firestore:rules
 ```
 
 Verify your PWA is live at: `https://gen-lang-client-0969027846.web.app`
@@ -77,7 +77,7 @@ Copy the SHA-256 fingerprint and paste it into `public/.well-known/assetlinks.js
 
 Then redeploy:
 ```bash
-npm run build && firebase deploy --only hosting
+npm run build && firebase deploy --only hosting,firestore:rules
 ```
 
 ### 6. Build the APK/AAB

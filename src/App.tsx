@@ -357,8 +357,7 @@ export default function App() {
         try {
           await setDoc(userRef, {
             userId: u.uid,
-            displayName: u.displayName || 'Commander',
-            email: u.email
+            displayName: u.displayName || 'Commander'
           });
         } catch (err) {
           handleFirestoreError(err, OperationType.CREATE, `users/${u.uid}`);
@@ -380,8 +379,7 @@ export default function App() {
       if (!profile) {
         await setDoc(doc(db, 'users', user.uid), {
           userId: user.uid,
-          displayName: displayNameInput || user.displayName || 'Commander',
-          email: user.email
+          displayName: displayNameInput || user.displayName || 'Commander'
         });
       } else {
         await updateDoc(doc(db, 'users', user.uid), {
