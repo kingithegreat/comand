@@ -34,7 +34,7 @@ export const FLOOR_HEIGHT = 0.12; // matches the spike's boxGeometry thickness
 export function tileAppearance(type: TerrainType, x = 0, y = 0): TileAppearance {
   switch (type) {
     case 'wall':
-      return { color: '#334155', height: 1.0, hazard: false, solid: true }; // slate-700 block
+      return { color: '#46566e', height: 1.0, hazard: false, solid: true }; // lifted slate block — catches the key light
     case 'crate':
       return { color: '#b45309', height: 0.55, hazard: false, solid: true }; // amber-700 cargo
     case 'barrel':
@@ -48,7 +48,7 @@ export function tileAppearance(type: TerrainType, x = 0, y = 0): TileAppearance 
       // Subtle checkerboard on floor for depth readability (two zinc shades).
       const light = (x + y) % 2 === 0;
       return {
-        color: light ? '#1f2937' : '#111827', // zinc-800 / zinc-900
+        color: light ? '#2b3648' : '#1d2534', // lifted steel-blue checker — reads against the arena floor
         height: FLOOR_HEIGHT,
         hazard: false,
         solid: false,
@@ -69,15 +69,19 @@ export interface ThemeAmbience {
   hemisphereSky: string;
   /** Hemisphere light ground color — echoes the 2D frame's border-* accent. */
   hemisphereGround: string;
+  /** Arena floor plane color — slightly lifted from background so the board sits ON something. */
+  arenaFloor: string;
+  /** Arena grid-line accent — the theme's neon identity extending to the fog line. */
+  gridAccent: string;
 }
 
 const THEME_AMBIENCE: Record<string, ThemeAmbience> = {
-  default: { background: '#09090b', hemisphereSky: '#cbd5e1', hemisphereGround: '#0b1120' }, // Standard Ops
-  arctic: { background: '#020617', hemisphereSky: '#e0f2fe', hemisphereGround: '#083344' }, // Arctic Outpost — slate-950 / cyan cast
-  volcanic: { background: '#0c0a09', hemisphereSky: '#fee2e2', hemisphereGround: '#450a0a' }, // Volcanic Rift — stone-950 / red cast
-  neon: { background: '#2e1065', hemisphereSky: '#f5d0fe', hemisphereGround: '#4a044e' }, // Neon District — violet-950 / fuchsia cast
-  desert: { background: '#451a03', hemisphereSky: '#fef3c7', hemisphereGround: '#78350f' }, // Sandstorm — amber-950 / amber cast
-  jungle: { background: '#022c22', hemisphereSky: '#bbf7d0', hemisphereGround: '#052e16' }, // Deep Canopy — emerald-950 / green cast
+  default: { background: '#09090b', hemisphereSky: '#cbd5e1', hemisphereGround: '#0b1120', arenaFloor: '#161b26', gridAccent: '#155e75' }, // Standard Ops — cyan grid
+  arctic: { background: '#020617', hemisphereSky: '#e0f2fe', hemisphereGround: '#083344', arenaFloor: '#0b1430', gridAccent: '#0e7490' }, // Arctic Outpost
+  volcanic: { background: '#0c0a09', hemisphereSky: '#fee2e2', hemisphereGround: '#450a0a', arenaFloor: '#201613', gridAccent: '#9f1239' }, // Volcanic Rift
+  neon: { background: '#2e1065', hemisphereSky: '#f5d0fe', hemisphereGround: '#4a044e', arenaFloor: '#3d1a85', gridAccent: '#c026d3' }, // Neon District
+  desert: { background: '#451a03', hemisphereSky: '#fef3c7', hemisphereGround: '#78350f', arenaFloor: '#5e2a10', gridAccent: '#d97706' }, // Sandstorm
+  jungle: { background: '#022c22', hemisphereSky: '#bbf7d0', hemisphereGround: '#052e16', arenaFloor: '#0b4437', gridAccent: '#059669' }, // Deep Canopy
 };
 
 /**

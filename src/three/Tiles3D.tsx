@@ -8,6 +8,7 @@ import {
   instanceIdToGrid,
 } from './gridToWorld';
 import { tileAppearance, FLOOR_HEIGHT } from './boardMapping';
+import { gridToWorld as g2w } from './gridToWorld';
 import type { GridMap } from '../types';
 
 /**
@@ -39,6 +40,25 @@ interface TileVisual {
 export default function Tiles3D({ map, onPick }: Tiles3DProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+
+  // Hazard tiles get an unlit glow plane just above the tile top so fire/poison
+  // actually *glow* in the dark arena instead of reading as flat paint.
+  const hazardGlows = useMemo(() => {
+    if (!map) return [] as { key: string; pos: [number, number, number]; color: string }[];
+    const out: { key: string; pos: [number, number, number]; color: string }[] = [];
+    for (let y = 0; y < map.length; y++) {
+      for (let x = 0; x < (map[y]?.length ?? 0); x++) {
+        const cell = map[y][x];
+        if (!cell) continue;
+        const a = tileAppearance(cell.type, x, y);
+        if (a.hazard) {
+          const [wx, , wz] = g2w(x, y, 0);
+          out.push({ key: `${x}-${y}`, pos: [wx, a.height + 0.01, wz], color: a.color });
+        }
+      }
+    }
+    return out;
+  }, [map]);
 
   // Per-instance color + height, derived once from the map (or checkerboard).
   const visuals = useMemo<TileVisual[]>(() => {
@@ -105,6 +125,7 @@ export default function Tiles3D({ map, onPick }: Tiles3DProps) {
   };
 
   return (
+    <>
     <instancedMesh
       ref={meshRef}
       args={[undefined, undefined, TILE_COUNT]}
@@ -116,8 +137,15 @@ export default function Tiles3D({ map, onPick }: Tiles3DProps) {
     >
       {/* thin unit tile: full width/depth, slight gap via 0.92 scale; Y scaled per instance */}
       <boxGeometry args={[0.92, BASE_THICKNESS, 0.92]} />
-      <meshStandardMaterial vertexColors roughness={0.85} metalness={0.05} />
+      <meshStandardMaterial vertexColors roughness={0.8} metalness={0.1} />
     </instancedMesh>
+    {hazardGlows.map((h) => (
+      <mesh key={h.key} position={h.pos} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.8, 0.8]} />
+        <meshBasicMaterial color={h.color} toneMapped={false} transparent opacity={0.5} />
+      </mesh>
+    ))}
+    </>
   );
 }
 

@@ -108,11 +108,11 @@ function UnitToken({
       {/* Low-poly body: torso box + head sphere, both lit (matches Tiles3D's material) so units read as part of the same 3D scene rather than a flat sprite. */}
       <mesh position={[0, torsoCenterY, 0]}>
         <boxGeometry args={spec.torso} />
-        <meshStandardMaterial ref={setMat(0)} color={color} roughness={0.85} metalness={0.05} />
+        <meshStandardMaterial ref={setMat(0)} color={color} roughness={0.7} metalness={0.1} emissive={color} emissiveIntensity={0.38} />
       </mesh>
       <mesh position={[0, headCenterY, 0]}>
         <sphereGeometry args={[spec.headRadius, 12, 10]} />
-        <meshStandardMaterial ref={setMat(1)} color={color} roughness={0.85} metalness={0.05} />
+        <meshStandardMaterial ref={setMat(1)} color={color} roughness={0.7} metalness={0.1} emissive={color} emissiveIntensity={0.38} />
       </mesh>
 
       {/* Archetype-specific accessories — the actual silhouette differentiator (see archetypeSilhouette.ts). */}
@@ -132,7 +132,7 @@ function UnitToken({
         return (
           <mesh key={i} position={pos} rotation={rot}>
             {geometry}
-            <meshStandardMaterial ref={setMat(2 + i)} color={color} roughness={0.85} metalness={0.05} />
+            <meshStandardMaterial ref={setMat(2 + i)} color={color} roughness={0.7} metalness={0.1} emissive={color} emissiveIntensity={0.38} />
           </mesh>
         );
       })}
