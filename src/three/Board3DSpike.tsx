@@ -115,8 +115,22 @@ export default function Board3DSpike({
         style={{ position: 'absolute', inset: 0 }}
       >
         <color attach="background" args={[ambience.background]} />
-        <hemisphereLight args={[ambience.hemisphereSky, ambience.hemisphereGround, 0.9]} />
-        <directionalLight position={[6, 14, 8]} intensity={1.1} />
+        {/* Fog fades the arena floor into the theme background — depth instead of void. */}
+        <fog attach="fog" args={[ambience.background, 18, 48]} />
+        <hemisphereLight args={[ambience.hemisphereSky, ambience.hemisphereGround, 1.15]} />
+        <directionalLight position={[6, 14, 8]} intensity={1.35} />
+        {/* Cool fill from behind so far-side walls/units don't fall to black. */}
+        <directionalLight position={[-8, 10, -6]} intensity={0.45} />
+        {/* Theme-tinted overhead glow centered on the arena. */}
+        <pointLight position={[0, 9, 0]} intensity={0.5} color={ambience.hemisphereSky} distance={30} />
+        {/* Arena environment: a ground plane + neon grid extending to the fog line,
+            so the board sits inside a space instead of floating in nothing. */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
+          <planeGeometry args={[90, 90]} />
+          <meshStandardMaterial color={ambience.arenaFloor} roughness={1} metalness={0} />
+        </mesh>
+        <gridHelper args={[90, 90, ambience.gridAccent, ambience.arenaFloor]} position={[0, -0.02, 0]} />
+        <gridHelper args={[15, 15, ambience.gridAccent, ambience.gridAccent]} position={[0, -0.01, 0]} />
         <ContextLossWatcher onContextLost={onContextLost} />
         <CameraRig shake={shake} zoomLevel={zoomLevel} />
         <Tiles3D
