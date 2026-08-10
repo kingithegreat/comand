@@ -3652,7 +3652,7 @@ export default function Game({
 
         // Coordinate indicator inside cell that lights up on group hover
         const cellCoord = (
-          <span className="absolute top-[3px] left-[3px] text-[1.8cqw] font-mono tracking-tighter text-[#a8b59a]/35 group-hover:text-amber-400 font-extrabold select-none pointer-events-none transition-colors duration-150 z-2">
+          <span className="tile-word absolute top-[3px] left-[3px] text-[1.8cqw] font-mono tracking-tighter text-[#a8b59a]/35 group-hover:text-amber-400 font-extrabold select-none pointer-events-none transition-colors duration-150 z-2">
             {String.fromCharCode(65 + x)}{(y + 1).toString().padStart(2, '0')}
           </span>
         );
@@ -3713,9 +3713,9 @@ export default function Game({
               
               {mode === 'deploy' && (
                 <>
-                  <span className="text-[2.2cqw] text-purple-400 font-mono leading-none tracking-widest scale-90 select-none font-black drop-shadow-[0_0_4px_rgba(168,85,247,0.5)]">BLOCK</span>
-                  <div className="absolute top-1.5 left-1.5 text-[1.5cqw] text-purple-500/90 font-mono font-extrabold">B-99</div>
-                  <div className="absolute bottom-1.5 right-1.5 text-[1.5cqw] text-purple-500/90 font-mono font-extrabold font-black">SHIELD</div>
+                  <span className="tile-word text-[2.2cqw] text-purple-400 font-mono leading-none tracking-widest scale-90 select-none font-black drop-shadow-[0_0_4px_rgba(168,85,247,0.5)]">BLOCK</span>
+                  <div className="tile-word absolute top-1.5 left-1.5 text-[1.5cqw] text-purple-500/90 font-mono font-extrabold">B-99</div>
+                  <div className="tile-word absolute bottom-1.5 right-1.5 text-[1.5cqw] text-purple-500/90 font-mono font-extrabold font-black">SHIELD</div>
                 </>
               )}
             </div>
@@ -3734,8 +3734,8 @@ export default function Game({
               <div className="absolute inset-[3px] border border-dashed border-amber-500/35 pointer-events-none" />
               {mode === 'deploy' && (
                 <>
-                  <span className="text-[2.8cqw] text-amber-400 font-mono tracking-tighter leading-none font-black uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">CARGO</span>
-                  <span className="text-[1.6cqw] text-amber-500/90 font-mono mt-0.5 font-black">C-904</span>
+                  <span className="tile-word text-[2.8cqw] text-amber-400 font-mono tracking-tighter leading-none font-black uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">CARGO</span>
+                  <span className="tile-word text-[1.6cqw] text-amber-500/90 font-mono mt-0.5 font-black">C-904</span>
                 </>
               )}
             </div>
@@ -3748,7 +3748,7 @@ export default function Game({
               <div className="w-3 h-3 bg-orange-500/60 rounded-full animate-pulse shadow-[0_0_12px_rgba(249,115,22,0.8)]" />
               <div className="absolute inset-0 bg-gradient-to-t from-orange-600/20 to-transparent" />
               {mode === 'deploy' && (
-                <span className="absolute text-[2.2cqw] text-orange-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(249,115,22,0.5)]">FIRE</span>
+                <span className="tile-word absolute text-[2.2cqw] text-orange-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(249,115,22,0.5)]">FIRE</span>
               )}
             </div>
           );
@@ -3760,7 +3760,7 @@ export default function Game({
               <div className="w-3 h-3 bg-lime-500/40 rounded-full animate-pulse shadow-[0_0_10px_rgba(132,204,22,0.6)]" style={{ animationDuration: '3s' }} />
               <div className="absolute inset-0 bg-gradient-to-t from-lime-600/15 to-transparent" />
               {mode === 'deploy' && (
-                <span className="absolute text-[2.2cqw] text-lime-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(132,204,22,0.5)]">TOXIC</span>
+                <span className="tile-word absolute text-[2.2cqw] text-lime-400 font-mono font-black uppercase drop-shadow-[0_0_4px_rgba(132,204,22,0.5)]">TOXIC</span>
               )}
             </div>
           );
@@ -3772,7 +3772,7 @@ export default function Game({
               <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.9)]" />
               {mode === 'deploy' && (
                 <>
-                  <span className="text-[2.2cqw] text-red-400 font-mono font-black uppercase mt-0.5">TNT</span>
+                  <span className="tile-word text-[2.2cqw] text-red-400 font-mono font-black uppercase mt-0.5">TNT</span>
                 </>
               )}
             </div>
@@ -3820,7 +3820,7 @@ export default function Game({
                   : 'warning-stripes-blue opacity-15 border-t border-sky-505/10';
                 deployGridOverlay = (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1">
-                    <span className={`text-[2cqw] font-mono ${isActive ? 'text-sky-300 font-black' : 'text-sky-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
+                    <span className={`tile-word text-[2cqw] font-mono ${isActive ? 'text-sky-300 font-black' : 'text-sky-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
                       BLUE ZONE
                     </span>
                   </div>
@@ -3832,7 +3832,7 @@ export default function Game({
                   : 'warning-stripes-fuchsia opacity-15 border-b border-fuchsia-900/40';
                 deployGridOverlay = (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-1 text-center">
-                    <span className={`text-[2cqw] font-mono ${isActive ? 'text-fuchsia-400 font-black' : 'text-fuchsia-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
+                    <span className={`tile-word text-[2cqw] font-mono ${isActive ? 'text-fuchsia-400 font-black' : 'text-fuchsia-500/40 font-semibold'} tracking-widest scale-75 select-none uppercase`}>
                       PURPLE ZONE
                     </span>
                   </div>
@@ -5466,7 +5466,7 @@ export default function Game({
                 </div>
 
                 <div 
-                  className={`flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
+                  className={`board-cq flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
                   style={{
                      width: zoomLevel === 140 ? '140%' : '100%',
                      minWidth: zoomLevel === 140 ? '500px' : '0',

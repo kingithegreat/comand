@@ -533,3 +533,21 @@ body {
   .menu-stagger > * { animation: none; }
   .title-sheen { animation: none; background-position: 0% center; }
 }
+
+/* ===== BOARD LEGIBILITY ON SMALL SCREENS =====
+   Every per-tile label is sized in cqw, but the board never declared a
+   container, so those units resolved against the viewport. On a 393px phone
+   that made "BLUE ZONE" ~42px wide inside a ~23px tile: the words overlapped
+   each other and the board became unreadable.
+
+   board-cq gives the units something real to measure against. The container
+   query then drops the word-labels once a tile is too small to hold a word —
+   colour, border and icon still carry the same meaning, and the labels come
+   back automatically on a tablet or desktop. */
+.board-cq {
+  container-type: inline-size;
+  container-name: board;
+}
+@container board (max-width: 560px) {
+  .tile-word { display: none !important; }
+}
