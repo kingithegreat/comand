@@ -208,7 +208,7 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
 
   return (
     <div
-      className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-4 sm:p-6 flex flex-col items-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black"
+      className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-4 sm:p-6 flex flex-col items-center relative selection:bg-[#fbbf24] selection:text-black"
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
