@@ -664,7 +664,7 @@ export default function App() {
     }
   }, [gameMode]);
 
-  const LazyFallback = <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mr-3" /><span>LOADING MODULE...</span></div>;
+  const LazyFallback = <div className="min-h-app bg-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mr-3" /><span>LOADING MODULE...</span></div>;
 
   // Render Game Component if we selected a mode
   if (gameMode === 'local_ai' || gameMode === 'local_p2p') {
@@ -724,7 +724,7 @@ export default function App() {
   if (gameMode === 'tutorial') {
     return (
       <Suspense fallback={LazyFallback}>
-      <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+      <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
         <TutorialMode onBack={() => setGameMode(null)} />
       </div>
       </Suspense>
@@ -734,7 +734,7 @@ export default function App() {
   if (gameMode === 'campaign') {
     return (
       <Suspense fallback={LazyFallback}>
-      <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+      <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
         <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} difficulty={campaignDifficulty} onDifficultyChange={(d) => { setCampaignDifficulty(d); try { localStorage.setItem('tc_campaign_difficulty', String(d)); } catch {} }} />
       </div>
       </Suspense>
@@ -743,13 +743,13 @@ export default function App() {
 
   if ((gameMode === 'online' || gameMode === 'online_coop') && onlineMatchId) {
     if (matchLoading) {
-       return <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
+       return <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>SECURE TRANS-BANDING SYNCHRONOUS INITIATION...</span></div>;
     }
 
     // Handlers for aborted rooms
     if (matchData?.status === 'aborted') {
       return (
-        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative">
+        <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
           <div className="max-w-md w-full bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50 p-6 rounded-xl flex flex-col gap-4 text-center relative overflow-hidden shadow-2xl">
             <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/40 rounded-full flex items-center justify-center text-purple-500 mx-auto animate-pulse">
@@ -779,7 +779,7 @@ export default function App() {
       const isOpponentConnected = !!matchData?.guestId;
 
       return (
-        <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+        <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-6 flex flex-col items-center justify-center relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
           {/* Scanlines overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50"></div>
           
@@ -1059,12 +1059,12 @@ export default function App() {
     }
 
     if (!user?.uid) {
-       return <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>AUTHENTICATING COMMANDER...</span></div>;
+       return <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 flex items-center justify-center text-zinc-300 font-mono"><Loader2 className="w-8 h-8 animate-spin text-amber-500 mb-2" /><span>AUTHENTICATING COMMANDER...</span></div>;
     }
 
     return (
        <Suspense fallback={LazyFallback}>
-       <div className="min-h-screen bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
+       <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
          <Game
            gameMode={gameMode as 'online' | 'online_coop'}
            onBack={() => { handleAbortMatch(); }}
@@ -1083,7 +1083,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
+    <div className="min-h-app bg-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative overflow-y-auto selection:bg-[#fbbf24] selection:text-black">
       {/* Ambient animated background */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.04)_0%,transparent_50%)]" />

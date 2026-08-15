@@ -150,7 +150,7 @@ export const PostBattleSummary: React.FC<PostBattleSummaryProps> = ({
     <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/95 backdrop-blur-xl overflow-y-auto p-4 md:p-8">
       {isVictory && <VictoryConfetti />}
       {!isVictory && <DefeatAnimation />}
-      <div className="w-full max-w-4xl glass-dark rounded-2xl shadow-[0_0_80px_rgba(0,0,0,0.8)] flex flex-col max-h-[92vh] md:max-h-[85vh] animate-fade-in text-zinc-100 overflow-hidden">
+      <div className="w-full max-w-4xl glass-dark rounded-2xl shadow-[0_0_80px_rgba(0,0,0,0.8)] flex flex-col max-h-[92dvh] md:max-h-[85dvh] animate-fade-in text-zinc-100 overflow-hidden">
 
         {/* HEADER */}
         <div className="p-4 border-b border-zinc-800/50 flex items-center justify-between gap-3 shrink-0">

@@ -438,12 +438,48 @@ html, body, #root {
   animation: muzzle-flash 0.25s ease-out forwards;
 }
 
-/* ===== MOBILE SAFE AREA ===== */
+/* ===== MOBILE SAFE AREA + USABLE VIEWPORT =====
+   #root carries the notch and gesture-bar insets as padding. Any child that
+   asked for a whole viewport (h-[100dvh], min-h-screen) was therefore sizing
+   itself to the FULL screen and then having the insets added on top of that,
+   so the document came out taller than the viewport by exactly the inset
+   total -- measured at 72px with a 48px notch and a 24px gesture bar. That
+   surplus is what let the entire app slide vertically mid-match.
+
+   box-sizing keeps the padding inside #root's own 100dvh, and the two
+   utilities below hand children the *usable* height instead of the raw one. */
+:root {
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  /* The height a full-screen child can actually occupy. Derived from the same
+     variables #root pads with, so the padding and the subtraction can never
+     drift apart. */
+  --app-height: calc(100dvh - var(--sa-top) - var(--sa-bottom));
+}
+
 #root {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding-top: var(--sa-top);
+  padding-bottom: var(--sa-bottom);
+  padding-left: var(--sa-left);
+  padding-right: var(--sa-right);
+}
+
+.app-viewport { height: var(--app-height); }
+.min-h-app { min-height: var(--app-height); }
+
+/* ===== SCROLL CONTAINMENT =====
+   body already blocks pull-to-refresh, but that does nothing for the panels
+   inside it: when a list reached its end the leftover momentum chained up to
+   the document and dragged the whole app with it. Every scrollable panel now
+   absorbs its own overscroll instead of handing it upwards. */
+[class*="overflow-y-auto"],
+[class*="overflow-auto"],
+[class*="overflow-y-scroll"] {
+  overscroll-behavior-y: contain;
 }
 
 @media (max-width: 480px) {
