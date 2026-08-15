@@ -475,10 +475,19 @@ html, body, #root {
    body already blocks pull-to-refresh, but that does nothing for the panels
    inside it: when a list reached its end the leftover momentum chained up to
    the document and dragged the whole app with it. Every scrollable panel now
-   absorbs its own overscroll instead of handing it upwards. */
-[class*="overflow-y-auto"],
-[class*="overflow-auto"],
-[class*="overflow-y-scroll"] {
+   absorbs its own overscroll instead of handing it upwards.
+
+   :not(.min-h-app) matters. The full-page screen wrappers also carry
+   overflow-y-auto, but they never scroll themselves — min-height lets them
+   grow and the DOCUMENT does the scrolling. Making them containing scroll
+   ports meant a touch-drag landed on a scroll container that had nothing to
+   scroll and, because of `contain`, refused to hand the gesture to the
+   document. The main menu and the tutorial simply would not scroll on a
+   phone. Containment belongs on the panels this rule was written for, not on
+   the page itself. */
+[class*="overflow-y-auto"]:not(.min-h-app),
+[class*="overflow-auto"]:not(.min-h-app),
+[class*="overflow-y-scroll"]:not(.min-h-app) {
   overscroll-behavior-y: contain;
 }
 
