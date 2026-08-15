@@ -109,7 +109,7 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
 
   if (loadingMission) {
      return (
-       <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col justify-center items-center relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90vh] mx-auto mt-6">
+       <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col justify-center items-center relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90dvh] mx-auto mt-6">
           <Globe className="w-16 h-16 text-emerald-500 mb-6 animate-pulse" />
           <h2 className="text-2xl font-black uppercase text-emerald-400 tracking-widest mb-2">Establishing Uplink</h2>
           <p className="text-xs text-zinc-500 tracking-widest uppercase mb-8">Target: {selectedRegion.name}</p>
@@ -143,7 +143,7 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
   }
 
   return (
-    <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90vh] sm:h-[80vh] md:h-[90vh] mx-auto mt-6 sm:mt-0">
+    <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90dvh] sm:h-[80dvh] md:h-[90dvh] mx-auto mt-6 sm:mt-0">
       {/* Header */}
       <div className="flex items-center justify-between bg-zinc-900 bg-opacity-80 border-b border-zinc-800 border-opacity-50 p-4 shrink-0">
          <div className="flex items-center gap-3">
@@ -270,7 +270,7 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
         </div>
 
         {/* Intelligence Briefing */}
-        <div className="w-full sm:w-1/3 bg-zinc-900 bg-opacity-80 p-4 sm:p-6 flex flex-col items-center relative sm:overflow-y-auto shrink-0 sm:shrink min-h-[50vh] sm:min-h-0">
+        <div className="w-full sm:w-1/3 bg-zinc-900 bg-opacity-80 p-4 sm:p-6 flex flex-col items-center relative sm:overflow-y-auto shrink-0 sm:shrink min-h-[50dvh] sm:min-h-0">
            <Navigation className="w-8 h-8 sm:w-12 sm:h-12 text-zinc-700 mb-2 sm:mb-4 shrink-0" />
            <h3 className="text-lg sm:text-xl font-bold uppercase text-center mb-1 sm:mb-2 tracking-widest text-zinc-300 shrink-0">{selectedRegion.name}</h3>
 

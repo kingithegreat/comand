@@ -4666,7 +4666,7 @@ export default function Game({
   };
 
   return (
-    <div className={`h-[100dvh] w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none ${colorblindMode ? 'colorblind-mode' : ''}`}>
+    <div className={`app-viewport w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none ${colorblindMode ? 'colorblind-mode' : ''}`}>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {logs.length > 0 ? logs[logs.length - 1].text : ''}
       </div>
@@ -6064,7 +6064,7 @@ export default function Game({
                   </div>
                </div>
                
-               <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5 max-h-[60vh] overflow-y-auto">
+               <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5 max-h-[60dvh] overflow-y-auto">
                   <div>
                      <h4 className="text-[10px] font-bold text-zinc-500 tracking-widest uppercase mb-2">Tactical Overview</h4>
                      <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed font-mono">{BASE_REGIONS.find(r => r.id === campaignMissionId)?.desc || 'No tactical data.'}</p>
