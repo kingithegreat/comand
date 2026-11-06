@@ -9,7 +9,6 @@ import { getActiveChemistries, applyChemistryBuffsToStats, CHEMISTRIES } from '.
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc, setDoc, getDoc, increment, runTransaction } from 'firebase/firestore';
 import CombatLog, { LogMessage } from './CombatLog';
-import HUDCombatLog from './HUDCombatLog';
 import { useCoarsePointer } from '../hooks/useCoarsePointer';
 import RosterStatus from './RosterStatus';
 import SelectedUnitConsole from './SelectedUnitConsole';
@@ -439,6 +438,50 @@ export default function Game({
 
   const [activeLeftTab, setActiveLeftTab] = useState<'map' | 'logs' | 'leaderboard' | 'chat' | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>(null);
+  const [commandPanelsOpen, setCommandPanelsOpen] = useState(false);
+  const panelLauncherRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Panels are presentation-only: keep board actions and the turn engine unchanged.
+  const openLeftPanel = (tab: typeof activeLeftTab) => {
+    setActiveRightTab(null);
+    setActiveLeftTab(tab);
+    setCommandPanelsOpen(false);
+  };
+  const openRightPanel = (tab: typeof activeRightTab) => {
+    setActiveLeftTab(null);
+    setActiveRightTab(tab);
+    setCommandPanelsOpen(false);
+  };
+
+  useEffect(() => {
+    if (!activeLeftTab && !activeRightTab && !commandPanelsOpen) return;
+    const panel = panelRef.current;
+    panel?.querySelector<HTMLButtonElement>('button')?.focus();
+    const handlePanelKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setActiveLeftTab(null);
+        setActiveRightTab(null);
+        setCommandPanelsOpen(false);
+        panelLauncherRef.current?.focus();
+      }
+      if (event.key === 'Tab' && panel) {
+        const controls = Array.from(panel.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
+        )).filter(element => element.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first?.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', handlePanelKey);
+    return () => window.removeEventListener('keydown', handlePanelKey);
+  }, [activeLeftTab, activeRightTab, commandPanelsOpen]);
   const [colorblindMode, setColorblindMode] = useState(false);
 
   // Feature: Undo Move
@@ -1215,7 +1258,7 @@ export default function Game({
 
   // Feature: Keyboard Shortcuts
   useEffect(() => {
-    if (mode !== 'play' || winner) return;
+    if (mode !== 'play' || winner || activeLeftTab || activeRightTab || commandPanelsOpen) return;
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const key = e.key.toLowerCase();
@@ -1253,7 +1296,7 @@ export default function Game({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [mode, winner, activeTeam, myTeam, selectedUnit, selectedUnitId, units, lastMoveState]);
+  }, [mode, winner, activeTeam, myTeam, selectedUnit, selectedUnitId, units, lastMoveState, activeLeftTab, activeRightTab, commandPanelsOpen]);
 
   const executeAbility = (x: number, y: number) => {
     if (!selectedUnit || !selectedUnit.class.ability) return;
@@ -3369,7 +3412,7 @@ export default function Game({
   const renderHoverHUD = () => {
     if (!hoveredTile) {
       return (
-        <div className="w-full h-full bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50/80 py-1.5 px-3 rounded-t-2xl flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
+        <div className="match-intel-idle w-full h-full bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50/80 py-1.5 px-3 rounded-t-2xl flex items-center justify-between text-[10px] font-mono text-emerald-500/40 uppercase tracking-widest select-none">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/45 animate-ping"></span>
             <span className="glow-text-green font-semibold">SYSTEM IDLE // SELECT ACTIVE VECTOR</span>
@@ -3421,74 +3464,24 @@ export default function Game({
       const inRange = dist <= selectedUnit.class.stats.range;
       if (inRange && hasLos && selectedUnit.ap >= 1) {
         const { chance } = calculateHitChance(selectedUnit, unitOnTile, mapEnvironment);
-        attackContextLabel = ` // TARGET LOCK: ACQUIRED (${chance}% HIT) // CLICK TO FIRE`;
+        attackContextLabel = `${chance}% HIT · CLICK TO FIRE`;
       } else if (!inRange) {
-        attackContextLabel = " // TARGET LOCK: OUT OF MAX WEAPON RANGE";
+        attackContextLabel = "OUT OF WEAPON RANGE";
       } else if (selectedUnit.ap < 1) {
-        attackContextLabel = " // TARGET LOCK: NO ACTION POINTS AVAILABLE (NO AP)";
+        attackContextLabel = "NO AP TO FIRE";
       } else if (!hasLos) {
-        attackContextLabel = " // TARGET LOCK: BLOCKED (OBSTRUCTION INTERFERENCE)";
+        attackContextLabel = "LINE OF FIRE BLOCKED";
       }
     }
 
-    const isPlayerTeam = unitOnTile?.team === 'player';
-
     return (
-      <div className="w-full h-full bg-zinc-900 bg-opacity-80/95 border border-zinc-800 border-opacity-50 py-2 px-3 rounded-t-2xl flex flex-col xl:flex-row justify-between items-start xl:items-center text-[10px] font-mono select-none gap-2 animate-fade-in shrink-0 overflow-hidden">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-zinc-500 font-bold">SECTOR:</span>
-          <span className="text-white bg-zinc-800 bg-opacity-80 px-1.5 py-0.5 rounded-lg border border-zinc-800 border-opacity-50 font-bold font-mono">
-            {String.fromCharCode(65 + x)}{(y + 1).toString().padStart(2, '0')} [{x.toString().padStart(2, '0')}, {y.toString().padStart(2, '0')}]
-          </span>
-          <span className="text-zinc-500">|</span>
-          <span className="text-zinc-500 font-bold">TYPE:</span>
-          <span className={`${colorClass} font-bold tracking-wider uppercase`}>{typeStr}</span>
-          {pathLabel && <span className="text-sky-400 font-black animate-pulse">{pathLabel}</span>}
+      <div className="match-intel-readout w-full h-full flex flex-col justify-center gap-0.5 font-mono text-[10px] px-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-amber-300 shrink-0">{String.fromCharCode(65 + x)}{y + 1}</span>
+          <span className="text-zinc-300 truncate">{unitOnTile ? `${unitOnTile.class.className} · ${unitOnTile.hp} HP · ${unitOnTile.ap} AP · ${unitOnTile.class.stats.range} RNG` : typeStr}</span>
         </div>
-        
-        <div className="text-[10px] uppercase w-full md:w-auto">
-          {unitOnTile ? (
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-1.5 md:gap-3 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <span className="text-zinc-505">UNIT:</span>
-                <span className={`${isPlayerTeam ? 'text-sky-400 font-black' : 'text-purple-400 font-black'} glow-text`}>
-                  {unitOnTile.class.className.toUpperCase()} ({isPlayerTeam ? 'BLUE SQUAD' : 'PURPLE SQUAD'})
-                </span>
-              </div>
-              <div className="flex items-center gap-1 md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3">
-                <span className="text-zinc-500">HP:</span>
-                <span className="text-white font-black">{unitOnTile.hp}/{unitOnTile.class.stats.maxHP}</span>
-                <span className="text-zinc-500 ml-1.5">AP:</span>
-                <span className="text-amber-400 font-black">{unitOnTile.ap}/2</span>
-                <span className="text-zinc-500 ml-1.5">RNG:</span>
-                <span className="text-zinc-300 font-bold">{unitOnTile.class.stats.range}S</span>
-              </div>
-              {unitOnTile.class.ability && (
-                <div className="text-[9.5px] text-emerald-400 md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3 max-w-xs truncate" title={unitOnTile.class.ability.description}>
-                  <span className="text-zinc-500 mr-1 font-bold">SPEC:</span> {unitOnTile.class.ability.name.toUpperCase()}
-                </div>
-              )}
-              {unitOnTile.statusEffects && unitOnTile.statusEffects.length > 0 && (
-                <div className="text-[9px] md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3 flex items-center gap-1">
-                  <span className="text-zinc-500 font-bold">STATUS:</span>
-                  {unitOnTile.statusEffects.map((e, i) => (
-                    <span key={i} className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${
-                      e.type === 'burning' ? 'bg-orange-500/20 text-orange-400' :
-                      e.type === 'poisoned' ? 'bg-lime-500/20 text-lime-400' :
-                      'bg-yellow-500/20 text-yellow-400'
-                    }`}>{e.type} ({e.duration})</span>
-                  ))}
-                </div>
-              )}
-              {attackContextLabel && (
-                <span className="text-[#f43f5e] font-black animate-pulse md:border-l md:border-zinc-800 border-opacity-50/50 md:pl-3">
-                  {attackContextLabel}
-                </span>
-              )}
-            </div>
-          ) : (
-            <span className="text-zinc-400">{descStr}</span>
-          )}
+        <div className={attackContextLabel ? 'text-rose-300 font-bold' : 'text-sky-300'}>
+          {attackContextLabel || pathLabel || descStr}
         </div>
       </div>
     );
@@ -4217,7 +4210,7 @@ export default function Game({
               }
             }}
             onMouseLeave={() => { setHoveredTile(null); setTooltipUnit(null); }}
-            className={`w-full pt-[100%] relative transition-all cursor-pointer rounded-md group ${bgClass} ${borderClass} ${losClass}`}
+            className={`match-tile w-full pt-[100%] relative transition-all cursor-pointer rounded-md group ${bgClass} ${borderClass} ${losClass}`}
             style={isIsometric ? {
               transformStyle: 'preserve-3d',
               transform: cell.type === 'wall' ? 'translateZ(18px)' : (cell.type === 'crate' || cell.type === 'barrel') ? 'translateZ(10px)' : unit ? 'translateZ(4px)' : undefined,
@@ -4359,7 +4352,9 @@ export default function Game({
                 disabled={deployedCount >= matchSquadSize && !isSelected}
                 onClick={() => { 
                   setSelectedClass(c); 
-                  setTeamSelection(team); 
+                  setTeamSelection(team);
+                  setActiveRightTab(null);
+                  panelLauncherRef.current?.focus();
                 }}
                 className={`
                   text-left p-1 sm:p-1.5 rounded-lg border transition-all flex flex-col justify-between cursor-pointer min-h-[48px] sm:min-h-[58px]
@@ -4666,7 +4661,7 @@ export default function Game({
   };
 
   return (
-    <div className={`app-viewport w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none ${colorblindMode ? 'colorblind-mode' : ''}`}>
+    <div className={`match-shell app-viewport w-full bg-zinc-950 text-zinc-300 font-sans flex flex-col relative overflow-hidden select-none ${colorblindMode ? 'colorblind-mode' : ''}`}>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {logs.length > 0 ? logs[logs.length - 1].text : ''}
       </div>
@@ -5032,10 +5027,10 @@ export default function Game({
       )}
 
       {/* Main Grid Frame */}
-      <div className="w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in flex-1 overflow-hidden h-full">
+      <div className="match-frame w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in flex-1 overflow-hidden min-h-0">
         
         {/* TOP COMMAND HUD */}
-        <div className="w-full glass rounded-xl px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg shrink-0">
+        <div className="match-header w-full glass rounded-xl px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg shrink-0">
           <div className="flex items-center gap-3">
             <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 shrink-0">
               <Radar className="w-5 h-5 text-amber-400 animate-spin [animation-duration:6s]" />
@@ -5059,9 +5054,17 @@ export default function Game({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+          <div className="match-header-actions flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+            <button
+              ref={panelLauncherRef}
+              type="button"
+              aria-expanded={commandPanelsOpen}
+              aria-controls="match-panels"
+              onClick={() => { setActiveLeftTab(null); setActiveRightTab(null); setCommandPanelsOpen(open => !open); }}
+              className="match-panel-launcher px-3 py-2 rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-200 text-xs font-mono font-bold"
+            >Panels</button>
             {mode === 'play' && (
-              <div className="flex gap-1.5 items-center px-3 py-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20 font-mono text-[11px] text-emerald-400 font-semibold uppercase shrink-0">
+              <div className="match-live flex gap-1.5 items-center px-3 py-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20 font-mono text-[11px] text-emerald-400 font-semibold uppercase shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
               </div>
             )}
@@ -5088,15 +5091,15 @@ export default function Game({
         </div>
 
         {/* HUD CORE DISPLAY FLOW */}
-        <div className="w-full flex-1 flex flex-col lg:flex-row flex-wrap lg:flex-nowrap gap-4 items-center lg:items-stretch justify-center relative overflow-hidden min-h-0">
+        <div className="match-core w-full flex-1 flex flex-col lg:flex-row flex-wrap lg:flex-nowrap gap-4 items-center lg:items-stretch justify-center relative overflow-hidden min-h-0">
           
           {/* LEFT COLUMN AUX PANEL */}
           {activeLeftTab && (
-            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar">
+            <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Intelligence panel" className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar">
               <div className="w-full max-w-2xl flex flex-col gap-3">
               {/* Close Button */}
               <div className="flex justify-end">
-                 <button type="button" onClick={() => setActiveLeftTab(null)} className="text-zinc-500 hover:text-zinc-200 p-2 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
+                 <button type="button" onClick={() => { setActiveLeftTab(null); panelLauncherRef.current?.focus(); }} className="text-zinc-500 hover:text-zinc-200 p-2 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
               </div>
               <div className="glass-dark p-4 rounded-xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.8)] select-none">
                 {activeLeftTab === 'map' && (
@@ -5165,17 +5168,17 @@ export default function Game({
           )}
 
           {/* MAIN CENTER GROUND ASSIGNER CONTAINER */}
-          <div className="flex-1 w-full flex flex-col gap-3 items-center justify-start shrink-0 order-1 overflow-y-auto custom-scrollbar h-full min-h-0 relative z-10 px-0 sm:px-2">
+          <div className="match-center flex-1 w-full flex flex-col gap-3 items-center min-h-0 relative z-10">
           
           {/* 0. SYSTEM STATUS INTEGRATED HEADER */}
-          <div className="glass rounded-xl p-2 flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0 w-full">
+          <div className="match-status glass rounded-xl p-2 flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0 w-full">
             {/* HOVER FEEDBACK IN HEADER */}
-            <div className="flex-1 min-w-0 h-[80px] md:h-[60px] xl:h-[44px] overflow-hidden">
+            <div className="match-hover flex-1 min-w-0 h-[44px] overflow-hidden">
               {renderHoverHUD()}
             </div>
             
             {isCTF && flags && mode === 'play' && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-zinc-700/50 font-mono text-xs shrink-0">
+              <div className="match-score flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-zinc-700/50 font-mono text-xs shrink-0">
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-3 rounded-full bg-sky-500 shadow-[0_0_6px_rgba(14,165,233,0.4)]" />
                   <span className="text-sky-400 font-black">{flagScores.player}</span>
@@ -5205,13 +5208,14 @@ export default function Game({
           </div>
 
           {/* MASTER COMMAND BAR (PANEL TOGGLES) */}
-          <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between glass rounded-xl p-2 gap-2 shrink-0 font-mono text-[9px] sm:text-[10px] select-none text-left shadow-lg mt-1">
+          {commandPanelsOpen && <div id="match-panels" ref={panelRef} role="dialog" aria-modal="true" aria-label="Command panels" className="match-panel-menu glass-dark rounded-xl p-3 font-mono text-xs shadow-2xl">
+            <button type="button" className="match-menu-close" onClick={() => { setCommandPanelsOpen(false); panelLauncherRef.current?.focus(); }}>Close panels ×</button>
             <div className="flex gap-2 flex-wrap items-center">
               <span className="text-zinc-500 font-bold tracking-wider px-1 mr-1 text-[9px]">Panels</span>
               {!campaignMissionId && (
                 <button
                   type="button"
-                  onClick={() => setActiveLeftTab(activeLeftTab === 'map' ? null : 'map')}
+                  onClick={() => openLeftPanel(activeLeftTab === 'map' ? null : 'map')}
                   className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                     activeLeftTab === 'map' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                   }`}
@@ -5221,7 +5225,7 @@ export default function Game({
               )}
               <button
                 type="button"
-                onClick={() => setActiveLeftTab(activeLeftTab === 'logs' ? null : 'logs')}
+                onClick={() => openLeftPanel(activeLeftTab === 'logs' ? null : 'logs')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                   activeLeftTab === 'logs' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
@@ -5230,7 +5234,7 @@ export default function Game({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveLeftTab(activeLeftTab === 'leaderboard' ? null : 'leaderboard')}
+                onClick={() => openLeftPanel(activeLeftTab === 'leaderboard' ? null : 'leaderboard')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                   activeLeftTab === 'leaderboard' ? 'bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
@@ -5240,7 +5244,7 @@ export default function Game({
               {isOnline && onlineMatch?.id && (
                 <button
                   type="button"
-                  onClick={() => setActiveLeftTab(activeLeftTab === 'chat' ? null : 'chat')}
+                  onClick={() => openLeftPanel(activeLeftTab === 'chat' ? null : 'chat')}
                   className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                     activeLeftTab === 'chat' ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                   }`}
@@ -5253,7 +5257,7 @@ export default function Game({
             <div className="flex gap-2 flex-wrap justify-end">
               <button
                 type="button"
-                onClick={() => setActiveRightTab(activeRightTab === 'roster' ? null : 'roster')}
+                onClick={() => openRightPanel(activeRightTab === 'roster' ? null : 'roster')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                   activeRightTab === 'roster' ? 'bg-sky-500/10 border-sky-500/30 text-sky-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
@@ -5262,7 +5266,7 @@ export default function Game({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveRightTab(activeRightTab === 'unit_console' ? null : 'unit_console')}
+                onClick={() => openRightPanel(activeRightTab === 'unit_console' ? null : 'unit_console')}
                 className={`px-3 py-1.5 rounded-lg uppercase font-black transition-all flex items-center gap-1.5 border cursor-pointer hover:-translate-y-0.5 ${
                   activeRightTab === 'unit_console' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-zinc-800/40 border-zinc-700/40 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
                 }`}
@@ -5282,11 +5286,11 @@ export default function Game({
                 <Activity className="w-3.5 h-3.5" /> A11y
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* TACTICAL REGION CALIBRATION (MAP SELECTION) */}
           {mode === 'deploy' && (
-            <div className="w-full max-w-3xl flex glass rounded-xl p-3 md:p-4 flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none shadow-lg shrink-0">
+            <div className="match-deploy-summary w-full max-w-3xl flex glass rounded-xl p-3 md:p-4 flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none shadow-lg shrink-0">
               <div className="flex items-start gap-3">
                 <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 shrink-0">
                   <Radar className="w-5 h-5 text-amber-400 animate-spin [animation-duration:6s]" />
@@ -5301,10 +5305,11 @@ export default function Game({
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-1 w-full sm:w-auto shrink-0">
+              <div className="match-deploy-actions flex flex-col items-end gap-1 w-full sm:w-auto shrink-0">
+                <button type="button" onClick={() => openRightPanel('roster')} className="px-3 py-2 border border-sky-500/30 rounded-lg text-xs font-mono text-sky-300">Recruit / Squads ({units.filter(u => u.team === teamSelection).length}/{matchSquadSize})</button>
                 <button
                   type="button"
-                  onClick={() => setActiveLeftTab('map')}
+                  onClick={() => openLeftPanel('map')}
                   disabled={isOnline && !isHost}
                   className={`px-5 py-2.5 bg-amber-950/20 text-amber-400 rounded-2xl flex items-center justify-center gap-2 font-mono text-[10px] sm:text-xs font-black uppercase transition-all whitespace-nowrap active:scale-95 w-full sm:w-auto shadow-md ${isOnline && !isHost ? 'opacity-50 cursor-not-allowed border border-amber-900/50' : 'cursor-pointer hover:bg-amber-900/40 hover:border-amber-400 border border-amber-500/50 hover:-translate-y-0.5 shadow-[0_0_20px_rgba(245,158,11,0.15)]'}`}
                 >
@@ -5322,7 +5327,7 @@ export default function Game({
 
           {/* RECRUITMENT TIPS */}
           {mode === 'deploy' && selectedClass && (
-            <div className="bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-y-2 select-none font-mono w-full shrink-0">
+            <div className="match-deploy-tip bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-y-2 select-none font-mono w-full shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-[8px] bg-amber-400 text-black px-1.5 py-0.5 rounded-md font-bold uppercase">Deploy</span>
                 <span className="text-[10px] font-mono text-zinc-200 font-semibold">
@@ -5345,97 +5350,20 @@ export default function Game({
           )}
 
           {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
-          <div className="glass rounded-xl p-2 sm:p-3 shrink-0 flex flex-col items-center justify-center shadow-lg w-full relative">
-            <div className="w-full flex flex-col items-center justify-center gap-2">
+          <div className="match-battlefield glass rounded-xl p-2 sm:p-3 flex flex-col items-center shadow-lg w-full relative">
+            <div className="match-battlefield-content w-full flex flex-col items-center gap-2">
 
-              {/* ENEMY DEPLOYMENT ROSTER (TOP OF BOARD) */}
-              {mode === 'deploy' && (gameMode === 'local_p2p' || (isOnline && myTeam === 'enemy')) && (
-                <div 
-                  className={`w-full p-2 rounded-lg border transition-all duration-300 shrink-0 ${
-                    teamSelection === 'enemy' 
-                      ? 'border-fuchsia-500/50 bg-fuchsia-950/15 shadow-[0_0_10px_rgba(217,70,239,0.15)]' 
-                      : 'border-zinc-800 border-opacity-50 bg-zinc-800 bg-opacity-80'
-                  } ${!isOnline || myTeam === 'enemy' ? 'cursor-pointer hover:border-fuchsia-500/40' : ''}`}
-                  onClick={() => {
-                    if (!isOnline || myTeam === 'enemy') {
-                      setTeamSelection('enemy');
-                    }
-                  }}
-                >
-                   <h2 className="text-fuchsia-400 font-bold mb-1.5 uppercase tracking-widest text-[9px] sm:text-[10px] font-mono flex items-center gap-1.5 border-b border-fuchsia-900/30 pb-1">
-                     <div className="w-1.5 h-1.5 rounded-full bg-fuchsia-500 shadow-[0_0_4px_#d946ef] animate-pulse"></div>
-                     {isOnline && myTeam === 'enemy' ? 'PURPLE SQUAD (YOUR AREA)' : 'PURPLE SQUAD (P2 AREA)'}
-                     <span className="text-zinc-500 font-normal font-mono normal-case text-[8px] ml-auto">Top side of grid</span>
-                   </h2>
-                   {renderRoster('enemy')}
-                </div>
-              )}
-
-              {/* ONLINE TURN TIMER */}
-              {isOnline && mode === 'play' && !winner && (
-                <div className={`w-full max-w-3xl mb-3 p-3 rounded-xl border font-mono text-[10px] sm:text-[11px] flex flex-col gap-2 select-none tracking-wider transition-all duration-300 ${
-                  timeLeft <= 15
-                    ? 'bg-red-500/5 border-red-500/25 text-red-300 animate-pulse'
-                    : activeTeam === myTeam
-                      ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400'
-                      : 'glass text-zinc-500'
-                }`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      {timeLeft <= 15 ? (
-                        <>
-                          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
-                          <span className="text-red-300 uppercase">Low time</span>
-                        </>
-                      ) : activeTeam === myTeam ? (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                          <span className="text-emerald-400 uppercase">Your turn</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
-                          <span className="uppercase">Opponent's turn</span>
-                        </>
-                      )}
-                    </div>
-
-                    <span className={`font-mono text-sm font-bold px-2.5 py-0.5 rounded-lg border leading-none ${
-                      timeLeft <= 15
-                        ? 'bg-red-500/10 text-red-300 border-red-500/20'
-                        : activeTeam === myTeam
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          : 'bg-zinc-800/30 text-zinc-400 border-zinc-700/25'
-                    }`}>
-                      {timeLeft}s
-                    </span>
-                  </div>
-
-                  <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ease-linear ${
-                        timeLeft <= 15 ? 'bg-red-500' : activeTeam === myTeam ? 'bg-emerald-400' : 'bg-zinc-600'
-                      }`}
-                      style={{ width: `${(timeLeft / 60) * 100}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[8px] text-zinc-500 leading-none">
-                    <span className="font-mono">Online</span>
-                    {timeLeft === 0 && activeTeam !== myTeam ? (
-                      <button
-                        type="button"
-                        onClick={handleEndTurn}
-                        className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-red-300 font-semibold px-2 py-1 rounded-lg text-[8px] transition-all cursor-pointer uppercase"
-                      >
-                        Claim Turn
-                      </button>
-                    ) : (
-                      <span>{activeTeam === myTeam ? "Make your moves" : "Waiting for opponent..."}</span>
-                    )}
-                  </div>
-                </div>
-              )}
+              <div className="match-board-tools w-full flex items-center justify-between font-mono text-[10px] text-zinc-500 shrink-0">
+                <span>Battlefield · {zoomLevel === 100 ? 'Fit to screen' : 'Pan to explore'}</span>
+                <div className="match-inline-intel">{renderHoverHUD()}</div>
+                <button
+                  type="button"
+                  aria-pressed={zoomLevel === 140}
+                  aria-label={zoomLevel === 140 ? 'Fit entire battlefield to screen' : 'Zoom battlefield for precise selection'}
+                  onClick={() => setZoomLevel(level => level === 100 ? 140 : 100)}
+                  className="px-3 py-1 rounded-lg border border-zinc-700 text-sky-300 hover:bg-sky-500/10"
+                >{zoomLevel === 140 ? '↙ Fit board' : '⊕ Zoom'}</button>
+              </div>
               {/* Aligned Coordinate Scales with Battlefield Grid */}
               <div
                 role="application"
@@ -5443,9 +5371,7 @@ export default function Game({
                 aria-roledescription="tactical game board"
                 onDoubleClick={handleGridDoubleClick}
                 onTouchStart={handleGridDoubleTap}
-                className={`@container shrink-0 touch-manipulation relative w-full flex items-center border rounded-lg p-2 animate-fade-in mt-1 select-none transition-all duration-300 ${
-                  isIsometric ? 'overflow-visible' : 'overflow-x-auto'
-                } ${
+                className={`match-board-stage @container touch-manipulation relative w-full flex items-center border rounded-lg p-2 animate-fade-in mt-1 select-none transition-all duration-300 overflow-auto ${
                   zoomLevel === 140 ? 'justify-start cursor-zoom-out' : 'justify-center cursor-zoom-in'
                 } ${(() => {
                   const t = BOARD_THEMES.find(th => th.id === boardTheme);
@@ -5457,21 +5383,14 @@ export default function Game({
                   if (t.id === 'jungle') return 'bg-emerald-950 border-green-800/30';
                   return 'bg-[#090b07] border-[#1e2317]';
                 })()}`}
-                style={{ containerType: 'inline-size' }}
+                style={{ containerType: 'size' }}
               >
-                {/* Floating Zoom HUD Indicator Badge */}
-                <div className="absolute top-3 right-3 z-30 glass-dark px-2.5 py-1 text-[8.5px] font-mono rounded-lg select-none pointer-events-none uppercase tracking-wider shadow flex items-center gap-1.5 font-semibold text-zinc-500">
-                  <span className={`w-1.5 h-1.5 rounded-full ${zoomLevel === 140 ? 'bg-emerald-400 animate-ping' : 'bg-zinc-600'}`} />
-                  {zoomLevel}%
-                </div>
-
                 <div 
-                  className={`board-cq flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
+                  className={`match-board board-cq flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
                   style={{
-                     width: zoomLevel === 140 ? '140%' : '100%',
+                     width: zoomLevel === 140 ? 'max(500px, 140cqw)' : 'min(100cqw - 20px, 100cqh - 20px)',
                      minWidth: zoomLevel === 140 ? '500px' : '0',
-                     maxWidth: zoomLevel === 140 ? 'none' : 'min(100%, min(100cqw - 50px, 80dvh))',
-                     aspectRatio: '1 / 1'
+                     flexShrink: 0
                   }}
                 >
                   {/* Column labels scale (A-O) */}
@@ -5501,14 +5420,14 @@ export default function Game({
                     </div>
 
                     {/* Actual battlefield grid */}
-                    <div className="flex-1 relative" style={isIsometric ? { perspective: '1200px', perspectiveOrigin: '50% 50%' } : undefined}>
+                    <div className="flex-1 min-w-0 relative" style={isIsometric ? { perspective: '1200px', perspectiveOrigin: '50% 50%' } : undefined}>
                       <div
-                        className={`grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''} ${isIsometric ? 'overflow-visible' : 'overflow-hidden'}`}
+                        className={`match-grid grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''} ${isIsometric ? 'overflow-visible' : 'overflow-hidden'}`}
                         style={{
                           gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                           backgroundColor: '#1b2015',
                           ...(isIsometric ? {
-                            transform: 'rotateX(55deg) rotateZ(-45deg) scale(0.75)',
+                            transform: 'rotateX(55deg) rotateZ(-45deg) scale(0.65)',
                             transformStyle: 'preserve-3d',
                             transformOrigin: '50% 50%',
                             transition: 'transform 0.5s ease-in-out',
@@ -5550,6 +5469,7 @@ export default function Game({
                 </div>
               </div>
 
+              <div className="match-action-rail">
               {/* Unified 1-Button Deployment and Battle Launch Flow (Placed below grid to prevent covering any playable squares!) */}
               {mode === 'deploy' && (
                 <div 
@@ -5694,29 +5614,6 @@ export default function Game({
                 </div>
               )}
 
-               {/* PLAYER DEPLOYMENT ROSTER (BOTTOM OF BOARD) */}
-              {mode === 'deploy' && (gameMode === 'local_p2p' || gameMode === 'local_ai' || (isOnline && myTeam === 'player')) && (
-                <div 
-                  className={`w-full p-2 rounded-lg border transition-all duration-300 shrink-0 ${
-                    teamSelection === 'player' 
-                      ? 'border-sky-500/50 bg-sky-950/15 shadow-[0_0_10px_rgba(56,189,248,0.15)]' 
-                      : 'border-zinc-800 border-opacity-50 bg-zinc-800 bg-opacity-80'
-                  } ${!isOnline || myTeam === 'player' ? 'cursor-pointer hover:border-sky-500/40' : ''}`}
-                  onClick={() => {
-                    if (!isOnline || myTeam === 'player') {
-                      setTeamSelection('player');
-                    }
-                  }}
-                >
-                   <h2 className="text-sky-400 font-bold mb-1.5 uppercase tracking-widest text-[9px] sm:text-[10px] font-mono flex items-center gap-1.5 border-b border-sky-900/30 pb-1">
-                     <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shadow-[0_0_4px_#38bdf8] animate-pulse"></div>
-                     BLUE SQUAD (YOUR AREA)
-                     <span className="text-zinc-500 font-normal font-mono normal-case text-[8px] ml-auto">Bottom side of grid</span>
-                   </h2>
-                   {renderRoster('player')}
-                </div>
-              )}
-
               {/* FLOATING OVERLAY: ABILITY REMINDER FOR ACTIVE SELECTED UNIT */}
               {mode === 'play' && selectedUnitId && activeTeam === (myTeam || 'player') && selectedUnit && selectedUnit.team === activeTeam && selectedUnit.ap >= 1 && selectedUnit.class.ability && (
                  <div className="w-full shrink-0 flex justify-center mx-auto mt-1 pointer-events-none z-[80]">
@@ -5729,7 +5626,7 @@ export default function Game({
                             setIsAbilityActive(!isAbilityActive);
                           }
                        }}
-                       className={`pointer-events-auto px-6 py-2 sm:py-2.5 rounded-xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 w-full max-w-sm ${isAbilityActive ? 'bg-amber-400 text-zinc-950 border border-amber-300' : 'bg-sky-500 border border-sky-400 text-white animate-bounce shadow-[0_4px_12px_rgba(14,165,233,0.5)] active:scale-95 hover:bg-sky-400 cursor-pointer'}`}
+                       className={`pointer-events-auto px-6 py-2 sm:py-2.5 rounded-xl border font-mono text-[10px] sm:text-[11px] uppercase tracking-wider shadow-2xl transition-all duration-300 flex items-center justify-center gap-2 w-full max-w-sm ${isAbilityActive ? 'bg-amber-400 text-zinc-950 border border-amber-300' : 'bg-sky-500 border border-sky-400 text-white shadow-[0_4px_12px_rgba(14,165,233,0.5)] active:scale-95 hover:bg-sky-400 cursor-pointer'}`}
                     >
                        <Zap className="w-[4cqw] h-[4cqw] min-[600px]:w-4 min-[600px]:h-4" />
                        {isAbilityActive ? 'CANCEL L-CLICK DEPLOYMENT' : `ACTIVATE [${selectedUnit.class.ability.name}]`}
@@ -5847,62 +5744,18 @@ export default function Game({
                   </div>
                 </div>
               )}
+              </div> {/* Controls become a side rail on short landscape screens. */}
 
             </div>
           </div>
 
-          {/* 4. SELECTED UNIT METRICS BAR / STANDBY CONSOLE (Play and Deploy Modes below the board inside the core control HUD) */}
-          {(mode === 'play' || (mode === 'deploy' && selectedClass)) && activeRightTab !== 'unit_console' && (
-            <div className="w-full animate-fade-in mt-1 z-35">
-              <SelectedUnitConsole
-                selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
-                  id: 'preview-' + selectedClass.className,
-                  class: getUnitClassWithBoosts(selectedClass, teamSelection),
-                  x: -1,
-                  y: -1,
-                  hp: getUnitClassWithBoosts(selectedClass, teamSelection).stats.maxHP,
-                  ap: 2,
-                  team: teamSelection,
-                } : null)}
-                activeTeam={activeTeam}
-                onEndTurn={handleEndTurn}
-                onCancelSelection={() => {
-                  if (mode === 'play') {
-                    setSelectedUnitId(null);
-                  } else {
-                    setSelectedClass(null);
-                  }
-                }}
-                isAbilityActive={isAbilityActive}
-                onToggleAbility={() => {
-                   if (selectedUnit?.class.ability?.type === 'self') {
-                     handleSelfAbility();
-                   } else {
-                     setIsAbilityActive(!isAbilityActive);
-                   }
-                }}
-                mapEnvironment={mapEnvironment}
-                units={units}
-                activeHoveredTile={hoveredTile}
-                isOnline={isOnline}
-                myTeam={myTeam}
-                onPassUnit={handlePassUnit}
-                mode={mode}
-                onRenameUnit={handleRenameUnit}
-              />
-            </div>
-          )}
-
-          {/* 4.5. SEMI-TRANSPARENT COMBAT FEED LOG (Placed directly under unit/battle controls during gameplay) */}
-          {mode === 'play' && activeLeftTab !== 'logs' && (
-            <div className="w-full flex justify-center animate-fade-in mt-1">
-              <div className="w-full max-w-3xl xl:max-w-none">
-                <HUDCombatLog 
-                  logs={finalLogs} 
-                  onClear={() => setLogs([])}
-                  activeTeam={activeTeam}
-                />
-              </div>
+          {/* Essential selection stays visible; full diagnostics live in Targeting. */}
+          {(selectedUnit || selectedClass) && (
+            <div className="match-selection glass rounded-xl w-full flex items-center gap-2 px-3 py-1.5 shrink-0 font-mono text-xs">
+              <span className="text-amber-300 font-bold truncate">{mode === 'deploy' ? selectedClass?.className : selectedUnit?.class.className}</span>
+              {mode === 'play' && selectedUnit && <span className="text-zinc-300 whitespace-nowrap">{selectedUnit.hp} HP · {selectedUnit.ap} AP</span>}
+              <button type="button" onClick={() => openRightPanel('unit_console')} className="ml-auto text-sky-300 px-2 py-1">Details</button>
+              <button type="button" aria-label="Cancel unit selection" onClick={() => { setSelectedUnitId(null); setSelectedClass(null); }} className="text-zinc-400 px-2 py-1">×</button>
             </div>
           )}
 
@@ -5911,11 +5764,11 @@ export default function Game({
 
           {/* RIGHT COLUMN AUX PANEL */}
           {activeRightTab && (
-            <div className="flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
+            <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Squad and targeting panel" className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
               <div className="w-full max-w-2xl flex flex-col gap-3">
               {/* Close Button */}
               <div className="flex justify-end">
-                 <button onClick={() => setActiveRightTab(null)} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+                 <button onClick={() => { setActiveRightTab(null); panelLauncherRef.current?.focus(); }} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
               </div>
               {activeRightTab === 'roster' && (
                 <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-3 shadow-lg select-none">
@@ -5979,12 +5832,12 @@ export default function Game({
                       units={finalUnits}
                       activeTeam={activeTeam}
                       selectedUnitId={selectedUnitId}
-                      onSelectUnit={(id) => { setSelectedUnitId(id); }}
+                      onSelectUnit={(id) => { setSelectedUnitId(id); setActiveRightTab(null); }}
                       mode={mode}
                       teamSelection={teamSelection}
                       setTeamSelection={setTeamSelection}
                       selectedClass={selectedClass}
-                      setSelectedClass={setSelectedClass}
+                      setSelectedClass={(unitClass) => { setSelectedClass(unitClass); if (unitClass) { setActiveRightTab(null); panelLauncherRef.current?.focus(); } }}
                       isOnline={!!isOnline}
                       myTeam={myTeam}
                     />
