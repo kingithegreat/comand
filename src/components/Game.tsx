@@ -4228,6 +4228,10 @@ export default function Game({
         grid.push(
           <div
             key={`${x}-${y}`}
+            data-x={x}
+            data-y={y}
+            data-testid={`tile-${x}-${y}`}
+            aria-label={`Tile ${getCoord(x, y)}`}
             onClick={() => handleCellClick(x, y)}
             onMouseEnter={(e) => {
               setHoveredTile({x, y});
