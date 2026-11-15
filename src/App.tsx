@@ -110,6 +110,7 @@ export default function App() {
   };
 
   const [menuTab, setMenuTab] = useState<'play' | 'progress' | 'shop'>('play');
+  const [lobbyDock, setLobbyDock] = useState<'play' | 'multiplayer' | 'intel' | 'progress' | 'shop' | 'codex'>('play');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
@@ -815,7 +816,7 @@ export default function App() {
   if (gameMode === 'tutorial') {
     return (
       <Suspense fallback={LazyFallback}>
-      <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative selection:bg-[#fbbf24] selection:text-black">
+      <div className="mode-shell bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-3 sm:p-4 flex flex-col items-center justify-center relative selection:bg-[#fbbf24] selection:text-black">
         <TutorialMode onBack={() => setGameMode(null)} />
       </div>
       </Suspense>
@@ -825,7 +826,7 @@ export default function App() {
   if (gameMode === 'campaign') {
     return (
       <Suspense fallback={LazyFallback}>
-      <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-4 sm:p-6 flex flex-col items-center justify-center relative selection:bg-[#fbbf24] selection:text-black">
+      <div className="mode-shell bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-sans p-3 sm:p-4 flex flex-col items-center justify-center relative selection:bg-[#fbbf24] selection:text-black">
         <CampaignMode onBack={() => { setGameMode(null); setCampaignMissionId(null); }} onStartMission={(missionId) => { setCampaignMissionId(missionId); setGameMode('local_ai'); }} difficulty={campaignDifficulty} onDifficultyChange={(d) => { setCampaignDifficulty(d); try { localStorage.setItem('tc_campaign_difficulty', String(d)); } catch {} }} />
       </div>
       </Suspense>
@@ -1163,7 +1164,7 @@ export default function App() {
 
     return (
        <Suspense fallback={LazyFallback}>
-       <div className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
+       <div className="mode-shell bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 select-none text-zinc-300">
          <Game
            gameMode={gameMode as 'online' | 'online_coop'}
            onBack={() => { handleAbortMatch(); }}
@@ -1182,7 +1183,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-app bg-zinc-950 text-zinc-300 font-sans p-6 flex flex-col items-center justify-start relative selection:bg-[#fbbf24] selection:text-black">
+    <div className="lobby-shell bg-zinc-950 text-zinc-300 font-sans flex flex-col items-center relative selection:bg-[#fbbf24] selection:text-black">
       {/* Ambient animated background */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.04)_0%,transparent_50%)]" />
@@ -1213,7 +1214,7 @@ export default function App() {
         <div className="absolute top-[80%] left-[25%] w-1 h-1 rounded-full bg-emerald-500/20 animate-particle-slow" style={{animationDelay: '2s'}} />
       </div>
 
-      <div className="menu-stagger w-full max-w-2xl mx-auto z-10 flex flex-col gap-6 relative pt-4 pb-12">
+      <div className="lobby-main menu-stagger w-full max-w-5xl mx-auto z-10 flex flex-col relative">
          {isOffline && (
            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs font-mono">
              <WifiOff className="w-4 h-4 shrink-0" />
@@ -1221,7 +1222,7 @@ export default function App() {
            </div>
          )}
          {/* Hero Header */}
-         <div className="text-center space-y-4 pb-4 border-b border-zinc-800/30 relative">
+         <div className="lobby-hero text-center space-y-4 pb-4 border-b border-zinc-800/30 relative">
            <div className="absolute right-0 top-0 flex gap-1.5">
              <button
                type="button"
@@ -1240,7 +1241,7 @@ export default function App() {
                {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
              </button>
            </div>
-           <div className="w-20 h-20 bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-700/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.1),0_0_60px_rgba(251,191,36,0.05)] mx-auto relative group">
+           <div className="lobby-logo w-20 h-20 bg-gradient-to-br from-zinc-900 to-zinc-950 border border-zinc-700/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.1),0_0_60px_rgba(251,191,36,0.05)] mx-auto relative group">
               <div className="absolute inset-0 rounded-2xl bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <Target className="w-9 h-9 text-amber-500/40 absolute scale-110 blur-sm animate-pulse" />
               <Target className="w-9 h-9 text-amber-400 relative z-10 transition-transform group-hover:rotate-90 duration-700" />
@@ -1260,7 +1261,7 @@ export default function App() {
          <button
            type="button"
            onClick={() => setGameMode('tutorial')}
-           className="w-full p-4 rounded-xl border-2 border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 hover:border-amber-400/60 hover:bg-amber-500/15 transition-all cursor-pointer group flex items-center justify-between gap-4"
+           className="lobby-learn w-full p-4 rounded-xl border-2 border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-amber-500/10 hover:border-amber-400/60 hover:bg-amber-500/15 transition-all cursor-pointer group flex items-center justify-between gap-4 shrink-0"
          >
            <div className="flex items-center gap-3">
              <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0 group-hover:bg-amber-500/25 transition-colors">
@@ -1275,7 +1276,7 @@ export default function App() {
          </button>
 
          {/* Match Configuration */}
-         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+         <div className="lobby-config grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
             {/* Smog Toggle */}
             <div className={`relative rounded-xl p-4 border transition-all duration-300 ${smogMode ? 'bg-amber-500/5 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.06)]' : 'bg-zinc-900/60 border-zinc-800/50'}`}>
                <div className="flex items-center justify-between gap-3">
@@ -1356,7 +1357,7 @@ export default function App() {
          </div>
 
          {/* Modes Selection */}
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         <div className="lobby-modes grid grid-cols-1 md:grid-cols-2 gap-4">
             <button
               onClick={() => setGameMode('campaign')}
               className="group relative p-6 rounded-2xl text-left transition-all duration-300 cursor-pointer overflow-hidden border border-emerald-500/20 hover:border-emerald-400/50 bg-gradient-to-br from-emerald-950/30 via-zinc-950/80 to-zinc-950/90 hover:shadow-[0_0_30px_rgba(16,185,129,0.1)] transform hover:-translate-y-0.5"
@@ -1454,6 +1455,48 @@ export default function App() {
             </button>
          </div>
 
+
+         <nav className="lobby-dock" aria-label="Command menu">
+           {([
+             ['play', 'Play'],
+             ['multiplayer', 'Multiplayer'],
+             ['intel', 'Intel'],
+             ['progress', 'Progress'],
+             ['shop', 'Armory'],
+             ['codex', 'Codex'],
+           ] as const).map(([id, label]) => (
+             <button
+               key={id}
+               type="button"
+               aria-pressed={lobbyDock === id}
+               className={lobbyDock === id ? 'is-active' : ''}
+               onClick={() => {
+                 if (id === 'intel' || id === 'progress' || id === 'shop') {
+                   setMenuTab(id === 'intel' ? 'play' : id === 'progress' ? 'progress' : 'shop');
+                 }
+                 setLobbyDock(id);
+               }}
+             >{label}</button>
+           ))}
+         </nav>
+
+         {lobbyDock !== 'play' && (
+           <>
+             <button type="button" className="lobby-drawer-backdrop" aria-label="Close panel" onClick={() => setLobbyDock('play')} />
+             <aside className="lobby-drawer" role="dialog" aria-modal="true" aria-label="Command panel">
+               <div className="lobby-drawer-header">
+                 <h2>
+                   {lobbyDock === 'multiplayer' ? 'Multiplayer'
+                     : lobbyDock === 'intel' ? 'Intel'
+                     : lobbyDock === 'progress' ? 'Progress'
+                     : lobbyDock === 'shop' ? 'Armory'
+                     : 'Codex'}
+                 </h2>
+                 <button type="button" className="lobby-drawer-close" onClick={() => setLobbyDock('play')}>Close</button>
+               </div>
+               <div className="lobby-drawer-body">
+                 {lobbyDock === 'multiplayer' && (
+         <>
          {/* Online Section */}
          <div className="relative rounded-2xl p-5 border border-zinc-800/40 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 backdrop-blur-sm overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-purple-500/[0.02] to-sky-500/[0.02]" />
@@ -1579,7 +1622,10 @@ export default function App() {
             )}
          </div>
          </div>
-
+         </>
+                 )}
+                 {lobbyDock === 'codex' && (
+         <>
          {/* Interactive Tactical Dossier Database */}
          <div className="relative rounded-2xl p-5 border border-zinc-800/40 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 backdrop-blur-sm flex flex-col gap-4 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.02] to-transparent" />
@@ -1975,25 +2021,9 @@ export default function App() {
               </div>
             )}
          </div>
-
-         {/* Progression Tabs */}
-         <div className="flex gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800/30">
-           {(['play', 'progress', 'shop'] as const).map(tab => (
-             <button
-               key={tab}
-               type="button"
-               onClick={() => setMenuTab(tab)}
-               className={`flex-1 py-2 px-3 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer font-mono ${
-                 menuTab === tab
-                   ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                   : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
-               }`}
-             >
-               {tab === 'play' ? 'Intel' : tab === 'progress' ? 'Progress' : 'Armory'}
-             </button>
-           ))}
-         </div>
-
+         </>
+                 )}
+                 {(lobbyDock === 'intel' || lobbyDock === 'progress' || lobbyDock === 'shop') && (
          <Suspense fallback={<div className="flex items-center justify-center py-8 text-zinc-500 font-mono text-xs"><Loader2 className="w-5 h-5 animate-spin text-amber-500 mr-2" />LOADING...</div>}>
          {menuTab === 'play' && (
            <>
@@ -2023,6 +2053,12 @@ export default function App() {
            />
          )}
          </Suspense>
+                 )}
+               </div>
+             </aside>
+           </>
+         )}
+
       </div>
     </div>
   );

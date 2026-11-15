@@ -21,7 +21,8 @@ html, body, #root {
    horizontally only on html. */
 html {
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
+  overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   touch-action: manipulation;
 }
@@ -611,7 +612,10 @@ html {
   container-type: inline-size;
   container-name: board;
 }
-@container board (max-width: 560px) {
+/* Words like RECONNAISSANCE cannot fit a ~44px tile (a 15×15 board
+   only reaches ~80px tiles around 1200px wide). Keep icons/colours
+   as the default language; show words only on very large boards. */
+@container board (max-width: 1199px) {
   .tile-word { display: none !important; }
 }
 
@@ -622,8 +626,9 @@ html {
   inset: var(--sa-top) var(--sa-right) var(--sa-bottom) var(--sa-left);
   width: auto;
   height: var(--app-height);
+  max-height: var(--app-height);
   overflow: hidden;
-  padding: 8px;
+  padding: 4px;
   background: radial-gradient(ellipse at 50% 20%, #16232a 0%, #09090b 65%);
 }
 .match-frame { gap: 8px; }
@@ -824,13 +829,17 @@ html {
 }
 
 
-/* Desktop + touch: keep command chrome finger-sized at every width. */
-.match-header-actions > button,
-.match-status button,
-.match-deploy-actions button,
-.match-deploy-tip button {
-  min-height: 44px;
-  min-width: 44px;
+/* Touch: keep command chrome finger-sized. Fine-pointer desktops
+   use the compact sizes in the full-bleed block below so the board
+   can fill the leftover viewport. */
+@media (pointer: coarse) {
+  .match-header-actions > button,
+  .match-status button,
+  .match-deploy-actions button,
+  .match-deploy-tip button {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 /* Float labels (DEPLOYED / damage) stay inside their tile so neighbours
@@ -898,4 +907,581 @@ html {
   background: #f59e0b;
   border-radius: 999px;
   border: 2px solid #fff;
+}
+
+
+/* ===== FULL-BLEED, NO PAGE SCROLL (desktop / tablet / phone) =====
+   The game and the lobby occupy one 100dvh × 100dvw viewport. Secondary
+   UI (intel, multiplayer, codex, shop, etc.) opens as a drawer that
+   scrolls internally. The document itself must never become a scrollport. */
+#root, body {
+  max-height: 100dvh;
+}
+
+.lobby-shell,
+.mode-shell {
+  position: fixed;
+  inset: var(--sa-top) var(--sa-right) var(--sa-bottom) var(--sa-left);
+  width: auto;
+  height: var(--app-height);
+  max-height: var(--app-height);
+  overflow: hidden;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.lobby-shell {
+  padding: 8px 10px 6px;
+}
+
+.lobby-main {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  gap: 8px;
+  padding: 0 !important;
+  padding-bottom: 0 !important;
+  padding-top: 0 !important;
+}
+
+.lobby-hero {
+  padding-bottom: 6px !important;
+  gap: 6px;
+}
+.lobby-hero .lobby-logo {
+  width: 56px;
+  height: 56px;
+}
+.lobby-learn { flex: 0 0 auto; }
+.lobby-config { flex: 0 0 auto; }
+.lobby-modes {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  align-content: stretch;
+}
+.lobby-modes > button { min-height: 0; padding: 10px 12px !important; }
+.lobby-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  max-width: 80rem;
+  margin: 6px auto 0;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(39, 39, 42, 0.6);
+  background: rgba(9, 9, 11, 0.85);
+  z-index: 30;
+}
+.lobby-dock button {
+  flex: 1 1 auto;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+.lobby-dock button[aria-pressed="true"],
+.lobby-dock button.is-active {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.lobby-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 40;
+}
+.lobby-drawer {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 58px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  background: rgba(9, 9, 11, 0.96);
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.55);
+}
+.lobby-drawer-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(39, 39, 42, 0.8);
+}
+.lobby-drawer-header h2 {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  margin: 0;
+}
+.lobby-drawer-close {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  background: rgba(24, 24, 27, 0.8);
+  color: #e4e4e7;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.lobby-drawer-body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
+  padding: 12px;
+}
+
+@media (max-height: 900px) {
+  .lobby-hero { padding-bottom: 2px !important; gap: 0 !important; }
+  .lobby-hero > :not([hidden]) ~ :not([hidden]) { margin-top: 0 !important; }
+  .lobby-hero .lobby-logo { width: 44px; height: 44px; }
+  .lobby-hero h1 { font-size: clamp(1.35rem, 5vw, 2.1rem) !important; }
+  .lobby-hero p { display: none; }
+  .lobby-learn p { display: none; }
+  .lobby-learn { padding: 8px 12px !important; }
+  .lobby-config p { display: none; }
+  .lobby-config { gap: 8px !important; }
+  .lobby-config > div { padding: 8px 10px !important; }
+  .lobby-modes {
+    gap: 8px !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .lobby-modes > button { min-height: 56px !important; padding: 8px 12px !important; }
+  .lobby-modes > button p { display: none; }
+}
+
+/* Phone portrait: keep every play-tab control on one screen. Modes sit in a
+   2-col grid and can scroll inside the pane if the viewport is extremely short. */
+@media (max-width: 640px) and (orientation: portrait) {
+  .lobby-shell { padding: 6px 8px 4px; }
+  .lobby-main { gap: 6px; }
+  .lobby-hero .lobby-logo { width: 36px; height: 36px; }
+  .lobby-hero h1 { font-size: 1.35rem !important; }
+  .lobby-learn { padding: 8px 10px !important; }
+  .lobby-config {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  .lobby-config > div { padding: 8px 10px !important; }
+  .lobby-config > :last-child { grid-column: 1 / -1; }
+  .lobby-config input[type="range"] { height: 36px; }
+  .lobby-modes {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .lobby-modes > button { min-height: 52px !important; padding: 8px 10px !important; }
+  .lobby-dock {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    margin-top: 4px;
+  }
+  .lobby-dock button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 4px;
+    font-size: 8px;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .lobby-shell { padding: 4px 8px; }
+  .lobby-main {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+  }
+  .lobby-hero {
+    width: auto;
+    flex: 0 0 auto;
+    max-width: 28%;
+    border-bottom: 0 !important;
+    padding: 0 !important;
+  }
+  .lobby-hero .lobby-logo { width: 28px; height: 28px; }
+  .lobby-hero h1 { font-size: 1.1rem !important; }
+  .lobby-learn { flex: 1 1 240px; max-height: 56px; padding: 6px 10px !important; }
+  .lobby-config {
+    flex: 1 1 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1.4fr !important;
+    gap: 6px !important;
+    max-height: 76px;
+    overflow: hidden;
+  }
+  .lobby-config > :last-child { grid-column: auto; }
+  .lobby-config > div { padding: 6px 8px !important; }
+  .lobby-config input[type="range"] { height: 28px; }
+  .lobby-modes {
+    flex: 1 1 100%;
+    width: 100%;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    min-height: 48px;
+    max-height: none;
+    overflow: visible;
+  }
+  .lobby-modes > button { min-height: 48px !important; min-width: 0 !important; padding: 4px 6px !important; font-size: 11px; }
+  .lobby-dock { flex: 0 0 auto; width: 100%; margin-top: 0; }
+  .lobby-drawer { top: 4px; left: 4px; right: 4px; bottom: 52px; }
+}
+
+/* Fine-pointer desktops: shrink HUD chrome so the board fills the leftover viewport. */
+@media (min-width: 768px) and (pointer: fine) {
+  .match-shell { padding: 4px; }
+  .match-frame { gap: 4px; }
+  .match-header { padding: 2px 8px; gap: 6px; }
+  .match-header-actions { gap: 4px; }
+  .match-header-actions > button {
+    min-height: 32px;
+    min-width: 32px;
+    padding: 4px 10px;
+  }
+  .match-status { padding: 2px 6px; gap: 6px; }
+  .match-status button { min-height: 32px; min-width: 32px; padding: 4px 8px; }
+  .match-hover { height: 28px; }
+  .match-deploy-summary { padding: 4px 8px; gap: 8px; }
+  .match-deploy-actions { gap: 4px; }
+  .match-deploy-actions button { min-height: 32px; min-width: 32px; padding: 4px 10px; }
+  .match-deploy-tip { padding: 2px 8px; }
+  .match-deploy-tip button { min-height: 32px; min-width: 32px; }
+  .match-board-tools { min-height: 28px; gap: 6px; }
+  .match-board-tools button { min-height: 32px; min-width: 32px; padding: 2px 8px; }
+  .match-selection { min-height: 36px; }
+  .match-selection button { min-height: 36px; min-width: 36px; }
+  .match-battlefield { padding: 4px; }
+  .match-board-stage { padding: 4px; }
+  .match-center { gap: 4px; }
+}
+
+@media (max-height: 900px) and (pointer: fine) {
+  .match-hover { display: none; }
+}
+
+@media (max-height: 800px) and (min-width: 768px) {
+  .match-header h1 + div { display: none; }
+}
+
+.mode-shell > * {
+  max-height: 100%;
+  min-height: 0;
+}
+/* Tutorial: keep the header, let the lesson body scroll inside the card. */
+.mode-shell .flex.flex-col.overflow-hidden > :nth-child(n+3) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+
+/* ===== TWO-REGION MATCH: BOARD + HUB ===== */
+.match-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  padding: 0;
+}
+.match-split {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+}
+.match-board-region {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+.match-board-region .match-battlefield {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+.match-board-region .match-battlefield-content {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.match-board-region .match-board-stage {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+  padding: 8px;
+  overflow: hidden;
+}
+.match-board-region .match-board-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  left: auto;
+  width: auto;
+  z-index: 6;
+  min-height: 0;
+  background: rgba(9, 9, 11, 0.72);
+  border: 1px solid rgba(63, 63, 70, 0.5);
+  border-radius: 8px;
+  padding: 2px 2px 2px 8px;
+}
+.match-board-region .match-board-tools > span { display: none; }
+
+.match-hub {
+  flex: 0 0 22.5rem;
+  width: 22.5rem;
+  max-width: 42vw;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid rgba(63, 63, 70, 0.55);
+  background: rgba(9, 9, 11, 0.94);
+}
+.match-hub .match-header {
+  border-radius: 0;
+  padding: 6px 8px;
+  gap: 6px;
+  box-shadow: none;
+}
+.match-hub .match-header h1 { font-size: 10px; letter-spacing: 0.08em; }
+.match-hub .match-header-actions { width: auto; }
+.match-hub .match-panel-launcher { display: none; }
+.match-hub-tabs {
+  display: flex;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  gap: 2px;
+  padding: 4px;
+  border-bottom: 1px solid rgba(39, 39, 42, 0.8);
+  background: rgba(9, 9, 11, 0.9);
+}
+.match-hub-tabs button {
+  flex: 1 1 0;
+  min-height: 36px;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #a1a1aa;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.match-hub-tabs button.is-active,
+.match-hub-tabs button[aria-selected="true"] {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+.match-hub-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  gap: 6px;
+}
+.match-hub-body .match-status {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  gap: 4px;
+}
+.match-hub-body .match-hover { height: auto; min-height: 0; }
+.match-hub-body .match-action-rail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 6px;
+  width: 100%;
+}
+.match-hub-body .match-selection { flex: 0 0 auto; }
+.match-hub-drawer {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.match-hub-drawer > div {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.match-hub-drawer .match-drawer-close { display: none; }
+
+/* Recruit / map-intro chrome is redundant once the Squad roster fills the pane. */
+.match-hub .match-deploy-summary > :first-child { display: none; }
+.match-hub .match-deploy-actions > button:first-of-type { display: none; }
+
+/* Show only the tab-relevant chrome inside the hub body. Status stays
+   visible so turn controls remain reachable. The deploy assembly rail
+   is Squad-tab only; ability / overwatch controls still show in play. */
+.match-hub[data-hub-tab]:not([data-hub-tab="deploy"]) .match-deploy-summary,
+.match-hub[data-hub-tab]:not([data-hub-tab="deploy"]) .match-deploy-tip {
+  display: none !important;
+}
+.match-hub[data-mode="deploy"][data-hub-tab]:not([data-hub-tab="deploy"]) .match-action-rail {
+  display: none !important;
+}
+.match-hub[data-hub-tab="unit"] .match-selection {
+  display: none !important;
+}
+.match-hub[data-hub-tab]:not([data-hub-tab="settings"]) .match-panel-menu {
+  display: none !important;
+}
+
+/* Compact the map / recruit strip so the roster can fill the Squad pane. */
+.match-hub .match-deploy-summary {
+  padding: 6px 8px !important;
+  gap: 6px !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+.match-hub .match-deploy-summary .match-deploy-actions {
+  width: 100%;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.match-hub[data-hub-tab="deploy"] .match-hub-drawer {
+  flex: 1 1 auto;
+  min-height: 9rem;
+}
+
+/* Portrait / short-landscape: keep the roster usable in the leftover hub. */
+@media (orientation: portrait) and (max-width: 1024px), (max-height: 500px) {
+  .match-hub-body { padding: 4px; gap: 4px; }
+  .match-hub-body .match-status { padding: 2px 4px; }
+  .match-hub .match-deploy-summary { padding: 4px 6px !important; }
+  .match-hub .match-action-rail button { padding: 6px 8px; }
+  .match-hub .match-deploy-summary,
+  .match-hub .match-deploy-tip { display: none !important; }
+  .match-hub[data-can-start="false"] .match-action-rail { display: none !important; }
+  .match-hub[data-hub-tab="deploy"] .match-hub-drawer { min-height: 0; flex: 1 1 auto; }
+  /* Class picker is the deploy action; the integrity grid can wait. */
+  .match-hub .match-roster-heading,
+  .match-hub .match-roster-integrity { display: none; }
+  .match-hub .match-roster-panel { padding: 4px !important; gap: 4px !important; border: 0; background: transparent; box-shadow: none; }
+  .match-hub .match-roster-classes { border-top: 0; padding-top: 0; flex: 1 1 auto; min-height: 0; }
+  .match-hub[data-hub-tab="deploy"] .match-selection { display: none !important; }
+  .match-roster-classes .glass-dark { padding: 6px !important; gap: 6px !important; }
+  .match-roster-classes .glass-dark > :first-child,
+  .match-roster-classes .glass-dark > :last-child { display: none; }
+}
+
+
+/* Stacked board-over-hub on phone and tablet portrait */
+@media (orientation: portrait) and (max-width: 1024px) {
+  .match-split { flex-direction: column; }
+  .match-hub {
+    flex: 0 0 38%;
+    width: 100%;
+    max-width: none;
+    height: 38%;
+    max-height: 42%;
+    min-height: 190px;
+    border-left: 0;
+    border-top: 1px solid rgba(63, 63, 70, 0.55);
+  }
+  .match-hub-tabs button { min-height: 44px; }
+}
+/* Phone landscape: narrow side hub, board keeps the leftover width */
+@media (max-height: 500px) and (orientation: landscape) {
+  .match-split { flex-direction: row; }
+  .match-hub {
+    flex: 0 0 16rem;
+    width: 16rem;
+    max-width: 42vw;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    border-left: 1px solid rgba(63, 63, 70, 0.55);
+    border-top: 0;
+  }
+  .match-hub .match-header h1 + div,
+  .match-hub .match-live { display: none; }
+  .match-hub-tabs button { min-height: 36px; font-size: 8px; padding: 2px; }
+}
+
+@media (pointer: coarse) {
+  .match-hub-tabs button { min-height: 44px; }
 }

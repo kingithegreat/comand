@@ -109,7 +109,7 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
 
   if (loadingMission) {
      return (
-       <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col justify-center items-center relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90dvh] mx-auto mt-6">
+       <div className="w-full h-full max-w-6xl bg-zinc-950 text-zinc-300 font-mono flex flex-col justify-center items-center relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden mx-auto">
           <Globe className="w-16 h-16 text-emerald-500 mb-6 animate-pulse" />
           <h2 className="text-2xl font-black uppercase text-emerald-400 tracking-widest mb-2">Establishing Uplink</h2>
           <p className="text-xs text-zinc-500 tracking-widest uppercase mb-8">Target: {selectedRegion.name}</p>
@@ -143,7 +143,7 @@ export default function CampaignMode({ onBack, onStartMission, difficulty = 1, o
   }
 
   return (
-    <div className="w-full max-w-4xl bg-zinc-950 text-zinc-300 font-mono flex flex-col relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden h-[90dvh] sm:h-[80dvh] md:h-[90dvh] mx-auto mt-6 sm:mt-0">
+    <div className="w-full h-full max-w-6xl bg-zinc-950 text-zinc-300 font-mono flex flex-col relative border border-zinc-800 border-opacity-50 shadow-[0_0_20px_rgba(45,52,34,0.4)] rounded-lg overflow-hidden mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between bg-zinc-900 bg-opacity-80 border-b border-zinc-800 border-opacity-50 p-4 shrink-0">
          <div className="flex items-center gap-3">
