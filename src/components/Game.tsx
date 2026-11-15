@@ -593,11 +593,11 @@ export default function Game({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, activeTeam, mode, winner]);
 
-  useEffect(() => {
-    if (selectedClass && mode === 'deploy') {
-      setActiveRightTab('unit_console');
-    }
-  }, [selectedClass, mode]);
+  // Picking a class closes the recruit drawer so the board is visible for
+  // placement (every pick handler calls setActiveRightTab(null)). An effect here
+  // used to force the full-screen Targeting drawer open on every pick, hiding
+  // the highlighted cells the player is told to tap. Details stays one tap away
+  // via the selection bar.
 
   useEffect(() => {
     if (mode === 'play') {
@@ -4324,7 +4324,7 @@ export default function Game({
              </div>
           )}
         </div>
-        <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-5 md:grid-cols-10 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-2 min-[420px]:grid-cols-3 md:grid-cols-4 gap-1.5 sm:gap-2">
           {CLASSES.filter(c => {
             if (c.className !== 'Assassin') return true;
             return safeGetItem('assassinUnlocked') === 'true';
@@ -5754,8 +5754,8 @@ export default function Game({
             <div className="match-selection glass rounded-xl w-full flex items-center gap-2 px-3 py-1.5 shrink-0 font-mono text-xs">
               <span className="text-amber-300 font-bold truncate">{mode === 'deploy' ? selectedClass?.className : selectedUnit?.class.className}</span>
               {mode === 'play' && selectedUnit && <span className="text-zinc-300 whitespace-nowrap">{selectedUnit.hp} HP · {selectedUnit.ap} AP</span>}
-              <button type="button" onClick={() => openRightPanel('unit_console')} className="ml-auto text-sky-300 px-2 py-1">Details</button>
-              <button type="button" aria-label="Cancel unit selection" onClick={() => { setSelectedUnitId(null); setSelectedClass(null); }} className="text-zinc-400 px-2 py-1">×</button>
+              <button type="button" onClick={() => openRightPanel('unit_console')} className="ml-auto text-sky-300 px-3 py-1 min-h-[40px]">Details</button>
+              <button type="button" aria-label="Cancel unit selection" onClick={() => { setSelectedUnitId(null); setSelectedClass(null); }} className="text-zinc-400 text-base leading-none min-w-[40px] min-h-[40px] inline-flex items-center justify-center">×</button>
             </div>
           )}
 
