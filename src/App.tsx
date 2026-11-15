@@ -1193,13 +1193,16 @@ export default function App() {
       {/* Subtle CRT scanlines */}
       <div className="fixed inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.06)_97%)] bg-[length:100%_3px] pointer-events-none z-50 opacity-60"></div>
 
-      {/* Animated radar rings */}
-      <div className="absolute top-[15%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none z-0">
-        <div className="absolute inset-0 border border-zinc-800/10 rounded-full animate-[spin_60s_linear_infinite]"></div>
-        <div className="absolute inset-24 border border-zinc-800/8 rounded-full animate-[spin_45s_linear_infinite_reverse]"></div>
-        <div className="absolute inset-48 border border-amber-500/5 rounded-full"></div>
-        <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-gradient-to-b from-transparent via-zinc-800/10 to-transparent"></div>
-        <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-gradient-to-r from-transparent via-zinc-800/10 to-transparent"></div>
+      {/* Animated radar rings — clipped to the viewport so the 800px decoration
+          cannot widen the document and create a sideways scroll container. */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[15%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px]">
+          <div className="absolute inset-0 border border-zinc-800/10 rounded-full animate-[spin_60s_linear_infinite]"></div>
+          <div className="absolute inset-24 border border-zinc-800/8 rounded-full animate-[spin_45s_linear_infinite_reverse]"></div>
+          <div className="absolute inset-48 border border-amber-500/5 rounded-full"></div>
+          <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-gradient-to-b from-transparent via-zinc-800/10 to-transparent"></div>
+          <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-gradient-to-r from-transparent via-zinc-800/10 to-transparent"></div>
+        </div>
       </div>
 
       {/* Floating particles */}

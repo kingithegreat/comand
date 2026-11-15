@@ -376,7 +376,7 @@ export default function Game({
         try { playSound('click'); } catch (e) {}
         const timer = setTimeout(() => {
            setTurnBannerTeam(null);
-        }, 2200);
+        }, 1400);
         return () => clearTimeout(timer);
      }
   }, [activeTeam, turn, mode, winner]);
@@ -480,8 +480,22 @@ export default function Game({
         }
       }
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      if (panelLauncherRef.current?.contains(target)) return;
+      // Close popovers without preventDefault so the same tap can still hit the board.
+      setActiveLeftTab(null);
+      setActiveRightTab(null);
+      setCommandPanelsOpen(false);
+    };
     window.addEventListener('keydown', handlePanelKey);
-    return () => window.removeEventListener('keydown', handlePanelKey);
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      window.removeEventListener('keydown', handlePanelKey);
+      window.removeEventListener('pointerdown', handlePointerDown);
+    };
   }, [activeLeftTab, activeRightTab, commandPanelsOpen]);
   const [colorblindMode, setColorblindMode] = useState(false);
 
@@ -4292,9 +4306,14 @@ export default function Game({
                   displayText = 'MISS';
                   colorClass = 'text-zinc-400';
                }
+               const stagger = ((dt.x + dt.y) % 3) * 3;
                return (
-                 <div key={dt.id} className="absolute inset-0 z-50 flex items-center justify-center animate-out slide-out-to-top-8 fade-out duration-1000 fill-mode-forwards pointer-events-none">
-                   <span className={`text-sm sm:text-lg font-black ${colorClass} drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] filter drop-shadow animate-bounce`}>{displayText}</span>
+                 <div
+                   key={dt.id}
+                   className="match-float-label animate-out fade-out duration-700 fill-mode-forwards"
+                   style={{ paddingTop: 1 + stagger }}
+                 >
+                   <span className={`${colorClass} drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}>{displayText}</span>
                  </div>
                );
             })}
@@ -4718,7 +4737,7 @@ export default function Game({
 
       {/* Feature: Minimap */}
       {showMinimap && mode === 'play' && mapEnvironment.length > 0 && (
-        <div className="absolute bottom-2 right-2 z-[55] pointer-events-auto">
+        <div className="absolute bottom-2 right-2 z-[55] pointer-events-none">
           <div className="bg-black/80 border border-zinc-700/60 rounded-lg p-1 backdrop-blur-sm shadow-lg">
             <div className="grid gap-0" style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 4px)` }}>
               {Array.from({ length: GRID_SIZE }).map((_, row) =>
@@ -4810,17 +4829,14 @@ export default function Game({
       )}
 
       {turnBannerTeam && mode === 'play' && (
-         <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none overflow-hidden">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"></div>
-            <div className={`w-full py-10 flex flex-col items-center justify-center backdrop-blur-md border-y transform-gpu animate-sweep-banner relative overflow-hidden ${turnBannerTeam === 'player' ? 'bg-gradient-to-r from-sky-950/90 via-sky-900/70 to-sky-950/90 border-sky-400/30 shadow-[0_0_80px_rgba(56,189,248,0.15)]' : 'bg-gradient-to-r from-fuchsia-950/90 via-fuchsia-900/70 to-fuchsia-950/90 border-fuchsia-400/30 shadow-[0_0_80px_rgba(217,70,239,0.15)]'}`}>
-                <div className={`absolute inset-0 ${turnBannerTeam === 'player' ? 'bg-[radial-gradient(ellipse_at_center,rgba(56,189,248,0.1)_0%,transparent_70%)]' : 'bg-[radial-gradient(ellipse_at_center,rgba(217,70,239,0.1)_0%,transparent_70%)]'}`} />
-                <div className={`text-5xl sm:text-7xl font-black tracking-[0.3em] leading-none relative z-10 ${turnBannerTeam === 'player' ? 'text-sky-300 drop-shadow-[0_0_30px_rgba(56,189,248,0.6)]' : 'text-fuchsia-300 drop-shadow-[0_0_30px_rgba(217,70,239,0.6)]'}`} style={{fontFamily: 'Orbitron, monospace'}}>
+         <div className="tc-turn-banner absolute top-0 inset-x-0 z-[100] flex justify-center pointer-events-none overflow-hidden">
+            <div className={`w-full py-2 sm:py-2.5 flex flex-col items-center justify-center border-b transform-gpu animate-sweep-banner relative overflow-hidden ${turnBannerTeam === 'player' ? 'bg-gradient-to-r from-sky-950/95 via-sky-900/85 to-sky-950/95 border-sky-400/30' : 'bg-gradient-to-r from-fuchsia-950/95 via-fuchsia-900/85 to-fuchsia-950/95 border-fuchsia-400/30'}`}>
+                <div className={`text-lg sm:text-2xl font-black tracking-[0.2em] leading-none relative z-10 ${turnBannerTeam === 'player' ? 'text-sky-300 drop-shadow-[0_0_16px_rgba(56,189,248,0.6)]' : 'text-fuchsia-300 drop-shadow-[0_0_16px_rgba(217,70,239,0.6)]'}`} style={{fontFamily: 'Orbitron, monospace'}}>
                    {turnBannerTeam === 'player' ? 'BLUE TEAM' : 'PURPLE TEAM'}
                 </div>
-                <div className="text-zinc-400 font-bold tracking-[0.4em] font-mono mt-4 uppercase text-[10px] sm:text-xs relative z-10">
+                <div className="text-zinc-400 font-bold tracking-[0.3em] font-mono mt-0.5 uppercase text-[9px] sm:text-[10px] relative z-10">
                    ENGAGE TACTICAL COMMAND
                 </div>
-                <div className={`absolute bottom-0 left-0 right-0 h-[2px] ${turnBannerTeam === 'player' ? 'bg-gradient-to-r from-transparent via-sky-400/60 to-transparent' : 'bg-gradient-to-r from-transparent via-fuchsia-400/60 to-transparent'}`} />
             </div>
          </div>
       )}
@@ -4837,7 +4853,7 @@ export default function Game({
                 <div className="h-[1px] w-2/3 bg-gradient-to-r from-transparent via-zinc-700/50 to-transparent my-6"></div>
                 <button
                   onClick={handleConfirmHandoff}
-                  className={`px-8 py-3 rounded-xl font-mono font-bold uppercase tracking-widest text-sm transition-all cursor-pointer ${handoffTarget === 'player' ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 hover:border-sky-400/50 shadow-[0_0_20px_rgba(56,189,248,0.15)]' : 'bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 hover:border-fuchsia-400/50 shadow-[0_0_20px_rgba(217,70,239,0.15)]'}`}
+                  className={`px-8 py-3 min-h-[44px] rounded-xl font-mono font-bold uppercase tracking-widest text-sm transition-all cursor-pointer ${handoffTarget === 'player' ? 'bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 hover:border-sky-400/50 shadow-[0_0_20px_rgba(56,189,248,0.15)]' : 'bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 hover:border-fuchsia-400/50 shadow-[0_0_20px_rgba(217,70,239,0.15)]'}`}
                 >
                   I'M READY
                 </button>
@@ -4867,14 +4883,14 @@ export default function Game({
                 <button
                   type="button"
                   onClick={() => { playSound('click'); setShowForfeitConfirm(false); }}
-                  className="flex-1 py-2.5 bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-zinc-700/40 rounded-xl cursor-pointer"
+                  className="flex-1 py-2.5 min-h-[44px] bg-zinc-800/50 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-zinc-700/40 rounded-xl cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleForfeit}
-                  className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-red-500/25 hover:border-red-400/40 rounded-xl cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.1)]"
+                  className="flex-1 py-2.5 min-h-[44px] bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 font-mono text-xs font-bold uppercase tracking-wider transition-all border border-red-500/25 hover:border-red-400/40 rounded-xl cursor-pointer shadow-[0_0_20px_rgba(239,68,68,0.1)]"
                 >
                   Forfeit
                 </button>
@@ -5130,11 +5146,23 @@ export default function Game({
           
           {/* LEFT COLUMN AUX PANEL */}
           {activeLeftTab && (
-            <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Intelligence panel" className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar">
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Intelligence panel"
+              className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  setActiveLeftTab(null);
+                  panelLauncherRef.current?.focus();
+                }
+              }}
+            >
               <div className="w-full max-w-2xl flex flex-col gap-3">
               {/* Close Button */}
               <div className="flex justify-end">
-                 <button type="button" onClick={() => { setActiveLeftTab(null); panelLauncherRef.current?.focus(); }} className="text-zinc-500 hover:text-zinc-200 p-2 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
+                 <button type="button" onClick={() => { setActiveLeftTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-500 hover:text-zinc-200 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
               </div>
               <div className="glass-dark p-4 rounded-xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.8)] select-none">
                 {activeLeftTab === 'map' && (
@@ -5430,7 +5458,7 @@ export default function Game({
                 >
                   {/* Column labels scale (A-O) */}
                   <div
-                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
@@ -5446,7 +5474,7 @@ export default function Game({
 
                   <div className="flex w-full items-stretch">
                     {/* Row labels vertical column (01-15) */}
-                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5477,7 +5505,7 @@ export default function Game({
                     </div>
 
                     {/* Right Row labels vertical column (01-15) */}
-                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5488,7 +5516,7 @@ export default function Game({
 
                   {/* Bottom Column labels scale (A-O) */}
                   <div
-                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
@@ -5753,7 +5781,7 @@ export default function Game({
                     )}
                     {show3DContextLostToast && (
                       <div className="fixed inset-x-0 top-4 z-[100] flex justify-center pointer-events-none">
-                        <div className="pointer-events-auto rounded-lg border border-amber-500/50 bg-zinc-900/90 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-300 backdrop-blur shadow-lg">
+                        <div className="pointer-events-none rounded-lg border border-amber-500/50 bg-zinc-900/90 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-300 backdrop-blur shadow-lg">
                           3D view lost (graphics reset) — back to 2D
                         </div>
                       </div>
@@ -5799,11 +5827,23 @@ export default function Game({
 
           {/* RIGHT COLUMN AUX PANEL */}
           {activeRightTab && (
-            <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Squad and targeting panel" className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar">
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Squad and targeting panel"
+              className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  setActiveRightTab(null);
+                  panelLauncherRef.current?.focus();
+                }
+              }}
+            >
               <div className="w-full max-w-2xl flex flex-col gap-3">
               {/* Close Button */}
               <div className="flex justify-end">
-                 <button onClick={() => { setActiveRightTab(null); panelLauncherRef.current?.focus(); }} className="text-zinc-400 hover:text-white p-2 px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+                 <button type="button" onClick={() => { setActiveRightTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-400 hover:text-white px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center justify-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
               </div>
               {activeRightTab === 'roster' && (
                 <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-3 shadow-lg select-none">
@@ -5994,7 +6034,7 @@ export default function Game({
                <div className="p-4 bg-zinc-900 bg-opacity-80 border-t border-zinc-800 border-opacity-50 flex flex-col-reverse sm:flex-row items-center justify-end gap-3 shrink-0">
                   <button 
                      onClick={() => setShowBriefing(false)}
-                     className="px-8 py-3 bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs tracking-widest rounded-lg shadow-[0_0_15px_rgba(251,191,36,0.3)] transition-all cursor-pointer w-full sm:w-auto text-center"
+                     className="px-8 py-3 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black uppercase text-xs tracking-widest rounded-lg shadow-[0_0_15px_rgba(251,191,36,0.3)] transition-all cursor-pointer w-full sm:w-auto text-center"
                   >
                      ACKNOWLEDGE
                   </button>
