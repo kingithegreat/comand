@@ -336,8 +336,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setStep('welcome')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('basics_movement'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('welcome')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('basics_movement'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Movement <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -368,8 +368,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setStep('basics_ap')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('basics_attack'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('basics_ap')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('basics_attack'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Attacking <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -409,8 +409,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setStep('basics_movement')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('basics_cover'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('basics_movement')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('basics_cover'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Cover <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -448,8 +448,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setStep('basics_attack')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('class_select'); playSound('click'); }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+              <button onClick={() => setStep('basics_attack')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('class_select'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
                 Now Try It! <Play className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -603,7 +603,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
                     playSound('click');
                     addLog(`Skipped to ability phase.`);
                   }}
-                  className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg border border-amber-400 shadow cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  className="w-full py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg border border-amber-400 shadow cursor-pointer transition-all flex items-center justify-center gap-1.5"
                 >
                   {ap < 2 ? "Done Moving — Use Ability" : "Skip to Ability"} <ArrowRight className="w-4 h-4" />
                 </button>
@@ -855,8 +855,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setStep('smog_tutorial')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('abilities_deep'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('smog_tutorial')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('abilities_deep'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Abilities <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -930,8 +930,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setStep('advanced_combat')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('status_effects'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('advanced_combat')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('status_effects'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Status Effects <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1003,8 +1003,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setStep('abilities_deep')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('multiplayer_basics'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('abilities_deep')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('multiplayer_basics'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Multiplayer <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1063,8 +1063,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setStep('status_effects')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('campaign_strategy'); playSound('click'); }} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
+              <button onClick={() => setStep('status_effects')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('campaign_strategy'); playSound('click'); }} className="flex-1 py-2.5 min-h-[44px] bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5">
                 Next: Campaign <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -1127,8 +1127,8 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={() => setStep('multiplayer_basics')} className="px-4 py-2.5 border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
-              <button onClick={() => { setStep('completed'); safeSetItem('assassinUnlocked', 'true'); playSound('win'); }} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+              <button onClick={() => setStep('multiplayer_basics')} className="px-4 py-2.5 min-h-[44px] border border-zinc-700/40 text-xs text-zinc-400 hover:text-white rounded-lg cursor-pointer transition-all">Back</button>
+              <button onClick={() => { setStep('completed'); safeSetItem('assassinUnlocked', 'true'); playSound('win'); }} className="flex-1 py-2.5 min-h-[44px] bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase tracking-wider rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
                 Complete Briefing <Award className="w-3.5 h-3.5" />
               </button>
             </div>

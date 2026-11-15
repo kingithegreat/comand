@@ -11,13 +11,21 @@ html, body, #root {
   background: #09090b;
   color: #d4d4d8;
 }
-/* Only the document may scroll the page. overflow-x: hidden on body/#root
-   silently turned both into (empty) scroll containers; combined with body's
-   overscroll-behavior that swallowed every touch/wheel scroll before it could
-   reach the document, so long screens (main menu, tutorial) never moved on a
-   phone. clip trims sideways overflow without creating a scroll container. */
-html { overflow-x: hidden; }
-body, #root { overflow-x: clip; }
+/* Only the document (html) may be a scroll container.
+   overflow-x: hidden or clip on body/#root makes overflow-y compute to `auto`
+   in Safari/WebKit (CSS overflow: if one axis is not `visible`, the other
+   cannot stay `visible`). #root then becomes a scrollport as tall as its
+   content, so it has nothing to scroll. A one-finger pan is captured by that
+   inner scroller and goes nowhere; a two-finger pan scrolls the document
+   instead. Keep both overflow axes `visible` on body/#root, and clip
+   horizontally only on html. */
+html {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: manipulation;
+}
+body, #root { overflow: visible; }
 
 ::selection {
   background: #fbbf24;
@@ -491,10 +499,12 @@ body, #root { overflow-x: clip; }
    document. The main menu and the tutorial simply would not scroll on a
    phone. Containment belongs on the panels this rule was written for, not on
    the page itself. */
-[class*="overflow-y-auto"]:not(.min-h-app),
-[class*="overflow-auto"]:not(.min-h-app),
-[class*="overflow-y-scroll"]:not(.min-h-app) {
+[class*="overflow-y-auto"]:not(.min-h-app):not(.match-board-stage),
+[class*="overflow-auto"]:not(.min-h-app):not(.match-board-stage),
+[class*="overflow-y-scroll"]:not(.min-h-app):not(.match-board-stage) {
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
 }
 
 @media (max-width: 480px) {
@@ -636,6 +646,8 @@ html {
   padding: 6px;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .match-board { margin-block: auto; }
 .match-grid { box-shadow: 0 0 0 1px #47556944, 0 10px 36px #0008; }
@@ -692,7 +704,7 @@ html {
   .match-live { display: none; }
   .match-header h1 { font-size: 10px; letter-spacing: .04em; }
   .match-header-actions { gap: 4px; }
-  .match-header-actions > button { min-height: 44px; padding: 6px 8px; font-size: 10px; }
+  .match-header-actions > button { min-height: 44px; min-width: 44px; padding: 6px 8px; font-size: 10px; }
   .match-header-actions > button svg { display: none; }
   .match-hover { display: none; }
   .match-status { gap: 4px; }
@@ -706,8 +718,14 @@ html {
 }
 @media (max-height: 500px) and (orientation: landscape) {
   .match-hover, .match-deploy-tip { display: none; }
-  .match-header { padding-block: 2px; }
-  .match-center, .match-frame { gap: 3px; }
+  .match-shell { padding: 2px; }
+  .match-header { padding: 0 4px; }
+  .match-header h1 { font-size: 9px; letter-spacing: .04em; }
+  .match-status { padding: 0 4px; gap: 4px; }
+  .match-center, .match-frame { gap: 2px; }
+  .match-deploy-summary { padding: 0 4px; gap: 4px; }
+  .match-battlefield { padding: 2px; }
+  .match-board-stage { padding: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .match-shell *, .match-shell *::before, .match-shell *::after {
@@ -730,22 +748,38 @@ html {
   .match-score { order: 2; width: 100%; justify-content: center; padding: 2px 8px; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
-  .match-battlefield-content { position: relative; flex-direction: row; align-items: stretch; }
-  .match-board-stage { height: 100%; margin-right: 6px; }
-  .match-board-tools { position: absolute; top: 0; right: 0; width: 210px; z-index: 1; }
+  /* Keep the board full-width. A 210px side rail left only a sliver of tiles
+     on 740x360. Overlay zoom/tools and let the action rail sit under the
+     board as a compact strip instead of stealing a column. */
+  .match-battlefield-content { position: relative; flex-direction: column; align-items: stretch; min-height: 0; flex: 1 1 0; }
+  .match-board-stage { height: auto; flex: 1 1 0; min-height: 0; margin-right: 0; width: 100%; }
+  .match-board-tools { position: absolute; top: 2px; right: 2px; width: auto; z-index: 5; }
   .match-board-tools > span { display: none; }
   .match-board-tools > button { margin-left: auto; }
   .match-action-rail {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
     gap: 4px;
-    flex: 0 0 210px;
-    height: 100%;
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
     min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-top: 36px;
+    overflow: visible;
+    padding-top: 0;
   }
+  .match-action-rail > * { max-width: 100%; }
+  .match-selection {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: 2px;
+    z-index: 40;
+    width: auto;
+  }
+  .match-center { position: relative; }
 }
 /* Keep this after timing refinements so the preference always wins. */
 @media (prefers-reduced-motion: reduce) {
@@ -761,10 +795,8 @@ html {
   .match-inline-intel .match-intel-idle > :last-child { display: none; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
-  .match-inline-intel { display: block; flex: 1; min-width: 0; }
-  .match-inline-intel .match-intel-readout { font-size: 8px; padding-inline: 2px; }
-  .match-inline-intel .match-intel-idle { display: none; }
-  .match-action-rail { padding-top: 48px; }
+  .match-inline-intel { display: none; }
+  .match-action-rail { padding-top: 0; }
 }
 @media (pointer: coarse) {
   .match-shell button { min-height: 44px; }
@@ -777,6 +809,42 @@ html {
 .match-deploy-actions button,
 .match-deploy-tip button {
   min-height: 44px;
+  min-width: 44px;
+}
+
+/* Float labels (DEPLOYED / damage) stay inside their tile so neighbours
+   do not collide. */
+.match-float-label {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.match-float-label > span {
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 1px;
+}
+
+.match-drawer-close {
+  min-height: 44px;
+  min-width: 44px;
+}
+.match-panel-menu .match-menu-close {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 12px;
 }
 
 .tc-squad-slider {
