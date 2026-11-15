@@ -21,6 +21,7 @@ import MatchChat from './MatchChat';
 import { useAudio } from '../contexts/AudioContext';
 import { PostBattleSummary } from './PostBattleSummary';
 import { safeGetItem, safeSetItem } from '../lib/storage';
+import { evaluateDeployClick, nextLocalP2pTeam, trimAllTeamsToSquadSize } from '../lib/deployRules';
 import { BASE_REGIONS } from '../campaignData';
 import Board3DLazy from '../three/Board3DLazy';
 
@@ -1107,10 +1108,10 @@ export default function Game({
      if (!isOnline || !onlineMatch?.id) return;
      deployWriteInFlightRef.current = true;
      try {
-        await runTransaction(db, async (transaction) => {
+        const merged = await runTransaction(db, async (transaction) => {
            const matchRef = doc(db, 'matches', onlineMatch.id);
            const matchDoc = await transaction.get(matchRef);
-           if (!matchDoc.exists()) return;
+           if (!matchDoc.exists()) return previousUnits || myNewTeamUnits;
 
            const data = matchDoc.data();
            const latestUnits = JSON.parse(data.units || "[]");
@@ -1127,10 +1128,12 @@ export default function Game({
               !opponentUnits.some((oppUnit: any) => oppUnit.x === myUnit.x && oppUnit.y === myUnit.y)
            );
 
-           const merged = recalculateSquadStats([...opponentUnits, ...nonOverlappingMyUnits]);
+           const next = recalculateSquadStats([...opponentUnits, ...nonOverlappingMyUnits]);
 
-           transaction.update(matchRef, { units: JSON.stringify(merged) });
+           transaction.update(matchRef, { units: JSON.stringify(next) });
+           return next;
         });
+        if (merged) setUnits(merged);
      } catch (e) {
         console.error("Deploy transaction failed: ", e);
         if (previousUnits) {
@@ -1141,6 +1144,23 @@ export default function Game({
         deployWriteInFlightRef.current = false;
      }
   };
+
+  useEffect(() => {
+    if (mode !== 'deploy') return;
+    const { units: trimmed, removed } = trimAllTeamsToSquadSize(
+      units.map(u => ({ id: u.id, team: u.team, x: u.x, y: u.y })),
+      matchSquadSize,
+    );
+    if (removed.length === 0) return;
+    const removedIds = new Set(removed.map(r => r.id));
+    const next = units.filter(u => !removedIds.has(u.id));
+    setUnits(recalculateSquadStats(next));
+    addLog(`[SQUAD SIZE] Squad cap is now ${matchSquadSize}. Recalled ${removed.length} overflow unit${removed.length === 1 ? '' : 's'}.`, 'system');
+    if (isOnline && myTeam) {
+      const mine = next.filter(u => u.team === myTeam);
+      updateOnlineUnitsDeploy(mine, myTeam, units);
+    }
+  }, [matchSquadSize, mode]);
 
   useEffect(() => {
     if (!isOnline && mapEnvironment.length === 0) {
@@ -2970,15 +2990,27 @@ export default function Game({
     }
 
     if (mode === 'deploy') {
-      if (isOnline && teamSelection !== myTeam) return; 
+      const cellType = mapEnvironment[y]?.[x]?.type;
+      const decision = evaluateDeployClick({
+        x, y,
+        team: teamSelection,
+        selectedClass: !!selectedClass,
+        units: units.map(u => ({ id: u.id, team: u.team, x: u.x, y: u.y, ownerId: u.ownerId })),
+        cellType,
+        gameMode,
+        squadSize: matchSquadSize,
+        userId,
+        isHost,
+        myTeam: myTeam as 'player' | 'enemy' | undefined,
+        isOnline: !!isOnline,
+      });
 
-      if (mapEnvironment[y] && mapEnvironment[y][x].type !== 'floor') return;
+      if (!decision.ok) {
+        if (decision.message) addLog(`[DEPLOY] ${decision.message}`, 'system');
+        return;
+      }
 
-      if (existingUnit) {
-         if (existingUnit.team !== teamSelection) return; 
-         if (isOnline && existingUnit.team !== myTeam) return; 
-         if (gameMode === 'online_coop' && existingUnit.ownerId !== userId) return;
-         
+      if (decision.action === 'recall' && existingUnit) {
          const myNewTeamUnits = units.filter(u => u.team === teamSelection && u.id !== existingUnit.id);
          const opponentCurrentUnits = units.filter(u => u.team !== teamSelection);
          const baseNewUnits = [...opponentCurrentUnits, ...myNewTeamUnits];
@@ -2992,28 +3024,22 @@ export default function Game({
 
          addLog(`[RECALL] ${existingUnit.team === 'player' ? 'Blue' : 'Purple'} ${existingUnit.class.className} withdrawn from grid.`, 'system');
          playSound('click');
+         if (gameMode === 'local_p2p') {
+            const next = nextLocalP2pTeam(
+              newUnits.map(u => ({ id: u.id, team: u.team, x: u.x, y: u.y })),
+              teamSelection,
+              matchSquadSize,
+              existingUnit.team,
+            );
+            if (next !== teamSelection) {
+              setTeamSelection(next);
+              addLog(`[COMMAND_UPLINK] ${next === 'player' ? 'Blue' : 'Purple'} Squad still has open slots. Terminal handed back.`, 'system');
+            }
+         }
          return;
       }
 
-      if (teamSelection === 'player' && y < 8) return;
-      if (teamSelection === 'enemy' && y > 6) return;
-
-      if (selectedClass) {
-        const totalTeamUnits = units.filter(u => u.team === teamSelection);
-        if (totalTeamUnits.length >= matchSquadSize) return;
-
-        if (gameMode === 'online_coop') {
-           if (!userId) {
-             addLog(`[SYSTEM] Co-op requires authentication. Please sign in.`, 'system');
-             return;
-           }
-           const myDeployedCount = totalTeamUnits.filter(u => u.ownerId === userId).length;
-           const allowedDeployCount = isHost ? Math.ceil(matchSquadSize / 2) : Math.floor(matchSquadSize / 2);
-           if (myDeployedCount >= allowedDeployCount) {
-             return;
-           }
-        }
-
+      if (decision.action === 'place' && selectedClass) {
         const activeClass = getUnitClassWithBoosts(selectedClass, teamSelection);
         const newUnit: Unit = {
           id: crypto.randomUUID(),
@@ -3041,10 +3067,15 @@ export default function Game({
 
         if (isOnline) {
            updateOnlineUnitsDeploy(myNewTeamUnits, teamSelection, units);
-        } else {
-           if (gameMode === 'local_p2p' && teamSelection === 'player' && newUnitsArray.filter(u => u.team === 'player').length === matchSquadSize) {
-              setTeamSelection('enemy');
-              addLog(`[COMMAND_UPLINK] Blue Squad fully deployed. Handing over terminal to Purple Squad for unit placement.`, 'system');
+        } else if (gameMode === 'local_p2p') {
+           const next = nextLocalP2pTeam(
+             newUnitsArray.map(u => ({ id: u.id, team: u.team, x: u.x, y: u.y })),
+             teamSelection,
+             matchSquadSize,
+           );
+           if (next !== teamSelection) {
+              setTeamSelection(next);
+              addLog(`[COMMAND_UPLINK] ${teamSelection === 'player' ? 'Blue' : 'Purple'} Squad fully deployed. Handing over terminal to ${next === 'player' ? 'Blue' : 'Purple'} Squad for unit placement.`, 'system');
            }
         }
         
@@ -5754,8 +5785,8 @@ export default function Game({
             <div className="match-selection glass rounded-xl w-full flex items-center gap-2 px-3 py-1.5 shrink-0 font-mono text-xs">
               <span className="text-amber-300 font-bold truncate">{mode === 'deploy' ? selectedClass?.className : selectedUnit?.class.className}</span>
               {mode === 'play' && selectedUnit && <span className="text-zinc-300 whitespace-nowrap">{selectedUnit.hp} HP · {selectedUnit.ap} AP</span>}
-              <button type="button" onClick={() => openRightPanel('unit_console')} className="ml-auto text-sky-300 px-3 py-1 min-h-[40px]">Details</button>
-              <button type="button" aria-label="Cancel unit selection" onClick={() => { setSelectedUnitId(null); setSelectedClass(null); }} className="text-zinc-400 text-base leading-none min-w-[40px] min-h-[40px] inline-flex items-center justify-center">×</button>
+              <button type="button" onClick={() => openRightPanel('unit_console')} className="ml-auto text-sky-300 px-3 py-1 min-h-[44px] min-w-[44px]">Details</button>
+              <button type="button" aria-label="Cancel unit selection" onClick={() => { setSelectedUnitId(null); setSelectedClass(null); }} className="text-zinc-400 text-base leading-none min-w-[44px] min-h-[44px] inline-flex items-center justify-center">×</button>
             </div>
           )}
 

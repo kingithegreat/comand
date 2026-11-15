@@ -14,6 +14,17 @@ import { CHEMISTRIES, ChemistryDuo } from './chemistries';
 import { AbilityTooltip } from './components/AbilityTooltip';
 import { BASE_REGIONS } from './campaignData';
 import { useCoarsePointer } from './hooks/useCoarsePointer';
+import {
+  interpretJoin,
+  isPlausibleRoomCode,
+  normalizeRoomCode,
+  persistPendingRoom,
+  readPendingRoom,
+  roomErrorMessage,
+  shareUrl,
+  ACTIVE_MATCH_KEY,
+  type RoomErrorCode,
+} from './lib/matchLink';
 
 const Game = lazy(() => import('./components/Game'));
 const TutorialMode = lazy(() => import('./components/TutorialMode'));
@@ -54,11 +65,11 @@ export default function App() {
   const [dbTab, setDbTab] = useState<'tutorial' | 'classes' | 'chemistries'>('tutorial');
   const [activeClassDesc, setActiveClassDesc] = useState<string>('Scout');
 
-  const [joinCode, setJoinCode] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('room')?.toUpperCase() || '';
-  });
+  const [joinCode, setJoinCode] = useState(() => readPendingRoom(window.sessionStorage, window.location.search) || '');
   const [onlineMatchId, setOnlineMatchId] = useState<string | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchTime, setSearchTime] = useState(0);
   const searchIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,10 +77,9 @@ export default function App() {
   const [matchData, matchLoading] = useDocumentData(
     onlineMatchId ? doc(db, 'matches', onlineMatchId) : null
   );
-  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('room')?.toUpperCase() || null;
-  });
+  const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(() =>
+    readPendingRoom(window.sessionStorage, window.location.search)
+  );
 
   const [hostProfile, setHostProfile] = useState<any>(null);
   const [guestProfile, setGuestProfile] = useState<any>(null);
@@ -78,6 +88,27 @@ export default function App() {
   const [ctfMode, setCtfMode] = useState(false);
   const [squadSize, setSquadSize] = useState<number>(4);
   const [isLaunching, setIsLaunching] = useState(false);
+
+  const writeRoomToAddressBar = (code: string | null) => {
+    const path = window.location.pathname || '/';
+    if (code) {
+      const next = `${path}?room=${normalizeRoomCode(code)}`;
+      if (`${window.location.pathname}${window.location.search}` !== next) {
+        window.history.replaceState({}, '', next);
+      }
+      persistPendingRoom(code, window.sessionStorage);
+      try { window.sessionStorage.setItem(ACTIVE_MATCH_KEY, JSON.stringify({ id: normalizeRoomCode(code) })); } catch {}
+    } else {
+      if (window.location.search) window.history.replaceState({}, '', path);
+      persistPendingRoom(null, window.sessionStorage);
+      try { window.sessionStorage.removeItem(ACTIVE_MATCH_KEY); } catch {}
+    }
+  };
+
+  const showRoomIssue = (code: RoomErrorCode, room?: string) => {
+    setRoomError(roomErrorMessage(code, room));
+  };
+
   const [menuTab, setMenuTab] = useState<'play' | 'progress' | 'shop'>('play');
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -194,6 +225,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    const code = readPendingRoom(window.sessionStorage, window.location.search);
+    if (code && !isPlausibleRoomCode(code)) {
+      showRoomIssue('invalid', code);
+    }
+  }, []);
+
+  useEffect(() => {
      if (profile && !editingProfile) {
         setDisplayNameInput(profile.displayName || '');
      }
@@ -202,30 +240,47 @@ export default function App() {
   useEffect(() => {
     if (user && pendingRoomCode && !onlineMatchId) {
       const autoJoin = async () => {
+        const code = normalizeRoomCode(pendingRoomCode);
         try {
-          const matchRef = doc(db, 'matches', pendingRoomCode);
+          const matchRef = doc(db, 'matches', code);
           const result = await runTransaction(db, async (transaction) => {
             const matchSnap = await transaction.get(matchRef);
-            if (!matchSnap.exists()) return null;
+            if (!matchSnap.exists()) return { exists: false as const };
             const data = matchSnap.data();
-            if (data.hostId !== user.uid) {
-              if (!data.guestId) {
-                transaction.update(matchRef, { guestId: user.uid });
-              } else if (data.guestId !== user.uid) {
-                transaction.update(matchRef, { spectators: arrayUnion(user.uid) });
-              }
+            const verdict = interpretJoin({
+              exists: true,
+              hostId: data.hostId,
+              guestId: data.guestId,
+              status: data.status,
+              userId: user.uid,
+            });
+            if (verdict.action === 'join') {
+              transaction.update(matchRef, { guestId: user.uid });
+            } else if (verdict.action === 'spectate') {
+              transaction.update(matchRef, { spectators: arrayUnion(user.uid) });
             }
-            return data;
+            return { exists: true as const, data, verdict };
           });
-          if (result) {
-            setOnlineMatchId(pendingRoomCode);
-            setGameMode(result.isCoop ? 'online_coop' : 'online');
+          if (!result.exists) {
+            showRoomIssue('missing', code);
+            writeRoomToAddressBar(null);
+          } else if (result.verdict.action === 'reject') {
+            showRoomIssue(result.verdict.error || 'unknown', code);
+            writeRoomToAddressBar(null);
+          } else {
+            setRoomError(null);
+            setOnlineMatchId(code);
+            setGameMode(result.data.isCoop ? 'online_coop' : 'online');
+            writeRoomToAddressBar(code);
+            if (result.verdict.action === 'spectate') {
+              setRoomNotice(roomErrorMessage('full', code));
+            }
           }
         } catch (err) {
           console.error("Auto-join failed:", err);
+          showRoomIssue('unknown', code);
         }
         setPendingRoomCode(null);
-        window.history.replaceState({}, '', window.location.pathname);
       };
       autoJoin();
     }
@@ -264,8 +319,20 @@ export default function App() {
   }, [matchData?.hostId, matchData?.guestId]);
 
   const handleCopyCode = async (code: string, asLink: boolean = false) => {
-    const textToCopy = asLink ? `${window.location.origin}${window.location.pathname}?room=${code}` : code;
+    const link = shareUrl(window.location.origin, window.location.pathname || '/', code);
+    const textToCopy = asLink ? link : normalizeRoomCode(code);
+    if (asLink) setInviteUrl(link);
     try {
+      if (asLink && typeof navigator.share === 'function') {
+        try {
+          await navigator.share({ title: 'Tactical Command', text: 'Join my match', url: link });
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+          return;
+        } catch (shareErr: any) {
+          if (shareErr && shareErr.name === 'AbortError') return;
+        }
+      }
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(textToCopy);
         setCopied(true);
@@ -282,6 +349,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Copy failed", err);
+      setInviteUrl(link);
     }
   };
 
@@ -312,6 +380,7 @@ export default function App() {
     }
     setGameMode(null);
     setOnlineMatchId(null);
+    writeRoomToAddressBar(null);
   };
 
   const handleUpdateLobbySettings = async (size: number, smog: boolean) => {
@@ -490,6 +559,9 @@ export default function App() {
       });
       setOnlineMatchId(newMatchId);
       setGameMode(isCoop ? 'online_coop' : 'online');
+      setRoomError(null);
+      writeRoomToAddressBar(newMatchId);
+      setInviteUrl(shareUrl(window.location.origin, window.location.pathname || '/', newMatchId));
     } catch(err: any) {
       alert(err.message || "Failed to create room.");
     }
@@ -623,34 +695,53 @@ export default function App() {
 
   const joinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanCode = joinCode.trim().toUpperCase();
+    const cleanCode = normalizeRoomCode(joinCode);
     if (!user || !cleanCode) {
       if (!user) alert("Please sign in first.");
+      return;
+    }
+    if (!isPlausibleRoomCode(cleanCode)) {
+      showRoomIssue('invalid', cleanCode);
       return;
     }
     try {
       const matchRef = doc(db, 'matches', cleanCode);
       const result = await runTransaction(db, async (transaction) => {
         const matchSnap = await transaction.get(matchRef);
-        if (!matchSnap.exists()) return null;
+        if (!matchSnap.exists()) return { exists: false as const };
         const data = matchSnap.data();
-        if (data.hostId === user.uid) return { action: 'host' as const, data };
-        if (!data.guestId) {
+        const verdict = interpretJoin({
+          exists: true,
+          hostId: data.hostId,
+          guestId: data.guestId,
+          status: data.status,
+          userId: user.uid,
+        });
+        if (verdict.action === 'join') {
           transaction.update(matchRef, { guestId: user.uid });
-        } else if (data.guestId !== user.uid) {
+        } else if (verdict.action === 'spectate') {
           transaction.update(matchRef, { spectators: arrayUnion(user.uid) });
         }
-        return { action: 'join' as const, data };
+        return { exists: true as const, data, verdict };
       });
-      if (result) {
-        setOnlineMatchId(cleanCode);
-        setGameMode(result.data.isCoop ? 'online_coop' : 'online');
-      } else {
-        alert("Room not found! Check the code and try again.");
+      if (!result.exists) {
+        showRoomIssue('missing', cleanCode);
+        return;
+      }
+      if (result.verdict.action === 'reject') {
+        showRoomIssue(result.verdict.error || 'unknown', cleanCode);
+        return;
+      }
+      setRoomError(null);
+      setOnlineMatchId(cleanCode);
+      setGameMode(result.data.isCoop ? 'online_coop' : 'online');
+      writeRoomToAddressBar(cleanCode);
+      if (result.verdict.action === 'spectate') {
+        setRoomNotice(roomErrorMessage('full', cleanCode));
       }
     } catch(err: any) {
       console.error("Join room error:", err);
-      alert("Failed to join room: " + (err?.code || err?.message || "Unknown error"));
+      showRoomIssue('unknown', cleanCode);
     }
   };
 
@@ -763,8 +854,9 @@ export default function App() {
               onClick={() => {
                 setGameMode(null);
                 setOnlineMatchId(null);
+                writeRoomToAddressBar(null);
               }}
-              className="w-full py-2 bg-[#161a12] border border-zinc-800 border-opacity-50 hover:border-amber-400 text-zinc-300 rounded-lg font-bold text-xs uppercase cursor-pointer transition-colors"
+              className="w-full py-2 min-h-[44px] bg-[#161a12] border border-zinc-800 border-opacity-50 hover:border-amber-400 text-zinc-300 rounded-lg font-bold text-xs uppercase cursor-pointer transition-colors"
             >
               DISCONNECT & RETURN TO HQ
             </button>
@@ -835,6 +927,13 @@ export default function App() {
                   </>
                 )}
               </button>
+                {(inviteUrl || onlineMatchId) && (
+                  <p className="w-full text-[10px] text-amber-200/90 font-mono break-all mt-2 select-all" data-testid="invite-link">
+                    {inviteUrl || shareUrl(window.location.origin, window.location.pathname || '/', onlineMatchId!)}
+                  </p>
+                )}
+                {roomNotice && <p className="w-full text-[10px] text-sky-300 font-mono mt-2">{roomNotice}</p>}
+
             </div>
 
             {/* Commander Profiles & Connections indicators */}
@@ -1124,7 +1223,7 @@ export default function App() {
              <button
                type="button"
                onClick={toggleMusic}
-               className={`p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${musicEnabled ? 'text-fuchsia-400 border-fuchsia-500/50 bg-fuchsia-500/5' : 'text-zinc-500 hover:text-fuchsia-400 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/5'}`}
+               className={`p-2.5 min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${musicEnabled ? 'text-fuchsia-400 border-fuchsia-500/50 bg-fuchsia-500/5' : 'text-zinc-500 hover:text-fuchsia-400 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/5'}`}
                title={musicEnabled ? "Disable Music" : "Enable Music"}
              >
                <Activity className="w-5 h-5" />
@@ -1132,7 +1231,7 @@ export default function App() {
              <button
                type="button"
                onClick={toggleSound}
-               className={`p-2.5 rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${soundEnabled ? 'text-amber-400 border-amber-500/50 bg-amber-500/5' : 'text-zinc-500 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/5'}`}
+               className={`p-2.5 min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-xl border border-zinc-800/50 bg-zinc-900/80 transition-all duration-300 backdrop-blur-sm ${soundEnabled ? 'text-amber-400 border-amber-500/50 bg-amber-500/5' : 'text-zinc-500 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/5'}`}
                title={soundEnabled ? "Disable SFX" : "Enable SFX"}
              >
                {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
@@ -1192,7 +1291,7 @@ export default function App() {
                      onClick={() => { setSmogMode(!smogMode); playSound('click'); }}
                      className={`relative w-12 h-7 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${smogMode ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.3)]' : 'bg-zinc-700'}`}
                   >
-                     <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${smogMode ? 'left-[calc(100%-1.625rem)]' : 'left-0.5'}`} />
+                     <div className={`absolute top-1 w-7 h-7 rounded-full bg-white shadow-md transition-all duration-300 ${smogMode ? 'left-[calc(100%-2rem)]' : 'left-1'}`} />
                   </button>
                </div>
             </div>
@@ -1215,7 +1314,7 @@ export default function App() {
                      onClick={() => { setCtfMode(!ctfMode); playSound('click'); }}
                      className={`relative w-12 h-7 rounded-full transition-all duration-300 cursor-pointer shrink-0 ${ctfMode ? 'bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.3)]' : 'bg-zinc-700'}`}
                   >
-                     <div className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${ctfMode ? 'left-[calc(100%-1.625rem)]' : 'left-0.5'}`} />
+                     <div className={`absolute top-1 w-7 h-7 rounded-full bg-white shadow-md transition-all duration-300 ${ctfMode ? 'left-[calc(100%-2rem)]' : 'left-1'}`} />
                   </button>
                </div>
             </div>
@@ -1242,7 +1341,7 @@ export default function App() {
                    aria-label="Squad size"
                    value={squadSize}
                    onChange={(e) => { setSquadSize(parseInt(e.target.value)); playSound('click'); }}
-                   className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-amber-500 focus:outline-none"
+                   className="w-full h-11 bg-transparent appearance-none cursor-pointer accent-amber-500 focus:outline-none tc-squad-slider"
                  />
                  <div className="flex justify-between px-0.5 text-[8px] font-mono text-zinc-600">
                    {[1,2,3,4,5,6,7,8].map(n => (
@@ -1363,12 +1462,18 @@ export default function App() {
               <h3 className="font-black text-zinc-200 text-sm font-mono uppercase tracking-wider">MULTIPLAYER</h3>
             </div>
 
+            {(roomError || roomNotice) && (
+              <div role="alert" className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs font-mono leading-relaxed">
+                {roomError || roomNotice}
+                <button type="button" className="ml-2 underline min-h-[44px] min-w-[44px]" onClick={() => { setRoomError(null); setRoomNotice(null); }}>Dismiss</button>
+              </div>
+            )}
             {loading || profileLoading ? (
                <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
             ) : !user ? (
                <div className="text-center py-2 font-mono space-y-4">
                  <p className="text-[10px] text-zinc-400">Sign in with Google to play online with others.</p>
-                 <button type="button" onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
+                 <button type="button" onClick={handleLogin} className="flex items-center justify-center gap-2 w-full py-3 min-h-[44px] bg-[#fbbf24] text-zinc-950 hover:bg-amber-300 font-extrabold rounded-lg text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md">
                    <LogIn className="w-4 h-4" /> SIGN IN WITH GOOGLE
                  </button>
                  <div className="border-t border-zinc-800/30 pt-4">
@@ -1381,7 +1486,16 @@ export default function App() {
                        maxLength={6}
                        className="w-full h-full bg-black/60 border border-zinc-800 border-opacity-50 focus:border-amber-400 rounded-lg px-3 text-sm text-[#fbbf24] font-mono uppercase tracking-widest outline-none text-center"
                      />
-                     <button type="button" onClick={() => { if (joinCode.trim().length >= 5) setPendingRoomCode(joinCode.trim().toUpperCase()); handleLogin(); }} disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer">
+                     <button type="button" onClick={() => {
+                       const code = normalizeRoomCode(joinCode);
+                       if (code.length >= 5) {
+                         if (!isPlausibleRoomCode(code)) { showRoomIssue('invalid', code); return; }
+                         setPendingRoomCode(code);
+                         persistPendingRoom(code, window.sessionStorage);
+                         writeRoomToAddressBar(code);
+                       }
+                       handleLogin();
+                     }} disabled={joinCode.length < 5} className="px-6 h-full bg-[#202716] hover:bg-[#2d3a20] border border-zinc-800 border-opacity-50 text-zinc-300 text-sm font-bold rounded-lg uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer">
                        SIGN IN & JOIN
                      </button>
                    </div>

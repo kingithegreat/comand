@@ -677,7 +677,8 @@ html {
 .match-deploy-actions button { width: auto; padding: 8px 12px; min-height: 40px; }
 .match-deploy-actions > span { margin-left: auto; }
 .match-deploy-tip { flex-direction: row; padding: 4px 8px; gap: 8px; }
-.match-selection { min-height: 40px; }
+.match-selection { min-height: 44px; }
+.match-selection button { min-height: 44px; min-width: 44px; }
 @keyframes cockpit-reveal {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -701,7 +702,7 @@ html {
   .match-deploy-actions > span { display: none; }
   .match-deploy-actions button { flex: 1; padding: 6px; font-size: 10px; }
   .match-deploy-tip > :last-child > span { display: none; }
-  .match-selection button { min-height: 40px; }
+  .match-selection button { min-height: 44px; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
   .match-hover, .match-deploy-tip { display: none; }
@@ -716,8 +717,8 @@ html {
   }
 }
 
-.match-board-tools { min-height: 32px; gap: 8px; }
-.match-board-tools button { min-height: 32px; }
+.match-board-tools { min-height: 44px; gap: 8px; }
+.match-board-tools button { min-height: 44px; min-width: 44px; }
 
 .match-action-rail { display: contents; }
 .match-board { transition: width 160ms ease-out; }
@@ -767,4 +768,45 @@ html {
 }
 @media (pointer: coarse) {
   .match-shell button { min-height: 44px; }
+}
+
+
+/* Desktop + touch: keep command chrome finger-sized at every width. */
+.match-header-actions > button,
+.match-status button,
+.match-deploy-actions button,
+.match-deploy-tip button {
+  min-height: 44px;
+}
+
+.tc-squad-slider {
+  margin: 0;
+}
+.tc-squad-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  background: #27272a;
+  border-radius: 999px;
+}
+.tc-squad-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -10px;
+  background: #f59e0b;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 4px rgba(245,158,11,0.2);
+}
+.tc-squad-slider::-moz-range-track {
+  height: 8px;
+  background: #27272a;
+  border-radius: 999px;
+}
+.tc-squad-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: #f59e0b;
+  border-radius: 999px;
+  border: 2px solid #fff;
 }
