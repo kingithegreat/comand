@@ -214,7 +214,7 @@ export default function TutorialMode({ onBack }: { onBack: () => void }) {
   const isAdvancedStep = advancedStepIndex >= 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 bg-zinc-950/95 border border-zinc-800/50 rounded-2xl shadow-2xl relative font-mono text-zinc-300 select-none text-left">
+    <div className="w-full h-full max-w-4xl mx-auto p-4 sm:p-6 bg-zinc-950/95 border border-zinc-800/50 rounded-2xl shadow-2xl relative font-mono text-zinc-300 select-none text-left flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex justify-between items-center border-b border-zinc-800/50 pb-4 mb-5">
         <div>

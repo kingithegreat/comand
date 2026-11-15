@@ -438,66 +438,49 @@ export default function Game({
   const [timeLeft, setTimeLeft] = useState<number>(60);
 
   const [activeLeftTab, setActiveLeftTab] = useState<'map' | 'logs' | 'leaderboard' | 'chat' | null>(null);
-  const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>(null);
+  const [activeRightTab, setActiveRightTab] = useState<'roster' | 'unit_console' | null>('roster');
   const [commandPanelsOpen, setCommandPanelsOpen] = useState(false);
+  type HubTab = 'deploy' | 'unit' | 'chat' | 'log' | 'settings';
+  const [hubTab, setHubTab] = useState<HubTab>('deploy');
   const panelLauncherRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const selectHubTab = (tab: HubTab) => {
+    setHubTab(tab);
+    if (tab === 'deploy') { setActiveRightTab('roster'); setActiveLeftTab(null); setCommandPanelsOpen(false); }
+    else if (tab === 'unit') { setActiveRightTab('unit_console'); setActiveLeftTab(null); setCommandPanelsOpen(false); }
+    else if (tab === 'chat') { setActiveLeftTab('chat'); setActiveRightTab(null); setCommandPanelsOpen(false); }
+    else if (tab === 'log') { setActiveLeftTab('logs'); setActiveRightTab(null); setCommandPanelsOpen(false); }
+    else { setActiveLeftTab(null); setActiveRightTab(null); setCommandPanelsOpen(true); }
+  };
 
   // Panels are presentation-only: keep board actions and the turn engine unchanged.
   const openLeftPanel = (tab: typeof activeLeftTab) => {
     setActiveRightTab(null);
     setActiveLeftTab(tab);
     setCommandPanelsOpen(false);
+    if (tab === 'chat') setHubTab('chat');
+    else if (tab === 'logs') setHubTab('log');
+    else if (tab === 'map' || tab === 'leaderboard') setHubTab('settings');
   };
   const openRightPanel = (tab: typeof activeRightTab) => {
     setActiveLeftTab(null);
     setActiveRightTab(tab);
     setCommandPanelsOpen(false);
+    if (tab === 'roster') setHubTab('deploy');
+    else if (tab === 'unit_console') setHubTab('unit');
   };
 
-  useEffect(() => {
-    if (!activeLeftTab && !activeRightTab && !commandPanelsOpen) return;
-    const panel = panelRef.current;
-    panel?.querySelector<HTMLButtonElement>('button')?.focus();
-    const handlePanelKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setActiveLeftTab(null);
-        setActiveRightTab(null);
-        setCommandPanelsOpen(false);
-        panelLauncherRef.current?.focus();
-      }
-      if (event.key === 'Tab' && panel) {
-        const controls = Array.from(panel.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
-        )).filter(element => element.getClientRects().length > 0);
-        const first = controls[0];
-        const last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault(); last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault(); first?.focus();
-        }
-      }
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (panelRef.current?.contains(target)) return;
-      if (panelLauncherRef.current?.contains(target)) return;
-      // Close popovers without preventDefault so the same tap can still hit the board.
-      setActiveLeftTab(null);
-      setActiveRightTab(null);
-      setCommandPanelsOpen(false);
-    };
-    window.addEventListener('keydown', handlePanelKey);
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => {
-      window.removeEventListener('keydown', handlePanelKey);
-      window.removeEventListener('pointerdown', handlePointerDown);
-    };
-  }, [activeLeftTab, activeRightTab, commandPanelsOpen]);
+
   const [colorblindMode, setColorblindMode] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'deploy') selectHubTab('deploy');
+  }, [mode]);
+  useEffect(() => {
+    if (mode === 'play' && selectedUnitId) selectHubTab('unit');
+  }, [selectedUnitId]);
+
 
   // Feature: Undo Move
   const [lastMoveState, setLastMoveState] = useState<{ unitId: string; x: number; y: number; ap: number; facing?: 'up' | 'down' | 'left' | 'right' } | null>(null);
@@ -532,15 +515,6 @@ export default function Game({
   // Feature: Camera Follow AI
   const [aiHighlightTile, setAiHighlightTile] = useState<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    if (mode === 'play') {
-      setActiveLeftTab(null);
-      setActiveRightTab(null);
-    } else if (mode === 'deploy') {
-      setActiveLeftTab(null);
-      setActiveRightTab(null);
-    }
-  }, [mode]);
 
   // Kill feed auto-cleanup
   useEffect(() => {
@@ -608,11 +582,9 @@ export default function Game({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, activeTeam, mode, winner]);
 
-  // Picking a class closes the recruit drawer so the board is visible for
-  // placement (every pick handler calls setActiveRightTab(null)). An effect here
-  // used to force the full-screen Targeting drawer open on every pick, hiding
-  // the highlighted cells the player is told to tap. Details stays one tap away
-  // via the selection bar.
+  // Class picks used to close the recruit drawer so a full-screen overlay did
+  // not hide placement cells. The roster now lives in the side/bottom hub, so
+  // it stays open. Unit details stay one tap away via the Unit tab.
 
   useEffect(() => {
     if (mode === 'play') {
@@ -4407,8 +4379,6 @@ export default function Game({
                 onClick={() => { 
                   setSelectedClass(c); 
                   setTeamSelection(team);
-                  setActiveRightTab(null);
-                  panelLauncherRef.current?.focus();
                 }}
                 className={`
                   text-left p-1 sm:p-1.5 rounded-lg border transition-all flex flex-col justify-between cursor-pointer min-h-[48px] sm:min-h-[58px]
@@ -5003,7 +4973,7 @@ export default function Game({
       )}
 
       {replaySnapshotIndex !== null && turnSnapshots[replaySnapshotIndex] && (
-        <div className="w-full max-w-7xl mx-auto bg-[#0d1c1a]/95 border border-[#24524c]/80 rounded-2xl p-4 mb-3.5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl animate-fade-in relative overflow-hidden z-40">
+        <div className="w-full bg-[#0d1c1a]/95 border border-[#24524c]/80 rounded-2xl p-3 mb-2 flex flex-col md:flex-row items-center justify-between gap-3 shadow-2xl animate-fade-in relative overflow-hidden z-40 shrink-0">
            <div className="absolute top-0 left-0 h-[3px] bg-gradient-to-r from-teal-500 via-emerald-400 to-teal-500 w-full animate-pulse" />
            <div className="flex items-center gap-3">
               <div className="bg-teal-950/80 p-2 text-teal-400 rounded-xl border border-teal-500/20 flex items-center justify-center shrink-0">
@@ -5078,8 +5048,141 @@ export default function Game({
       )}
 
       {/* Main Grid Frame */}
-      <div className="match-frame w-full max-w-7xl mx-auto flex flex-col gap-3 relative z-10 animate-fade-in flex-1 overflow-hidden min-h-0">
+      <div className="match-frame w-full flex flex-col gap-3 relative z-10 animate-fade-in flex-1 overflow-hidden min-h-0">
         
+        {/* HUD CORE DISPLAY FLOW */}
+        <div className="match-core match-split w-full flex-1 flex relative overflow-hidden min-h-0">
+          
+
+          <div className="match-board-region" role="region" aria-label="Battlefield">
+          {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
+          <div className="match-battlefield glass rounded-xl p-2 sm:p-3 flex flex-col items-center shadow-lg w-full relative">
+            <div className="match-battlefield-content w-full flex flex-col items-center gap-2">
+
+              <div className="match-board-tools w-full flex items-center justify-between font-mono text-[10px] text-zinc-500 shrink-0">
+                <span>Battlefield · {zoomLevel === 100 ? 'Fit to screen' : 'Pan to explore'}</span>
+                <div className="match-inline-intel">{renderHoverHUD()}</div>
+                <button
+                  type="button"
+                  aria-pressed={zoomLevel === 140}
+                  aria-label={zoomLevel === 140 ? 'Fit entire battlefield to screen' : 'Zoom battlefield for precise selection'}
+                  onClick={() => setZoomLevel(level => level === 100 ? 140 : 100)}
+                  className="px-3 py-1 rounded-lg border border-zinc-700 text-sky-300 hover:bg-sky-500/10"
+                >{zoomLevel === 140 ? '↙ Fit board' : '⊕ Zoom'}</button>
+              </div>
+              {/* Aligned Coordinate Scales with Battlefield Grid */}
+              <div
+                role="application"
+                aria-label={`Tactical battlefield, ${GRID_SIZE} by ${GRID_SIZE}. ${activeTeam === 'player' ? 'Your turn' : 'Enemy turn'}. Turn ${turn}.`}
+                aria-roledescription="tactical game board"
+                onDoubleClick={handleGridDoubleClick}
+                onTouchStart={handleGridDoubleTap}
+                className={`match-board-stage @container touch-manipulation relative w-full flex items-center border rounded-lg p-2 animate-fade-in mt-1 select-none transition-all duration-300 overflow-auto ${
+                  zoomLevel === 140 ? 'justify-start cursor-zoom-out' : 'justify-center cursor-zoom-in'
+                } ${(() => {
+                  const t = BOARD_THEMES.find(th => th.id === boardTheme);
+                  if (!t || t.id === 'default') return 'bg-[#090b07] border-[#1e2317]';
+                  if (t.id === 'arctic') return 'bg-slate-950 border-cyan-800/30';
+                  if (t.id === 'volcanic') return 'bg-stone-950 border-red-900/30';
+                  if (t.id === 'neon') return 'bg-violet-950 border-fuchsia-700/30';
+                  if (t.id === 'desert') return 'bg-yellow-950 border-amber-800/30';
+                  if (t.id === 'jungle') return 'bg-emerald-950 border-green-800/30';
+                  return 'bg-[#090b07] border-[#1e2317]';
+                })()}`}
+                style={{ containerType: 'size' }}
+              >
+                <div 
+                  className={`match-board board-cq flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
+                  style={{
+                     width: zoomLevel === 140 ? 'max(500px, 140cqw)' : 'min(100cqw - 20px, 100cqh - 20px)',
+                     minWidth: zoomLevel === 140 ? '500px' : '0',
+                     flexShrink: 0
+                  }}
+                >
+                  {/* Column labels scale (A-O) */}
+                  <div
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
+                    style={{
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                      paddingLeft: '24px',
+                      paddingRight: '24px'
+                    }}
+                  >
+                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-0.5 select-none uppercase tracking-wider">
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex w-full items-stretch">
+                    {/* Row labels vertical column (01-15) */}
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
+                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
+                          {(i + 1).toString().padStart(2, '0')}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Actual battlefield grid */}
+                    <div className="flex-1 min-w-0 relative" style={isIsometric ? { perspective: '1200px', perspectiveOrigin: '50% 50%' } : undefined}>
+                      <div
+                        className={`match-grid grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''} ${isIsometric ? 'overflow-visible' : 'overflow-hidden'}`}
+                        style={{
+                          gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                          backgroundColor: '#1b2015',
+                          ...(isIsometric ? {
+                            transform: 'rotateX(55deg) rotateZ(-45deg) scale(0.65)',
+                            transformStyle: 'preserve-3d',
+                            transformOrigin: '50% 50%',
+                            transition: 'transform 0.5s ease-in-out',
+                          } : {
+                            transform: 'none',
+                            transition: 'transform 0.5s ease-in-out',
+                          })
+                        }}
+                      >
+                        {renderGrid()}
+                      </div>
+                    </div>
+
+                    {/* Right Row labels vertical column (01-15) */}
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
+                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
+                          {(i + 1).toString().padStart(2, '0')}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bottom Column labels scale (A-O) */}
+                  <div
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
+                    style={{
+                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+                      paddingLeft: '24px',
+                      paddingRight: '24px'
+                    }}
+                  >
+                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
+                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-0.5 select-none uppercase tracking-wider">
+                        {String.fromCharCode(65 + i)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+
+            </div>
+          </div>
+
+
+          </div>
+
+          <aside className="match-hub" role="region" aria-label="Command hub" data-hub-tab={hubTab} data-mode={mode} data-can-start={canStartBattleHook ? "true" : "false"}>
         {/* TOP COMMAND HUD */}
         <div className="match-header w-full glass rounded-xl px-4 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg shrink-0">
           <div className="flex items-center gap-3">
@@ -5141,97 +5244,27 @@ export default function Game({
           </div>
         </div>
 
-        {/* HUD CORE DISPLAY FLOW */}
-        <div className="match-core w-full flex-1 flex flex-col lg:flex-row flex-wrap lg:flex-nowrap gap-4 items-center lg:items-stretch justify-center relative overflow-hidden min-h-0">
-          
-          {/* LEFT COLUMN AUX PANEL */}
-          {activeLeftTab && (
-            <div
-              ref={panelRef}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Intelligence panel"
-              className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl p-4 overflow-y-auto custom-scrollbar"
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setActiveLeftTab(null);
-                  panelLauncherRef.current?.focus();
-                }
-              }}
-            >
-              <div className="w-full max-w-2xl flex flex-col gap-3">
-              {/* Close Button */}
-              <div className="flex justify-end">
-                 <button type="button" onClick={() => { setActiveLeftTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-500 hover:text-zinc-200 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
-              </div>
-              <div className="glass-dark p-4 rounded-xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.8)] select-none">
-                {activeLeftTab === 'map' && (
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24] flex items-center gap-1.5">
-                      <Radar className="w-3.5 h-3.5 animate-pulse" /> topography sector
-                    </span>
-                    <div className="text-[8.5px] font-mono text-zinc-400 uppercase leading-relaxed mb-1">
-                      Choose dynamic tactical sector. Updating maps resets team configurations.
-                    </div>
-                    {/* Compact selection maps list */}
-                    <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto pr-0.5">
-                      {MAPS.map((mapPreset) => {
-                        const isSelected = selectedMapId === mapPreset.id;
-                        return (
-                          <button
-                            key={mapPreset.id}
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); selectMap(mapPreset.id); }}
-                            className={`text-left p-1.5 rounded-lg border transition-all text-[10px] font-mono uppercase flex flex-col justify-between group cursor-pointer ${
-                              isSelected ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.2)]' : 'bg-black/25 border-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
-                            }`}
-                          >
-                            <span className="font-bold flex items-center justify-between w-full">
-                              <span className="truncate">{mapPreset.name}</span>
-                              {isSelected && <span className="text-[7.5px] bg-[#fbbf24] text-black px-1 rounded-md select-none font-black shrink-0">ACTIVE</span>}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
-                {activeLeftTab === 'logs' && (
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-mono uppercase font-black text-[#fbbf24] flex items-center gap-1.5">
-                      <Activity className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> SENSORY CONSOLE FEED
-                    </span>
-                    <div className="bg-black/35 rounded-lg border border-zinc-900 p-1 h-[320px]">
-                      <CombatLog logs={finalLogs} onClear={() => setLogs([])} />
-                    </div>
-                  </div>
-                )}
+          <div className="match-hub-tabs" role="tablist" aria-label="Command hub">
+            {([
+              ['deploy', 'Squad'],
+              ['unit', 'Unit'],
+              ['chat', 'Chat'],
+              ['log', 'Log'],
+              ['settings', 'Settings'],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={hubTab === id}
+                className={hubTab === id ? 'is-active' : ''}
+                onClick={() => selectHubTab(id)}
+              >{label}</button>
+            ))}
+          </div>
 
-                {activeLeftTab === 'leaderboard' && (
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-mono uppercase font-black text-purple-400">
-                      🏆 LEADERBOARD RANKINGS
-                    </span>
-                    <div className="h-[320px] overflow-y-auto custom-scrollbar">
-                      <CommanderLeaderboard />
-                      <MatchHistory />
-                    </div>
-                  </div>
-                )}
-                
-                {activeLeftTab === 'chat' && isOnline && onlineMatch?.id && (
-                  <div className="flex flex-col gap-2 h-full min-h-[320px] max-h-[400px]">
-                    <MatchChat matchId={onlineMatch.id} />
-                  </div>
-                )}
-              </div>
-            </div>
-            </div>
-          )}
-
-          {/* MAIN CENTER GROUND ASSIGNER CONTAINER */}
-          <div className="match-center flex-1 w-full flex flex-col gap-3 items-center min-h-0 relative z-10">
+            <div className="match-hub-body">
           
           {/* 0. SYSTEM STATUS INTEGRATED HEADER */}
           <div className="match-status glass rounded-xl p-2 flex flex-col lg:flex-row gap-3 items-stretch justify-between shadow-lg select-none shrink-0 w-full">
@@ -5353,7 +5386,7 @@ export default function Game({
 
           {/* TACTICAL REGION CALIBRATION (MAP SELECTION) */}
           {mode === 'deploy' && (
-            <div className="match-deploy-summary w-full max-w-3xl flex glass rounded-xl p-3 md:p-4 flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none shadow-lg shrink-0">
+            <div className="match-deploy-summary w-full flex glass rounded-xl p-3 md:p-4 flex-col sm:flex-row justify-between items-center sm:items-start gap-4 select-none shadow-lg shrink-0">
               <div className="flex items-start gap-3">
                 <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 shrink-0">
                   <Radar className="w-5 h-5 text-amber-400 animate-spin [animation-duration:6s]" />
@@ -5412,132 +5445,239 @@ export default function Game({
             </div>
           )}
 
-          {/* 2. DYNAMIC MAP CONTAINER (Centered and responsive) */}
-          <div className="match-battlefield glass rounded-xl p-2 sm:p-3 flex flex-col items-center shadow-lg w-full relative">
-            <div className="match-battlefield-content w-full flex flex-col items-center gap-2">
 
-              <div className="match-board-tools w-full flex items-center justify-between font-mono text-[10px] text-zinc-500 shrink-0">
-                <span>Battlefield · {zoomLevel === 100 ? 'Fit to screen' : 'Pan to explore'}</span>
-                <div className="match-inline-intel">{renderHoverHUD()}</div>
-                <button
-                  type="button"
-                  aria-pressed={zoomLevel === 140}
-                  aria-label={zoomLevel === 140 ? 'Fit entire battlefield to screen' : 'Zoom battlefield for precise selection'}
-                  onClick={() => setZoomLevel(level => level === 100 ? 140 : 100)}
-                  className="px-3 py-1 rounded-lg border border-zinc-700 text-sky-300 hover:bg-sky-500/10"
-                >{zoomLevel === 140 ? '↙ Fit board' : '⊕ Zoom'}</button>
+          {/* LEFT COLUMN AUX PANEL */}
+          {activeLeftTab && (
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Intelligence panel"
+              className="match-drawer match-hub-drawer flex-1 w-full min-h-0 flex flex-col items-stretch gap-2 animate-fade-in text-left relative p-0 overflow-hidden"
+
+            >
+              <div className="w-full max-w-2xl flex flex-col gap-3">
+              {/* Close Button */}
+              <div className="flex justify-end">
+                 <button type="button" onClick={() => { setActiveLeftTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-500 hover:text-zinc-200 px-4 border border-zinc-800 hover:border-zinc-600 rounded-xl bg-zinc-900/50 font-mono text-[10px] uppercase font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"><RotateCcw className="w-3 h-3" /> Close</button>
               </div>
-              {/* Aligned Coordinate Scales with Battlefield Grid */}
-              <div
-                role="application"
-                aria-label={`Tactical battlefield, ${GRID_SIZE} by ${GRID_SIZE}. ${activeTeam === 'player' ? 'Your turn' : 'Enemy turn'}. Turn ${turn}.`}
-                aria-roledescription="tactical game board"
-                onDoubleClick={handleGridDoubleClick}
-                onTouchStart={handleGridDoubleTap}
-                className={`match-board-stage @container touch-manipulation relative w-full flex items-center border rounded-lg p-2 animate-fade-in mt-1 select-none transition-all duration-300 overflow-auto ${
-                  zoomLevel === 140 ? 'justify-start cursor-zoom-out' : 'justify-center cursor-zoom-in'
-                } ${(() => {
-                  const t = BOARD_THEMES.find(th => th.id === boardTheme);
-                  if (!t || t.id === 'default') return 'bg-[#090b07] border-[#1e2317]';
-                  if (t.id === 'arctic') return 'bg-slate-950 border-cyan-800/30';
-                  if (t.id === 'volcanic') return 'bg-stone-950 border-red-900/30';
-                  if (t.id === 'neon') return 'bg-violet-950 border-fuchsia-700/30';
-                  if (t.id === 'desert') return 'bg-yellow-950 border-amber-800/30';
-                  if (t.id === 'jungle') return 'bg-emerald-950 border-green-800/30';
-                  return 'bg-[#090b07] border-[#1e2317]';
-                })()}`}
-                style={{ containerType: 'size' }}
-              >
-                <div 
-                  className={`match-board board-cq flex flex-col select-none transition-all duration-300 justify-center mx-auto`}
-                  style={{
-                     width: zoomLevel === 140 ? 'max(500px, 140cqw)' : 'min(100cqw - 20px, 100cqh - 20px)',
-                     minWidth: zoomLevel === 140 ? '500px' : '0',
-                     flexShrink: 0
-                  }}
-                >
-                  {/* Column labels scale (A-O) */}
-                  <div
-                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
-                    style={{
-                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                      paddingLeft: '24px',
-                      paddingRight: '24px'
-                    }}
-                  >
-                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-0.5 select-none uppercase tracking-wider">
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex w-full items-stretch">
-                    {/* Row labels vertical column (01-15) */}
-                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
-                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
-                          {(i + 1).toString().padStart(2, '0')}
-                        </div>
-                      ))}
+              <div className="glass-dark p-4 rounded-xl flex flex-col gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.8)] select-none">
+                {activeLeftTab === 'map' && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24] flex items-center gap-1.5">
+                      <Radar className="w-3.5 h-3.5 animate-pulse" /> topography sector
+                    </span>
+                    <div className="text-[8.5px] font-mono text-zinc-400 uppercase leading-relaxed mb-1">
+                      Choose dynamic tactical sector. Updating maps resets team configurations.
                     </div>
-
-                    {/* Actual battlefield grid */}
-                    <div className="flex-1 min-w-0 relative" style={isIsometric ? { perspective: '1200px', perspectiveOrigin: '50% 50%' } : undefined}>
-                      <div
-                        className={`match-grid grid gap-[1px] w-full transition-all border border-zinc-700/40 bg-zinc-900 shadow-inner rounded-lg @container ${shake ? 'animate-screenshake-heavy shadow-[0_0_25px_rgba(168,85,247,0.30)] border-fuchsia-500/60' : ''} ${isIsometric ? 'overflow-visible' : 'overflow-hidden'}`}
-                        style={{
-                          gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                          backgroundColor: '#1b2015',
-                          ...(isIsometric ? {
-                            transform: 'rotateX(55deg) rotateZ(-45deg) scale(0.65)',
-                            transformStyle: 'preserve-3d',
-                            transformOrigin: '50% 50%',
-                            transition: 'transform 0.5s ease-in-out',
-                          } : {
-                            transform: 'none',
-                            transition: 'transform 0.5s ease-in-out',
-                          })
-                        }}
-                      >
-                        {renderGrid()}
-                      </div>
-                    </div>
-
-                    {/* Right Row labels vertical column (01-15) */}
-                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
-                      {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                        <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
-                          {(i + 1).toString().padStart(2, '0')}
-                        </div>
-                      ))}
+                    {/* Compact selection maps list */}
+                    <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto pr-0.5">
+                      {MAPS.map((mapPreset) => {
+                        const isSelected = selectedMapId === mapPreset.id;
+                        return (
+                          <button
+                            key={mapPreset.id}
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); selectMap(mapPreset.id); }}
+                            className={`text-left p-1.5 rounded-lg border transition-all text-[10px] font-mono uppercase flex flex-col justify-between group cursor-pointer ${
+                              isSelected ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.2)]' : 'bg-black/25 border-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
+                            }`}
+                          >
+                            <span className="font-bold flex items-center justify-between w-full">
+                              <span className="truncate">{mapPreset.name}</span>
+                              {isSelected && <span className="text-[7.5px] bg-[#fbbf24] text-black px-1 rounded-md select-none font-black shrink-0">ACTIVE</span>}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
+                )}
 
-                  {/* Bottom Column labels scale (A-O) */}
-                  <div
-                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
-                    style={{
-                      gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
-                      paddingLeft: '24px',
-                      paddingRight: '24px'
-                    }}
-                  >
-                    {Array.from({ length: GRID_SIZE }).map((_, i) => (
-                      <div key={i} className="text-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-0.5 select-none uppercase tracking-wider">
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                    ))}
+                {activeLeftTab === 'logs' && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-mono uppercase font-black text-[#fbbf24] flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> SENSORY CONSOLE FEED
+                    </span>
+                    <div className="bg-black/35 rounded-lg border border-zinc-900 p-1 h-[320px]">
+                      <CombatLog logs={finalLogs} onClear={() => setLogs([])} />
+                    </div>
+                  </div>
+                )}
+
+                {activeLeftTab === 'leaderboard' && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-mono uppercase font-black text-purple-400">
+                      🏆 LEADERBOARD RANKINGS
+                    </span>
+                    <div className="h-[320px] overflow-y-auto custom-scrollbar">
+                      <CommanderLeaderboard />
+                      <MatchHistory />
+                    </div>
+                  </div>
+                )}
+                
+                {activeLeftTab === 'chat' && isOnline && onlineMatch?.id && (
+                  <div className="flex flex-col gap-2 h-full min-h-[320px] max-h-[400px]">
+                    <MatchChat matchId={onlineMatch.id} />
+                  </div>
+                )}
+              </div>
+            </div>
+            </div>
+          )}
+
+
+          {/* RIGHT COLUMN AUX PANEL */}
+          {activeRightTab && (
+            <div
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Squad and targeting panel"
+              className="match-drawer match-hub-drawer flex-1 w-full min-h-0 flex flex-col items-stretch gap-2 animate-fade-in text-left relative p-0 overflow-hidden"
+
+            >
+              <div className="w-full max-w-2xl flex flex-col gap-3">
+              {/* Close Button */}
+              <div className="flex justify-end">
+                 <button type="button" onClick={() => { setActiveRightTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-400 hover:text-white px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center justify-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
+              </div>
+              {activeRightTab === 'roster' && (
+                <div className="match-roster-panel bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-3 shadow-lg select-none">
+                  <div className="match-roster-heading flex items-center gap-2 border-b border-zinc-800 border-opacity-50 pb-1.5 shrink-0">
+                    <Users className="w-4 h-4 text-[#38bdf8]" />
+                    <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24]">
+                      SQUAD INTEGERS & INTEGRITY
+                    </span>
+                  </div>
+                  <div className="match-roster-integrity flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-0.5">
+                    <div className="border border-sky-500/20 bg-sky-950/20 p-2 rounded-lg">
+                      <span className="text-[9px] text-sky-400 font-extrabold block mb-1 uppercase pb-1 border-b border-sky-500/15">BLUE SQUADRON</span>
+                      {renderRoster('player')}
+                    </div>
+                    <div className="border border-purple-500/20 bg-purple-950/20 p-2 rounded-lg">
+                      <span className="text-[9px] text-purple-200 text-purple-400 font-extrabold block mb-1 uppercase pb-1 border-b border-purple-500/15">PURPLE SQUADRON</span>
+                      {renderRoster('enemy')}
+                    </div>
+
+                    {/* ACTIVE SQUAD CHEMISTRIES */}
+                    {(() => {
+                      const pClassNames = units.filter(u => u.team === 'player').map(u => u.class.className);
+                      const eClassNames = units.filter(u => u.team === 'enemy').map(u => u.class.className);
+                      const pChems = getActiveChemistries(pClassNames);
+                      const eChems = getActiveChemistries(eClassNames);
+                      const hasChems = pChems.length > 0 || eChems.length > 0;
+
+                      if (!hasChems) return null;
+
+                      return (
+                        <div className="border border-zinc-800 border-opacity-50/60 bg-black/40 p-2 rounded-lg flex flex-col gap-1.5 mt-1 text-[7.5px]">
+                          <span className="text-[8px] text-[#fbbf24] font-black tracking-widest uppercase flex items-center gap-1.5 pb-1 border-b border-zinc-800 border-opacity-50/20">
+                            <Zap className="w-3 h-3 text-[#fbbf24] animate-pulse" /> SQUAD CHEMISTRY SYNERGIES
+                          </span>
+                          
+                          {pChems.map(chem => (
+                            <div key={`p-${chem.id}`} className="bg-sky-500/5 border border-sky-500/20 p-1.5 rounded-lg uppercase">
+                              <div className="flex justify-between items-center font-black text-sky-400 mb-0.5">
+                                <span>⚡ {chem.name}</span>
+                                <span className="text-[5.5px] bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold px-1 rounded-lg">BLUE</span>
+                              </div>
+                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
+                            </div>
+                          ))}
+
+                          {eChems.map(chem => (
+                            <div key={`e-${chem.id}`} className="bg-fuchsia-500/5 border border-fuchsia-500/20 p-1.5 rounded-lg uppercase">
+                              <div className="flex justify-between items-center font-black text-fuchsia-400 mb-0.5">
+                                <span>⚡ {chem.name}</span>
+                                <span className="text-[5.5px] bg-fuchsia-500/15 border border-fuchsia-500/30 text-fuchsia-300 font-bold px-1 rounded-lg">PURPLE</span>
+                              </div>
+                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="match-roster-classes border-t border-zinc-800/60 pt-2 shrink-0 min-h-0 overflow-y-auto">
+                    <RosterStatus 
+                      units={finalUnits}
+                      activeTeam={activeTeam}
+                      selectedUnitId={selectedUnitId}
+                      onSelectUnit={(id) => { setSelectedUnitId(id); }}
+                      mode={mode}
+                      teamSelection={teamSelection}
+                      setTeamSelection={setTeamSelection}
+                      selectedClass={selectedClass}
+                      setSelectedClass={(unitClass) => { setSelectedClass(unitClass); }}
+                      isOnline={!!isOnline}
+                      myTeam={myTeam}
+                    />
                   </div>
                 </div>
-              </div>
+              )}
+
+              {activeRightTab === 'unit_console' && (
+                <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-2 shadow-lg text-left">
+                  <div className="flex items-center justify-between border-b border-[#2d3a20] pb-1.5 shrink-0">
+                    <span className="text-[10px] font-black font-mono uppercase text-[#fbbf24] flex items-center gap-1.5 font-black">
+                      <Crosshair className="w-3.5 h-3.5 text-[#fbbf24] animate-pulse" /> TARGET INTERFACING DIAGNOSTICS
+                    </span>
+                  </div>
+                  <div className="overflow-hidden">
+                    <SelectedUnitConsole
+                      selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
+                        id: 'preview-' + selectedClass.className,
+                        class: getUnitClassWithBoosts(selectedClass, teamSelection),
+                        x: -1,
+                        y: -1,
+                        hp: getUnitClassWithBoosts(selectedClass, teamSelection).stats.maxHP,
+                        ap: 2,
+                        team: teamSelection,
+                      } : null)}
+                      activeTeam={activeTeam}
+                      onEndTurn={handleEndTurn}
+                      onCancelSelection={() => {
+                        if (mode === 'play') {
+                          setSelectedUnitId(null);
+                        } else {
+                          setSelectedClass(null);
+                        }
+                      }}
+                      isAbilityActive={isAbilityActive}
+                      onToggleAbility={() => {
+                         if (selectedUnit?.class.ability?.type === 'self') {
+                           handleSelfAbility();
+                         } else {
+                           setIsAbilityActive(!isAbilityActive);
+                         }
+                      }}
+                      mapEnvironment={mapEnvironment}
+                      units={units}
+                      activeHoveredTile={hoveredTile}
+                      isOnline={isOnline}
+                      myTeam={myTeam}
+                      onPassUnit={handlePassUnit}
+                      mode={mode}
+                      onRenameUnit={handleRenameUnit}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          )}
+
+          {/* 5. GORGEOUS POPUP MODAL OVERLAYS (Toggled via Top Command Hub buttons) */}
+          {/* Popup modals omitted to utilize modern non-blocking docked side columns */}
 
               <div className="match-action-rail">
               {/* Unified 1-Button Deployment and Battle Launch Flow (Placed below grid to prevent covering any playable squares!) */}
               {mode === 'deploy' && (
                 <div 
                   className="w-full shrink-0 flex justify-center mx-auto"
-                  style={{ maxWidth: zoomLevel === 140 ? 'none' : 'min(900px, 75vh)' }}
+                  style={{ maxWidth: zoomLevel === 140 ? 'none' : '100%' }}
                 >
                   <button
                     onClick={() => {
@@ -5809,9 +5949,6 @@ export default function Game({
               )}
               </div> {/* Controls become a side rail on short landscape screens. */}
 
-            </div>
-          </div>
-
           {/* Essential selection stays visible; full diagnostics live in Targeting. */}
           {(selectedUnit || selectedClass) && (
             <div className="match-selection glass rounded-xl w-full flex items-center gap-2 px-3 py-1.5 shrink-0 font-mono text-xs">
@@ -5822,160 +5959,11 @@ export default function Game({
             </div>
           )}
 
-          {/* 5. GORGEOUS POPUP MODAL OVERLAYS (Toggled via Top Command Hub buttons) */}
-          </div> {/* CLOSE MAIN CENTER COLUMN ASSEMBLY */}
 
-          {/* RIGHT COLUMN AUX PANEL */}
-          {activeRightTab && (
-            <div
-              ref={panelRef}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Squad and targeting panel"
-              className="match-drawer flex-1 w-full shrink-0 flex flex-col items-center gap-3 animate-fade-in text-left absolute inset-0 z-[100] bg-zinc-950/98 backdrop-blur-md p-4 overflow-y-auto custom-scrollbar"
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setActiveRightTab(null);
-                  panelLauncherRef.current?.focus();
-                }
-              }}
-            >
-              <div className="w-full max-w-2xl flex flex-col gap-3">
-              {/* Close Button */}
-              <div className="flex justify-end">
-                 <button type="button" onClick={() => { setActiveRightTab(null); panelLauncherRef.current?.focus(); }} className="match-drawer-close text-zinc-400 hover:text-white px-4 border border-zinc-700 rounded-lg bg-zinc-900 font-mono text-[10px] uppercase font-black transition-colors flex items-center justify-center gap-1.5"><RotateCcw className="w-3 h-3" /> Close Panel</button>
-              </div>
-              {activeRightTab === 'roster' && (
-                <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-3 shadow-lg select-none">
-                  <div className="flex items-center gap-2 border-b border-zinc-800 border-opacity-50 pb-1.5 shrink-0">
-                    <Users className="w-4 h-4 text-[#38bdf8]" />
-                    <span className="text-[10px] font-black font-mono uppercase tracking-widest text-[#fbbf24]">
-                      SQUAD INTEGERS & INTEGRITY
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-0.5">
-                    <div className="border border-sky-500/20 bg-sky-950/20 p-2 rounded-lg">
-                      <span className="text-[9px] text-sky-400 font-extrabold block mb-1 uppercase pb-1 border-b border-sky-500/15">BLUE SQUADRON</span>
-                      {renderRoster('player')}
-                    </div>
-                    <div className="border border-purple-500/20 bg-purple-950/20 p-2 rounded-lg">
-                      <span className="text-[9px] text-purple-200 text-purple-400 font-extrabold block mb-1 uppercase pb-1 border-b border-purple-500/15">PURPLE SQUADRON</span>
-                      {renderRoster('enemy')}
-                    </div>
-
-                    {/* ACTIVE SQUAD CHEMISTRIES */}
-                    {(() => {
-                      const pClassNames = units.filter(u => u.team === 'player').map(u => u.class.className);
-                      const eClassNames = units.filter(u => u.team === 'enemy').map(u => u.class.className);
-                      const pChems = getActiveChemistries(pClassNames);
-                      const eChems = getActiveChemistries(eClassNames);
-                      const hasChems = pChems.length > 0 || eChems.length > 0;
-
-                      if (!hasChems) return null;
-
-                      return (
-                        <div className="border border-zinc-800 border-opacity-50/60 bg-black/40 p-2 rounded-lg flex flex-col gap-1.5 mt-1 text-[7.5px]">
-                          <span className="text-[8px] text-[#fbbf24] font-black tracking-widest uppercase flex items-center gap-1.5 pb-1 border-b border-zinc-800 border-opacity-50/20">
-                            <Zap className="w-3 h-3 text-[#fbbf24] animate-pulse" /> SQUAD CHEMISTRY SYNERGIES
-                          </span>
-                          
-                          {pChems.map(chem => (
-                            <div key={`p-${chem.id}`} className="bg-sky-500/5 border border-sky-500/20 p-1.5 rounded-lg uppercase">
-                              <div className="flex justify-between items-center font-black text-sky-400 mb-0.5">
-                                <span>⚡ {chem.name}</span>
-                                <span className="text-[5.5px] bg-sky-500/15 border border-sky-500/30 text-sky-300 font-bold px-1 rounded-lg">BLUE</span>
-                              </div>
-                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
-                            </div>
-                          ))}
-
-                          {eChems.map(chem => (
-                            <div key={`e-${chem.id}`} className="bg-fuchsia-500/5 border border-fuchsia-500/20 p-1.5 rounded-lg uppercase">
-                              <div className="flex justify-between items-center font-black text-fuchsia-400 mb-0.5">
-                                <span>⚡ {chem.name}</span>
-                                <span className="text-[5.5px] bg-fuchsia-500/15 border border-fuchsia-500/30 text-fuchsia-300 font-bold px-1 rounded-lg">PURPLE</span>
-                              </div>
-                              <span className="text-zinc-400 font-medium text-[6.5px]">{chem.buffText}</span>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <div className="border-t border-zinc-800/60 pt-2 shrink-0">
-                    <RosterStatus 
-                      units={finalUnits}
-                      activeTeam={activeTeam}
-                      selectedUnitId={selectedUnitId}
-                      onSelectUnit={(id) => { setSelectedUnitId(id); setActiveRightTab(null); }}
-                      mode={mode}
-                      teamSelection={teamSelection}
-                      setTeamSelection={setTeamSelection}
-                      selectedClass={selectedClass}
-                      setSelectedClass={(unitClass) => { setSelectedClass(unitClass); if (unitClass) { setActiveRightTab(null); panelLauncherRef.current?.focus(); } }}
-                      isOnline={!!isOnline}
-                      myTeam={myTeam}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeRightTab === 'unit_console' && (
-                <div className="bg-[#12160d]/95 border border-[#303a24] p-3 rounded-2xl flex flex-col gap-2 shadow-lg text-left">
-                  <div className="flex items-center justify-between border-b border-[#2d3a20] pb-1.5 shrink-0">
-                    <span className="text-[10px] font-black font-mono uppercase text-[#fbbf24] flex items-center gap-1.5 font-black">
-                      <Crosshair className="w-3.5 h-3.5 text-[#fbbf24] animate-pulse" /> TARGET INTERFACING DIAGNOSTICS
-                    </span>
-                  </div>
-                  <div className="overflow-hidden">
-                    <SelectedUnitConsole
-                      selectedUnit={mode === 'play' ? selectedUnit : (selectedClass ? {
-                        id: 'preview-' + selectedClass.className,
-                        class: getUnitClassWithBoosts(selectedClass, teamSelection),
-                        x: -1,
-                        y: -1,
-                        hp: getUnitClassWithBoosts(selectedClass, teamSelection).stats.maxHP,
-                        ap: 2,
-                        team: teamSelection,
-                      } : null)}
-                      activeTeam={activeTeam}
-                      onEndTurn={handleEndTurn}
-                      onCancelSelection={() => {
-                        if (mode === 'play') {
-                          setSelectedUnitId(null);
-                        } else {
-                          setSelectedClass(null);
-                        }
-                      }}
-                      isAbilityActive={isAbilityActive}
-                      onToggleAbility={() => {
-                         if (selectedUnit?.class.ability?.type === 'self') {
-                           handleSelfAbility();
-                         } else {
-                           setIsAbilityActive(!isAbilityActive);
-                         }
-                      }}
-                      mapEnvironment={mapEnvironment}
-                      units={units}
-                      activeHoveredTile={hoveredTile}
-                      isOnline={isOnline}
-                      myTeam={myTeam}
-                      onPassUnit={handlePassUnit}
-                      mode={mode}
-                      onRenameUnit={handleRenameUnit}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
-            </div>
-          )}
-
-          {/* 5. GORGEOUS POPUP MODAL OVERLAYS (Toggled via Top Command Hub buttons) */}
-          {/* Popup modals omitted to utilize modern non-blocking docked side columns */}
+          </aside>
 
         </div>
-
       </div>
       
       {/* Mission Briefing Overlay */}

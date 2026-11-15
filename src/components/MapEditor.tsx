@@ -208,13 +208,13 @@ export default function MapEditor({ onBack, onPlayMap }: MapEditorProps) {
 
   return (
     <div
-      className="min-h-app bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-4 sm:p-6 flex flex-col items-center relative selection:bg-[#fbbf24] selection:text-black"
+      className="mode-shell bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 to-zinc-950 text-zinc-300 font-mono p-3 sm:p-4 flex flex-col items-center relative selection:bg-[#fbbf24] selection:text-black overflow-hidden"
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,14,0)_97%,rgba(18,24,14,0.1)_97%)] bg-[length:100%_4px] pointer-events-none z-50" />
 
-      <div className="w-full max-w-4xl z-10 flex flex-col gap-4">
+      <div className="w-full h-full max-w-6xl z-10 flex flex-col gap-3 min-h-0 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between">
           <button
