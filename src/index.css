@@ -10,8 +10,14 @@
 html, body, #root {
   background: #09090b;
   color: #d4d4d8;
-  overflow-x: hidden;
 }
+/* Only the document may scroll the page. overflow-x: hidden on body/#root
+   silently turned both into (empty) scroll containers; combined with body's
+   overscroll-behavior that swallowed every touch/wheel scroll before it could
+   reach the document, so long screens (main menu, tutorial) never moved on a
+   phone. clip trims sideways overflow without creating a scroll container. */
+html { overflow-x: hidden; }
+body, #root { overflow-x: clip; }
 
 ::selection {
   background: #fbbf24;
@@ -533,8 +539,10 @@ html {
 button, [role="button"], a, input[type="range"] {
   touch-action: manipulation;
 }
-body {
-  /* No pull-to-refresh or scroll-chaining mid-match inside the TWA */
+html {
+  /* No pull-to-refresh or scroll-chaining mid-match inside the TWA.
+     Set on the root element: that is what the browser applies to the viewport.
+     On body it acted as a scroll-chain barrier and blocked page scrolling. */
   overscroll-behavior-y: none;
 }
 
