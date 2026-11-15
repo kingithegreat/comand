@@ -167,7 +167,7 @@ export default function SelectedUnitConsole({
           <span className={`text-[8px] font-semibold px-1.5 py-[2px] rounded-md uppercase tracking-wider select-none border ${statusColor}`}>
             {statusBadge}
           </span>
-          <button type="button" title="Deselect unit" className="text-zinc-600 hover:text-zinc-300 transition-colors cursor-pointer p-0.5" onClick={onCancelSelection}>
+          <button type="button" title="Deselect unit" aria-label="Deselect unit" className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer inline-flex items-center justify-center min-w-[36px] min-h-[36px] -my-2 -mr-2" onClick={onCancelSelection}>
             <XCircle className="w-3.5 h-3.5" />
           </button>
         </div>
