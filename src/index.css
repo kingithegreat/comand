@@ -779,6 +779,27 @@ html {
     z-index: 40;
     width: auto;
   }
+  /* Keep the assembly / start-battle control in normal flow so it cannot
+     cover deploy tiles. Make it a single compact 44px row. */
+  .match-action-rail {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    flex: 0 0 auto;
+    pointer-events: auto;
+  }
+  .match-action-rail button {
+    padding: 4px 8px;
+    min-height: 44px;
+    flex-direction: row !important;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+  }
+  .match-action-rail button > span:last-child { display: none; }
+  .match-coord-scale { display: none !important; }
   .match-center { position: relative; }
 }
 /* Keep this after timing refinements so the preference always wins. */

@@ -5458,7 +5458,7 @@ export default function Game({
                 >
                   {/* Column labels scale (A-O) */}
                   <div
-                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mb-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
@@ -5474,7 +5474,7 @@ export default function Game({
 
                   <div className="flex w-full items-stretch">
                     {/* Row labels vertical column (01-15) */}
-                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-right w-[20px] mr-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-600 font-semibold py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5505,7 +5505,7 @@ export default function Game({
                     </div>
 
                     {/* Right Row labels vertical column (01-15) */}
-                    <div className={`${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
+                    <div className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:flex'} flex-col gap-[1px] select-none text-left w-[20px] ml-1 shrink-0`}>
                       {Array.from({ length: GRID_SIZE }).map((_, i) => (
                         <div key={i} className="flex-1 flex items-center justify-center text-[7px] sm:text-[10px] font-mono text-zinc-700 font-medium py-1 select-none">
                           {(i + 1).toString().padStart(2, '0')}
@@ -5516,7 +5516,7 @@ export default function Game({
 
                   {/* Bottom Column labels scale (A-O) */}
                   <div
-                    className={`${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
+                    className={`match-coord-scale ${isIsometric ? 'hidden' : 'hidden sm:grid'} gap-[1px] w-full mt-1 shrink-0`}
                     style={{
                       gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
                       paddingLeft: '24px',
