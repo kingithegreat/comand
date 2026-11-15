@@ -10,8 +10,14 @@
 html, body, #root {
   background: #09090b;
   color: #d4d4d8;
-  overflow-x: hidden;
 }
+/* Only the document may scroll the page. overflow-x: hidden on body/#root
+   silently turned both into (empty) scroll containers; combined with body's
+   overscroll-behavior that swallowed every touch/wheel scroll before it could
+   reach the document, so long screens (main menu, tutorial) never moved on a
+   phone. clip trims sideways overflow without creating a scroll container. */
+html { overflow-x: hidden; }
+body, #root { overflow-x: clip; }
 
 ::selection {
   background: #fbbf24;
@@ -475,10 +481,19 @@ html, body, #root {
    body already blocks pull-to-refresh, but that does nothing for the panels
    inside it: when a list reached its end the leftover momentum chained up to
    the document and dragged the whole app with it. Every scrollable panel now
-   absorbs its own overscroll instead of handing it upwards. */
-[class*="overflow-y-auto"],
-[class*="overflow-auto"],
-[class*="overflow-y-scroll"] {
+   absorbs its own overscroll instead of handing it upwards.
+
+   :not(.min-h-app) matters. The full-page screen wrappers also carry
+   overflow-y-auto, but they never scroll themselves — min-height lets them
+   grow and the DOCUMENT does the scrolling. Making them containing scroll
+   ports meant a touch-drag landed on a scroll container that had nothing to
+   scroll and, because of `contain`, refused to hand the gesture to the
+   document. The main menu and the tutorial simply would not scroll on a
+   phone. Containment belongs on the panels this rule was written for, not on
+   the page itself. */
+[class*="overflow-y-auto"]:not(.min-h-app),
+[class*="overflow-auto"]:not(.min-h-app),
+[class*="overflow-y-scroll"]:not(.min-h-app) {
   overscroll-behavior-y: contain;
 }
 
@@ -524,8 +539,10 @@ html {
 button, [role="button"], a, input[type="range"] {
   touch-action: manipulation;
 }
-body {
-  /* No pull-to-refresh or scroll-chaining mid-match inside the TWA */
+html {
+  /* No pull-to-refresh or scroll-chaining mid-match inside the TWA.
+     Set on the root element: that is what the browser applies to the viewport.
+     On body it acted as a scroll-chain barrier and blocked page scrolling. */
   overscroll-behavior-y: none;
 }
 
